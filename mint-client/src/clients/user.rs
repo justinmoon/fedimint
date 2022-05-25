@@ -1,4 +1,5 @@
 use crate::api::{ApiError, FederationApi};
+use crate::ln::gateway::LightningGateway;
 use crate::ln::{LnClient, LnClientError};
 use crate::mint::{MintClient, MintClientError, SpendableCoin};
 use crate::wallet::{WalletClient, WalletClientError};
@@ -9,6 +10,7 @@ use lightning::ln::PaymentSecret;
 use lightning::routing::network_graph::RoutingFees;
 use lightning::routing::router::{RouteHint, RouteHintHop};
 use lightning_invoice::{CreationError, Currency, Invoice, InvoiceBuilder};
+use minimint::config::ClientConfig;
 use minimint::modules::ln::contracts::incoming::{
     DecryptedPreimage, EncryptedPreimage, IncomingContract, IncomingContractOffer,
 };
@@ -31,14 +33,13 @@ use thiserror::Error;
 const TIMELOCK: u64 = 100;
 
 pub struct UserClient {
-    context: OwnedClientContext<ClientAndGatewayConfig>,
+    context: OwnedClientContext<ClientConfig>,
 }
 
 impl UserClient {
-    pub fn new(cfg: ClientAndGatewayConfig, db: Box<dyn Database>, secp: Secp256k1<All>) -> Self {
+    pub fn new(cfg: ClientConfig, db: Box<dyn Database>, secp: Secp256k1<All>) -> Self {
         let api = api::HttpFederationApi::new(
-            cfg.client
-                .api_endpoints
+            cfg.api_endpoints
                 .iter()
                 .enumerate()
                 .map(|(id, url)| {
@@ -52,7 +53,7 @@ impl UserClient {
     }
 
     pub fn new_with_api(
-        config: ClientAndGatewayConfig,
+        config: ClientConfig,
         db: Box<dyn Database>,
         api: Box<dyn FederationApi>,
         secp: Secp256k1<All>,
@@ -69,24 +70,20 @@ impl UserClient {
 
     fn ln_client(&self) -> LnClient {
         LnClient {
-            context: self.context.borrow_with_module_config(|cfg| &cfg.client.ln),
+            context: self.context.borrow_with_module_config(|cfg| &cfg.ln),
         }
     }
 
     pub fn mint_client(&self) -> MintClient {
         MintClient {
-            context: self
-                .context
-                .borrow_with_module_config(|cfg| &cfg.client.mint),
+            context: self.context.borrow_with_module_config(|cfg| &cfg.mint),
         }
     }
 
     fn wallet_client(&self) -> WalletClient {
         WalletClient {
-            context: self
-                .context
-                .borrow_with_module_config(|cfg| &cfg.client.wallet),
-            fee_consensus: self.context.config.client.fee_consensus.clone(), // TODO: remove or put into context
+            context: self.context.borrow_with_module_config(|cfg| &cfg.wallet),
+            fee_consensus: self.context.config.fee_consensus.clone(), // TODO: remove or put into context
         }
     }
 
@@ -103,7 +100,7 @@ impl UserClient {
             .create_pegin_input(txout_proof, btc_transaction)?;
 
         let amount = Amount::from_sat(peg_in_proof.tx_output().value)
-            .saturating_sub(self.context.config.client.fee_consensus.fee_peg_in_abs);
+            .saturating_sub(self.context.config.fee_consensus.fee_peg_in_abs);
         if amount == Amount::ZERO {
             return Err(ClientError::PegInAmountTooSmall);
         }
@@ -219,8 +216,7 @@ impl UserClient {
     ) -> Result<TransactionId, ClientError> {
         let mut batch = DbBatch::new();
 
-        let funding_amount =
-            Amount::from(amt) + self.context.config.client.fee_consensus.fee_peg_out_abs;
+        let funding_amount = Amount::from(amt) + self.context.config.fee_consensus.fee_peg_out_abs;
         let (coin_keys, coin_input) = self
             .mint_client()
             .create_coin_input(batch.transaction(), funding_amount)?;
@@ -303,6 +299,7 @@ impl UserClient {
 
     pub async fn fund_outgoing_ln_contract<R: RngCore + CryptoRng>(
         &self,
+        gateway: &LightningGateway,
         invoice: Invoice,
         mut rng: R,
     ) -> Result<ContractId, ClientError> {
@@ -316,7 +313,7 @@ impl UserClient {
             .create_outgoing_output(
                 batch.transaction(),
                 invoice,
-                &self.context.config.gateway,
+                gateway,
                 absolute_timelock as u32,
                 &mut rng,
             )
@@ -400,6 +397,7 @@ impl UserClient {
     // initiate_preimage_sale?
     pub async fn create_invoice_and_offer<R: RngCore + CryptoRng>(
         &self,
+        gateway: &LightningGateway,
         amount: Amount,
         mut rng: R,
     ) -> Result<Invoice, ClientError> {
@@ -416,7 +414,7 @@ impl UserClient {
 
         // Route hint instructing payer how to route to gateway
         let gateway_route_hint = RouteHint(vec![RouteHintHop {
-            src_node_id: self.context.config.gateway.node_pub_key,
+            src_node_id: gateway.node_pub_key,
             short_channel_id: 8,
             fees: RoutingFees {
                 base_msat: 0,
@@ -446,7 +444,7 @@ impl UserClient {
             hash: payment_hash,
             encrypted_preimage: EncryptedPreimage::new(
                 raw_payment_secret,
-                &self.context.config.client.ln.threshold_pub_key,
+                &self.context.config.ln.threshold_pub_key,
             ),
         };
         let offer_output = ContractOrOfferOutput::Offer(offer.clone());

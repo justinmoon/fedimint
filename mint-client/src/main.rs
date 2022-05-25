@@ -92,7 +92,7 @@ async fn main() {
 
     let mut rng = rand::rngs::OsRng::new().unwrap();
 
-    let client = UserClient::new(cfg.clone(), Box::new(db), Default::default());
+    let client = UserClient::new(cfg.client, Box::new(db), Default::default());
 
     match opts.command {
         Command::PegInAddress => {
@@ -149,7 +149,7 @@ async fn main() {
             let http = reqwest::Client::new();
 
             let contract_id = client
-                .fund_outgoing_ln_contract(bolt11, &mut rng)
+                .fund_outgoing_ln_contract(&cfg.gateway, bolt11, &mut rng)
                 .await
                 .expect("Not enough coins");
 
@@ -174,7 +174,7 @@ async fn main() {
         Command::LnInvoice { amount } => {
             // TODO: client.fund_incoming_contract and client.wait_contract_timeout to put pre-image for sale
             let invoice = client
-                .create_invoice_and_offer(amount, &mut rng)
+                .create_invoice_and_offer(&cfg.gateway, amount, &mut rng)
                 .await
                 .expect("couldn't create invoice");
             print!("{}", invoice);

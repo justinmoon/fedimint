@@ -147,7 +147,7 @@ async fn lightning_gateway_pays_invoice() {
     fed.mint_coins_for_user(&user, sats(1010)).await; // 1% LN fee
     let contract_id = user
         .client
-        .fund_outgoing_ln_contract(invoice, rng())
+        .fund_outgoing_ln_contract(&gateway.keys, invoice, rng())
         .await
         .unwrap();
     fed.run_consensus_epochs(2).await; // send coins to LN contract
@@ -174,7 +174,7 @@ async fn receive_lightnign_payment_via_gateway() {
     // Create invoice and offer in the federation (should this block in the future?)
     let invoice = user
         .client
-        .create_invoice_and_offer(MinimintAmount::from_msat(1000), rng())
+        .create_invoice_and_offer(&gateway.keys, MinimintAmount::from_msat(1000), rng())
         .await
         .unwrap();
 
@@ -219,7 +219,7 @@ async fn lightning_gateway_cannot_claim_invalid_preimage() {
     fed.mint_coins_for_user(&user, sats(1010)).await; // 1% LN fee
     let contract_id = user
         .client
-        .fund_outgoing_ln_contract(invoice, rng())
+        .fund_outgoing_ln_contract(&gateway.keys, invoice, rng())
         .await
         .unwrap();
     fed.run_consensus_epochs(2).await; // send coins to LN contract
@@ -244,7 +244,7 @@ async fn lightning_gateway_can_abort_payment_to_return_user_funds() {
     fed.mint_coins_for_user(&user, sats(1010)).await; // 1% LN fee
     let contract_id = user
         .client
-        .fund_outgoing_ln_contract(invoice, rng())
+        .fund_outgoing_ln_contract(&gateway.keys, invoice, rng())
         .await
         .unwrap();
     fed.run_consensus_epochs(2).await; // send coins to LN contract
