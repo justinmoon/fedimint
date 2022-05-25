@@ -6,6 +6,7 @@ use minimint::consensus::ConsensusItem;
 use minimint_api::Amount as MinimintAmount;
 use minimint_wallet::WalletConsensusItem::PegOutSignature;
 use std::ops::Sub;
+use tracing::info;
 
 mod fixture;
 

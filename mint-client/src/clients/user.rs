@@ -436,9 +436,6 @@ impl UserClient {
             .private_route(gateway_route_hint)
             .build_signed(|hash| self.context.secp.sign_recoverable(hash, &node_secret_key))?;
 
-        // TODO: submit ContractOrOfferOutput::Offer to federation to offer payment_secret for sale
-        // TODO: wait for gateway to execute contract?
-
         let offer = IncomingContractOffer {
             amount,
             hash: payment_hash,
@@ -450,28 +447,13 @@ impl UserClient {
         let offer_output = ContractOrOfferOutput::Offer(offer.clone());
         let ln_output = Output::LN(offer_output);
 
-        let amount = ln_output.amount();
-        let (coin_keys, coin_input) = self
-            .mint_client()
-            .create_coin_input(batch.transaction(), amount)?;
-
-        // There is not input here because this is just an announcement
+        // There is no input here because this is just an announcement
         let inputs = vec![];
         let outputs = vec![ln_output];
-        // FIXME: we made a method for this in coin selection PR ...
-        let txid = mint_tx::Transaction::tx_hash_from_parts(&inputs, &outputs);
-
-        let signature = minimint::transaction::agg_sign(
-            &coin_keys,
-            txid.as_hash(),
-            &self.context.secp,
-            &mut rng,
-        );
-
         let transaction = mint_tx::Transaction {
             inputs,
             outputs,
-            signature: Some(signature),
+            signature: None,
         };
 
         let mint_tx_id = self.context.api.submit_transaction(transaction).await?;
