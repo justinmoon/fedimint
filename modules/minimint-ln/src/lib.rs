@@ -12,6 +12,7 @@ pub mod config;
 pub mod contracts;
 mod db;
 
+use std::io::{Error, Write};
 use crate::config::LightningModuleConfig;
 use crate::contracts::incoming::{
     DecryptedPreimage, EncryptedPreimage, IncomingContractOffer, OfferId, PreimageDecryptionShare,
@@ -89,6 +90,17 @@ pub enum ContractOrOfferOutput {
     Contract(ContractOutput),
     Offer(contracts::incoming::IncomingContractOffer),
 }
+
+
+// FIXME: do we need to implement this?
+// impl IdentifyableContract for ContractOrOfferOutput {
+//     fn contract_id(&self) -> ContractId {
+//         match self {
+//             Self::Contract(c) => c.contract.contract_id(),
+//             Self::Offer(c) => c.contract_id(),
+//         }
+//     }
+// }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Deserialize, Serialize, Encodable, Decodable)]
 pub struct ContractOutput {
@@ -208,6 +220,8 @@ impl FederationModule for LightningModule {
 
         let pub_key = match account.contract {
             FundedContract::Outgoing(outgoing) => {
+                // The gateway gets the money if they present valid preimage
+                // If timeout, user can sweep back
                 if outgoing.timelock > block_height(interconnect) {
                     // If the timelock hasn't expired yet …
                     let preimage_hash = bitcoin_hashes::sha256::Hash::hash(

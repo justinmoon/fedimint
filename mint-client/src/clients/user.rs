@@ -9,6 +9,10 @@ use lightning::ln::PaymentSecret;
 use lightning::routing::network_graph::RoutingFees;
 use lightning::routing::router::{RouteHint, RouteHintHop};
 use lightning_invoice::{CreationError, Currency, Invoice, InvoiceBuilder};
+use minimint::modules::ln::contracts::incoming::{
+    DecryptedPreimage, EncryptedPreimage, IncomingContract, IncomingContractOffer,
+};
+use minimint::modules::ln::contracts::Contract::Incoming;
 use minimint::modules::ln::contracts::{ContractId, IdentifyableContract};
 use minimint::modules::ln::{ContractAccount, ContractOrOfferOutput};
 use minimint::modules::mint::tiered::coins::Coins;
@@ -358,6 +362,11 @@ impl UserClient {
         Ok(contract_id)
     }
 
+    // func_incoming_ln_contract
+    // ln_client().create_incoming_ouput
+    // create input with matching amount (plus fee?)
+    // submit transaction
+
     pub async fn wait_contract(
         &self,
         contract: ContractId,
@@ -387,12 +396,17 @@ impl UserClient {
             .map_err(|_| ClientError::WaitContractTimeout)?
     }
 
-    pub fn create_invoice<R: RngCore + CryptoRng>(
+    // announce_preimage_sale?
+    // initiate_preimage_sale?
+    pub async fn create_invoice_and_offer<R: RngCore + CryptoRng>(
         &self,
         amount: Amount,
         mut rng: R,
     ) -> Result<Invoice, ClientError> {
+        let mut batch = DbBatch::new();
+
         // Hard-coding preimage (pubkey) for now
+        // FIXME: this needs to be threshold-encrypted to the federation
         let raw_payment_secret = [0; 32];
         let payment_hash = bitcoin::secp256k1::hashes::sha256::Hash::hash(&raw_payment_secret);
         let payment_secret = PaymentSecret(raw_payment_secret);
@@ -427,6 +441,44 @@ impl UserClient {
         // TODO: submit ContractOrOfferOutput::Offer to federation to offer payment_secret for sale
         // TODO: wait for gateway to execute contract?
 
+        let offer = IncomingContractOffer {
+            amount,
+            hash: payment_hash,
+            encrypted_preimage: EncryptedPreimage::new(
+                raw_payment_secret,
+                &self.context.config.client.ln.threshold_pub_key,
+            ),
+        };
+        let offer_output = ContractOrOfferOutput::Offer(offer.clone());
+        let ln_output = Output::LN(offer_output);
+
+        let amount = ln_output.amount();
+        let (coin_keys, coin_input) = self
+            .mint_client()
+            .create_coin_input(batch.transaction(), amount)?;
+
+        // There is not input here because this is just an announcement
+        let inputs = vec![];
+        let outputs = vec![ln_output];
+        // FIXME: we made a method for this in coin selection PR ...
+        let txid = mint_tx::Transaction::tx_hash_from_parts(&inputs, &outputs);
+
+        let signature = minimint::transaction::agg_sign(
+            &coin_keys,
+            txid.as_hash(),
+            &self.context.secp,
+            &mut rng,
+        );
+
+        let transaction = mint_tx::Transaction {
+            inputs,
+            outputs,
+            signature: Some(signature),
+        };
+
+        let mint_tx_id = self.context.api.submit_transaction(transaction).await?;
+
+        // TODO: should we return the txid ^^ ???
         Ok(invoice)
     }
 }

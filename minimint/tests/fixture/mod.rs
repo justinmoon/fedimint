@@ -9,12 +9,14 @@ use std::sync::atomic::AtomicU16;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use bitcoin::{secp256k1, Address, Transaction};
 use cln_rpc::ClnRpc;
 use futures::executor::block_on;
 use futures::future::join_all;
 use itertools::Itertools;
 use lightning_invoice::Invoice;
+use mint_client::ClientAndGatewayConfig;
 use rand::rngs::OsRng;
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -121,6 +123,10 @@ pub async fn fixtures(
                     .expect("connect to ln_socket"),
             );
             let fed = FederationTest::new(server_config.clone(), &bitcoin_rpc).await;
+            let client_and_gateway = ClientAndGatewayConfig {
+                gateway: keys.clone(),
+                client: client_config.clone(),
+            };
             let user = UserTest::new(client_config.clone(), peers);
             let gateway = GatewayTest::new(
                 Box::new(lightning_rpc),
@@ -170,11 +176,15 @@ pub trait BitcoinTest {
 }
 
 pub trait LightningTest {
-    /// Creates an invoice from a non-gateway LN node
+    /// Creates invoice from a non-gateway LN node
     fn invoice(&self, amount: Amount) -> Invoice;
 
     /// Returns the amount that the gateway LN node has sent
     fn amount_sent(&self) -> Amount;
+
+    /// Pays invoice from a non-gateway LN node
+    // FIXME: shoudl this just panic???
+    fn pay(&self, invoice: Invoice) -> Result<(), anyhow::Error>;
 }
 
 pub struct GatewayTest {
@@ -207,7 +217,11 @@ impl GatewayTest {
         };
 
         let database = Box::new(MemDatabase::new());
-        let user_client = UserClient::new(client, database.clone(), Default::default());
+        let client_and_gateway = ClientAndGatewayConfig {
+            gateway: keys.clone(),
+            client,
+        };
+        let user_client = UserClient::new(client_and_gateway, database.clone(), Default::default());
 
         let client = Arc::new(GatewayClient::new(federation_client, database.clone()));
         let server = LnGateway::new(client.clone(), ln_client).await;
@@ -270,6 +284,10 @@ impl UserTest {
         ));
 
         let database = Box::new(MemDatabase::new());
+        let client_and_gateway = ClientAndGatewayConfig {
+            gateway: keys.clone(),
+            client: config.clone(),
+        };
         let client =
             UserClient::new_with_api(config.clone(), database.clone(), api, Default::default());
 

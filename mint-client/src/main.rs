@@ -57,6 +57,8 @@ enum Command {
     /// Create a lightning invoice to receive payment via gateway
     LnInvoice { amount: Amount },
 
+    /// TODO: LnPaid { bolt11 } -- check if I've been paid? or maybe wait for payment?
+
     /// Fetch (re-)issued coins and finalize issuance process
     Fetch,
 
@@ -170,11 +172,15 @@ async fn main() {
         }
 
         Command::LnInvoice { amount } => {
+            // TODO: client.fund_incoming_contract and client.wait_contract_timeout to put pre-image for sale
             let invoice = client
-                .create_invoice(amount, &mut rng)
+                .create_invoice_and_offer(amount, &mut rng)
+                .await
                 .expect("couldn't create invoice");
             print!("{}", invoice);
-        }
+        } // TODO
+          // Command::LnPaid
+          // Check the status of the invoice
     }
 }
 

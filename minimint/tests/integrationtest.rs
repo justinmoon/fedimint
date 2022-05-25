@@ -3,6 +3,7 @@ use bitcoin::Amount;
 use fixture::fixtures;
 use fixture::{rng, sats};
 use minimint::consensus::ConsensusItem;
+use minimint_api::Amount as MinimintAmount;
 use minimint_wallet::WalletConsensusItem::PegOutSignature;
 use std::ops::Sub;
 
@@ -146,7 +147,7 @@ async fn lightning_gateway_pays_invoice() {
     fed.mint_coins_for_user(&user, sats(1010)).await; // 1% LN fee
     let contract_id = user
         .client
-        .fund_outgoing_ln_contract(&gateway.keys, invoice, rng())
+        .fund_outgoing_ln_contract(invoice, rng())
         .await
         .unwrap();
     fed.run_consensus_epochs(2).await; // send coins to LN contract
@@ -167,6 +168,50 @@ async fn lightning_gateway_pays_invoice() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn receive_lightnign_payment_via_gateway() {
+    let (fed, user, _, gateway, lightning) = fixtures(2, 0, &[sats(10), sats(1000)]).await;
+
+    // Create invoice and offer in the federation (should this block in the future?)
+    let invoice = user
+        .client
+        .create_invoice_and_offer(MinimintAmount::from_msat(1000), rng())
+        .await
+        .unwrap();
+
+    // TODO: wait_contract (but this requires implementing the trait on the Offer variant thing, which requires implementing Encode trait iirc)
+    // instead, just run some epochs
+    fed.run_consensus_epochs(5).await; // announce preimage sale
+
+    // other.pay
+
+    // check that plugin gets hit
+
+    //
+
+    // fed.mint_coins_for_user(&user, sats(1010)).await; // 1% LN fee
+    // let contract_id = user
+    //     .client
+    //     .fund_outgoing_ln_contract(&gateway.keys, invoice, rng())
+    //     .await
+    //     .unwrap();
+    // fed.run_consensus_epochs(2).await; // send coins to LN contract
+
+    // let contract_account = user.client.wait_contract(contract_id).await.unwrap();
+    // assert_eq!(contract_account.amount, sats(1010));
+    // gateway
+    //     .server
+    //     .pay_invoice(contract_id, rng())
+    //     .await
+    //     .unwrap();
+    // fed.run_consensus_epochs(4).await; // contract to mint coins, sign coins
+
+    // gateway.server.await_contract_claimed(contract_id).await;
+    // assert_eq!(user.total_coins(), sats(0));
+    // assert_eq!(gateway.user_client.coins().amount(), sats(1010));
+    // assert_eq!(lightning.amount_sent(), sats(1000));
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn lightning_gateway_cannot_claim_invalid_preimage() {
     let (fed, user, _, gateway, lightning) = fixtures(2, 0, &[sats(10), sats(1000)]).await;
     let invoice = lightning.invoice(sats(1000));
@@ -174,7 +219,7 @@ async fn lightning_gateway_cannot_claim_invalid_preimage() {
     fed.mint_coins_for_user(&user, sats(1010)).await; // 1% LN fee
     let contract_id = user
         .client
-        .fund_outgoing_ln_contract(&gateway.keys, invoice, rng())
+        .fund_outgoing_ln_contract(invoice, rng())
         .await
         .unwrap();
     fed.run_consensus_epochs(2).await; // send coins to LN contract
@@ -199,7 +244,7 @@ async fn lightning_gateway_can_abort_payment_to_return_user_funds() {
     fed.mint_coins_for_user(&user, sats(1010)).await; // 1% LN fee
     let contract_id = user
         .client
-        .fund_outgoing_ln_contract(&gateway.keys, invoice, rng())
+        .fund_outgoing_ln_contract(invoice, rng())
         .await
         .unwrap();
     fed.run_consensus_epochs(2).await; // send coins to LN contract
