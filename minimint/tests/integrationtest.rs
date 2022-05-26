@@ -1,11 +1,14 @@
 use assert_matches::assert_matches;
 use bitcoin::Amount;
+use cln_plugin::{Error, Plugin};
 use fixture::fixtures;
 use fixture::{rng, sats};
+use ln_gateway::plugin::buy_preimage;
 use minimint::consensus::ConsensusItem;
 use minimint_api::Amount as MinimintAmount;
 use minimint_ln::contracts::incoming::IncomingContractOffer;
 use minimint_wallet::WalletConsensusItem::PegOutSignature;
+use serde_json::json;
 use std::ops::Sub;
 use tracing::info;
 
@@ -186,33 +189,40 @@ async fn receive_lightning_payment_via_gateway() {
     let offers = user.client.get_offers().await.unwrap();
     assert_eq!(&offers[0].hash, invoice.payment_hash());
 
-    // other.pay
+    // Call business logic of the core-lightning gateway plugin
+    // FIXME: values hard-coded from https://github.com/ElementsProject/lightning/blob/master/doc/PLUGINS.md#htlc_accepted
+    let json = json!({
+        // "onion": {
+        //     "payload": "",
+        //     "short_channel_id": "1x2x3",
+        //     "forward_amount": "42msat",
+        //     "outgoing_cltv_value": 500014,
+        //     "shared_secret": "0000000000000000000000000000000000000000000000000000000000000000",
+        //     "next_onion": "[1365bytes of serialized onion]"
+        // },
+        "htlc": {
+            // FIXME: fix these other values ...
+            // "amount": "43msat",
+            // "cltv_expiry": 500028,
+            // "cltv_expiry_relative": 10,
+            "payment_hash": invoice.payment_hash()
+        }
+    });
+    let preimage = buy_preimage(std::sync::Arc::new(gateway.server), json)
+        .await
+        .unwrap();
+    assert_eq!(
+        "0000000000000000000000000000000000000000000000000000000000000000",
+        preimage,
+    );
 
-    // check that plugin gets hit
+    // TODO: run some epochs to allow for preimage decryption
 
-    //
+    // TODO: gateway plugin code (another function besides buy_preimage that is also called by htlc_accepted_handler)
+    // polls federation for the actual decrypted preimage. This gets returned by htlc_accepted_handler
+    // separate functions because there are epochs in between
 
-    // fed.mint_coins_for_user(&user, sats(1010)).await; // 1% LN fee
-    // let contract_id = user
-    //     .client
-    //     .fund_outgoing_ln_contract(&gateway.keys, invoice, rng())
-    //     .await
-    //     .unwrap();
-    // fed.run_consensus_epochs(2).await; // send coins to LN contract
-
-    // let contract_account = user.client.wait_contract(contract_id).await.unwrap();
-    // assert_eq!(contract_account.amount, sats(1010));
-    // gateway
-    //     .server
-    //     .pay_invoice(contract_id, rng())
-    //     .await
-    //     .unwrap();
-    // fed.run_consensus_epochs(4).await; // contract to mint coins, sign coins
-
-    // gateway.server.await_contract_claimed(contract_id).await;
-    // assert_eq!(user.total_coins(), sats(0));
-    // assert_eq!(gateway.user_client.coins().amount(), sats(1010));
-    // assert_eq!(lightning.amount_sent(), sats(1000));
+    // TODO: user wallet withdraws their ecash tokens and balances check out
 }
 
 #[tokio::test(flavor = "multi_thread")]

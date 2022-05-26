@@ -1,6 +1,7 @@
 #[macro_use]
 extern crate serde_json;
 use cln_plugin::{options, Builder, Error, Plugin};
+use ln_gateway::plugin::buy_preimage;
 use ln_gateway::{LnGateway, LnGatewayConfig};
 use minimint::config::load_from_file;
 use minimint::modules::ln::contracts::ContractId;
@@ -11,9 +12,9 @@ use log::{debug, warn};
 // use tracing::{debug, warn};
 // use tracing_subscriber::EnvFilter;
 
-async fn htlc_accepted_handler(
-    _p: Plugin<()>,
-    _v: serde_json::Value,
+pub async fn htlc_accepted_handler(
+    p: Plugin<State>,
+    v: serde_json::Value,
 ) -> Result<serde_json::Value, Error> {
     debug!("htlc_accepted observed");
 
@@ -21,7 +22,8 @@ async fn htlc_accepted_handler(
     // If the preimage matches, complete the payment
     // Check that the amount is matches
     // You've lost ecash tokens, but gained lightning btc
-    let preimage = "0000000000000000000000000000000000000000000000000000000000000000";
+    // let preimage = "0000000000000000000000000000000000000000000000000000000000000000";
+    let preimage = buy_preimage(p.state().gateway.clone(), v).await?;
 
     Ok(json!({
       "result": "resolve",
@@ -86,13 +88,14 @@ async fn main() -> Result<(), Error> {
     //         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
     //     )
     //     .init();
-    if let Some(plugin) = Builder::new((), tokio::io::stdin(), tokio::io::stdout())
+    if let Some(plugin: Plugin<State>) = Builder::new((), tokio::io::stdin(), tokio::io::stdout())
         .option(options::ConfigOption::new(
             "minimint-cfg",
             // FIXME: cln_plugin doesn't yet support optional parameters
             options::Value::String("default-dont-use".into()),
             "minimint config directory",
         ))
+        // FIXME: how to we tell the builder to use State instead of ()?
         .hook("htlc_accepted", htlc_accepted_handler)
         .start()
         .await?

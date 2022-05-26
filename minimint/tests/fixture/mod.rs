@@ -215,6 +215,11 @@ impl GatewayTest {
         let user_client = UserClient::new(client, database.clone(), Default::default());
 
         let client = Arc::new(GatewayClient::new(federation_client, database.clone()));
+
+        // TODO: delete this. gateway is a plugin now.
+        // TODO: tell gateway lightning node to restart the c-lightning plugin
+        // Or we could have the gateway watch the config file for changes ???
+        // That will be slightly hard because it spawns a thread so it would need to also sent the config across that thread ...
         let server = LnGateway::new(client.clone(), ln_client).await;
 
         GatewayTest {

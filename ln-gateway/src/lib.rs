@@ -1,4 +1,5 @@
 pub mod ln;
+pub mod plugin;
 
 use crate::ln::{LightningError, LnRpc};
 use minimint::modules::ln::contracts::ContractId;
@@ -13,6 +14,9 @@ use thiserror::Error;
 use tokio::sync::Mutex;
 use tokio::time::Instant;
 use tracing::{debug, error, instrument, warn};
+
+#[macro_use]
+extern crate serde_json;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LnGatewayConfig {
