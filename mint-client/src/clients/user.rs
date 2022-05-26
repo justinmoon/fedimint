@@ -383,6 +383,13 @@ impl UserClient {
         }
     }
 
+    pub async fn get_offers(&self) -> Result<Vec<IncomingContractOffer>, ClientError> {
+        self.ln_client()
+            .get_offers()
+            .await
+            .map_err(|_| ClientError::FetchOfferError)
+    }
+
     pub async fn wait_contract_timeout(
         &self,
         contract: ContractId,
@@ -395,6 +402,7 @@ impl UserClient {
 
     // announce_preimage_sale?
     // initiate_preimage_sale?
+    // shoould we split this into 2 functions -- create invoice and announce offer?
     pub async fn create_invoice_and_offer<R: RngCore + CryptoRng>(
         &self,
         gateway: &LightningGateway,
@@ -477,6 +485,8 @@ pub enum ClientError {
     PegInAmountTooSmall,
     #[error("Timed out while waiting for contract to be accepted")]
     WaitContractTimeout,
+    #[error("Error fetching offer")]
+    FetchOfferError,
     #[error("Failed to create lightning invoice: {0}")]
     InvoiceError(CreationError),
 }

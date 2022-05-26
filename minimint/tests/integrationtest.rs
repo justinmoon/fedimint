@@ -4,6 +4,7 @@ use fixture::fixtures;
 use fixture::{rng, sats};
 use minimint::consensus::ConsensusItem;
 use minimint_api::Amount as MinimintAmount;
+use minimint_ln::contracts::incoming::IncomingContractOffer;
 use minimint_wallet::WalletConsensusItem::PegOutSignature;
 use std::ops::Sub;
 use tracing::info;
@@ -169,7 +170,7 @@ async fn lightning_gateway_pays_invoice() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn receive_lightnign_payment_via_gateway() {
+async fn receive_lightning_payment_via_gateway() {
     let (fed, user, _, gateway, lightning) = fixtures(2, 0, &[sats(10), sats(1000)]).await;
 
     // Create invoice and offer in the federation (should this block in the future?)
@@ -179,9 +180,11 @@ async fn receive_lightnign_payment_via_gateway() {
         .await
         .unwrap();
 
-    // TODO: wait_contract (but this requires implementing the trait on the Offer variant thing, which requires implementing Encode trait iirc)
-    // instead, just run some epochs
-    fed.run_consensus_epochs(5).await; // announce preimage sale
+    // Run 2 epochs to get the offer to show up p
+    fed.run_consensus_epochs(2).await; // announce preimage sale
+
+    let offers = user.client.get_offers().await.unwrap();
+    assert_eq!(&offers[0].hash, invoice.payment_hash());
 
     // other.pay
 

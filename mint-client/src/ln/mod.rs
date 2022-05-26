@@ -2,14 +2,15 @@ mod db;
 pub mod gateway;
 pub mod outgoing;
 
-use bitcoin_hashes::sha256::Hash;
 use crate::api::ApiError;
 use crate::ln::db::{OutgoingPaymentKey, OutgoingPaymentKeyPrefix};
 use crate::ln::gateway::LightningGateway;
 use crate::ln::outgoing::{OutgoingContractAccount, OutgoingContractData};
 use crate::BorrowedClientContext;
+use bitcoin_hashes::sha256::Hash;
 use lightning_invoice::Invoice;
 use minimint::modules::ln::config::LightningModuleClientConfig;
+use minimint::modules::ln::contracts::incoming::{EncryptedPreimage, IncomingContractOffer};
 use minimint::modules::ln::contracts::outgoing::OutgoingContract;
 use minimint::modules::ln::contracts::{
     Contract, ContractId, FundedContract, IdentifyableContract,
@@ -21,7 +22,6 @@ use minimint_api::db::batch::BatchTx;
 use minimint_api::Amount;
 use rand::{CryptoRng, RngCore};
 use thiserror::Error;
-use minimint::modules::ln::contracts::incoming::{EncryptedPreimage, IncomingContractOffer};
 
 pub struct LnClient<'c> {
     pub context: BorrowedClientContext<'c, LightningModuleClientConfig>,
@@ -136,7 +136,6 @@ impl<'c> LnClient<'c> {
         payment_hash: Hash,
         payment_secret: [u8; 32],
     ) -> Result<ContractOrOfferOutput> {
-
         // TODO: create and save secret key here???
         let offer = IncomingContractOffer {
             amount,
@@ -149,6 +148,14 @@ impl<'c> LnClient<'c> {
         let offer_output = ContractOrOfferOutput::Offer(offer.clone());
 
         Ok(offer_output)
+    }
+
+    pub async fn get_offers(&self) -> Result<Vec<IncomingContractOffer>> {
+        self.context
+            .api
+            .fetch_offers()
+            .await
+            .map_err(LnClientError::ApiError)
     }
 }
 
