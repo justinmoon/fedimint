@@ -5,6 +5,7 @@ use ln_gateway::plugin::buy_preimage;
 use ln_gateway::{LnGateway, LnGatewayConfig};
 use minimint::config::load_from_file;
 use minimint::modules::ln::contracts::ContractId;
+use std::sync::Mutex;
 use std::{path::PathBuf, sync::Arc};
 use tide::Response;
 
@@ -33,17 +34,17 @@ pub async fn htlc_accepted_handler(
 
 #[derive(Clone)]
 pub struct State {
-    gateway: Arc<LnGateway>,
+    // interior mutability needed b/c cln state must be created *before* plugin receives options needed to create LnGateway
+    gateway: Arc<Mutex<Option<LnGateway>>>,
 }
 
 async fn pay_invoice(mut req: tide::Request<State>) -> tide::Result {
-    debug!("Gateway received outgoing pay request");
     let rng = rand::rngs::OsRng::new().unwrap();
     let contract: ContractId = req.body_json().await?;
-    let State { ref gateway } = req.state();
-
     debug!("Received request to pay invoice of contract {}", contract);
 
+    let State { gateway } = req.state();
+    let gateway = gateway.lock().unwrap().take().unwrap();
     gateway
         .pay_invoice(contract, rng)
         .await
@@ -54,7 +55,10 @@ async fn pay_invoice(mut req: tide::Request<State>) -> tide::Result {
         .map(|()| Response::new(200))
 }
 
-async fn run_gateway(workdir: PathBuf) -> tide::Result<()> {
+async fn run_gateway(
+    workdir: PathBuf,
+    gateway_wrapper: Arc<Mutex<Option<LnGateway>>>,
+) -> tide::Result<()> {
     // Give core-lightning some time to startup RPC socket (ln socket wasn't there ...)
     // FIXME: is there a better way?
     tokio::time::sleep(std::time::Duration::from_millis(3000)).await;
@@ -69,8 +73,14 @@ async fn run_gateway(workdir: PathBuf) -> tide::Result<()> {
 
     let gateway = LnGateway::from_config(Box::new(db), cfg).await;
 
+    // Update gateway in the plugin's state
+    {
+        let mut gateway_wrapper_writable = gateway_wrapper.lock().unwrap();
+        *gateway_wrapper_writable = Some(gateway);
+    }
+
     let state = State {
-        gateway: Arc::new(gateway),
+        gateway: gateway_wrapper,
     };
 
     let mut app = tide::with_state(state);
@@ -88,14 +98,19 @@ async fn main() -> Result<(), Error> {
     //         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
     //     )
     //     .init();
-    if let Some(plugin: Plugin<State>) = Builder::new((), tokio::io::stdin(), tokio::io::stdout())
+
+    // Can't initialize gateway yet, but need to define it for the htlc_accepted_handler
+    let gateway = Arc::new(Mutex::new(None));
+    let state = State {
+        gateway: gateway.clone(),
+    };
+    if let Some(plugin) = Builder::new(state, tokio::io::stdin(), tokio::io::stdout())
         .option(options::ConfigOption::new(
             "minimint-cfg",
             // FIXME: cln_plugin doesn't yet support optional parameters
             options::Value::String("default-dont-use".into()),
             "minimint config directory",
         ))
-        // FIXME: how to we tell the builder to use State instead of ()?
         .hook("htlc_accepted", htlc_accepted_handler)
         .start()
         .await?
@@ -111,7 +126,7 @@ async fn main() -> Result<(), Error> {
             }
             _ => unreachable!(),
         };
-        tokio::spawn(run_gateway(workdir.clone()));
+        tokio::spawn(run_gateway(workdir.clone(), gateway));
         plugin.join().await
     } else {
         Ok(())

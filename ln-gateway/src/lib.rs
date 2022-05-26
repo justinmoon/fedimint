@@ -122,6 +122,10 @@ impl LnGateway {
             .await;
         debug!("Claim transaction accepted");
     }
+
+    pub async fn foo(&self) {
+        ()
+    }
 }
 
 /// This function runs as a background process fetching issued token signatures and driving forward

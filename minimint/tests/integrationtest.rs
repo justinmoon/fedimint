@@ -208,9 +208,12 @@ async fn receive_lightning_payment_via_gateway() {
             "payment_hash": invoice.payment_hash()
         }
     });
-    let preimage = buy_preimage(std::sync::Arc::new(gateway.server), json)
-        .await
-        .unwrap();
+    let preimage = buy_preimage(
+        std::sync::Arc::new(std::sync::Mutex::new(Some(gateway.server))),
+        json,
+    )
+    .await
+    .unwrap();
     assert_eq!(
         "0000000000000000000000000000000000000000000000000000000000000000",
         preimage,
