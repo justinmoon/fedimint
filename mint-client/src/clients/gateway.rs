@@ -19,6 +19,18 @@ use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use minimint::modules::ln::contracts::{
+    incoming::{DecryptedPreimage, IncomingContract, IncomingContractOffer},
+    Contract,
+};
+use minimint::modules::ln::{ContractOrOfferOutput, ContractOutput};
+
+// use minimint_ln::contracts::{Contract, ContractOutcome, IdentifyableContract};
+// use minimint_ln::{
+//     ContractInput, ContractOrOfferOutput, ContractOutput, LightningModule, LightningModuleError,
+//     OutputOutcome,
+// };
+
 pub struct GatewayClient {
     context: OwnedClientContext<GatewayClientConfig>,
 }
@@ -76,7 +88,7 @@ impl GatewayClient {
         }
     }
 
-    fn mint_client(&self) -> MintClient {
+    pub fn mint_client(&self) -> MintClient {
         MintClient {
             context: self
                 .context
@@ -235,6 +247,66 @@ impl GatewayClient {
         Ok(out_point)
     }
 
+    pub async fn buy_preimage_offer(
+        &self,
+        payment_hash: &bitcoin_hashes::sha256::Hash,
+    ) -> Result<minimint_api::TransactionId> {
+        let mut batch = DbBatch::new();
+
+        // See if there's an offer for this payment hash.
+        let offers: Vec<IncomingContractOffer> = self.ln_client().get_offers().await?;
+        let offer = match offers.iter().find(|o| &o.hash == payment_hash) {
+            Some(o) => o,
+            None => return Err(GatewayClientError::NoOffer),
+        };
+
+        // Inputs
+        let (coin_keys, coin_input) = self
+            .mint_client()
+            .create_coin_input(batch.transaction(), offer.amount)
+            // .map_err(|e| Err(GatewayClientError::MintClientError(e)))
+            .expect("TODO: map this error"); // TODO
+
+        // Outputs
+        let our_pub_key = secp256k1_zkp::schnorrsig::PublicKey::from_keypair(
+            &self.context.secp,
+            &self.context.config.redeem_key,
+        );
+        let contract = Contract::Incoming(IncomingContract {
+            hash: offer.hash,
+            encrypted_preimage: offer.encrypted_preimage.clone(),
+            decrypted_preimage: DecryptedPreimage::Pending,
+            gateway_key: our_pub_key,
+        });
+        let incoming_output =
+            minimint::transaction::Output::LN(ContractOrOfferOutput::Contract(ContractOutput {
+                amount: Amount::from_msat(1000), // FIXME: don't hard-code
+                contract: contract.clone(),
+            }));
+
+        // Submit transaction
+        let inputs = vec![minimint::transaction::Input::Mint(coin_input)];
+        let outputs = vec![incoming_output];
+        let txid = minimint::transaction::Transaction::tx_hash_from_parts(&inputs, &outputs);
+        let mut rng = rand::rngs::OsRng::new().unwrap(); // FIXME: this should be an argument
+        let signature = minimint::transaction::agg_sign(
+            &coin_keys,
+            txid.as_hash(),
+            &self.context.secp,
+            &mut rng,
+        );
+        let transaction = minimint::transaction::Transaction {
+            inputs,
+            outputs,
+            signature: Some(signature),
+        };
+        let mint_tx_id = self.context.api.submit_transaction(transaction).await?;
+
+        self.context.db.apply_batch(batch).expect("DB error");
+
+        Ok(mint_tx_id)
+    }
+
     /// Lists all claim transactions for outgoing contracts that we have submitted but were not part
     /// of the consensus yet.
     pub fn list_pending_claimed_outgoing(&self) -> Vec<ContractId> {
@@ -356,6 +428,8 @@ pub enum GatewayClientError {
     Underfunded(Amount, Amount),
     #[error("The contract's timeout is in the past or does not allow for a safety margin")]
     TimeoutTooClose,
+    #[error("No offer")]
+    NoOffer,
 }
 
 impl From<LnClientError> for GatewayClientError {

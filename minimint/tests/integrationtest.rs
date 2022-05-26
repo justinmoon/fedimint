@@ -177,6 +177,9 @@ async fn lightning_gateway_pays_invoice() {
 async fn receive_lightning_payment_via_gateway() {
     let (fed, user, _, gateway, lightning) = fixtures(2, 0, &[sats(10), sats(1000)]).await;
 
+    // TODO: we need to mint coins for gateway
+    fed.mint_coins_for_user(&gateway.user, sats(9999999)).await; // 1% LN fee
+
     // Create invoice and offer in the federation (should this block in the future?)
     let invoice = user
         .client

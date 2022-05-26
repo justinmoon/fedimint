@@ -3,7 +3,10 @@ pub mod plugin;
 
 use crate::ln::{LightningError, LnRpc};
 use bitcoin_hashes::sha256::Hash;
-use minimint::modules::ln::contracts::{incoming::IncomingContractOffer, ContractId};
+use minimint::modules::ln::contracts::{
+    incoming::{DecryptedPreimage, IncomingContract, IncomingContractOffer},
+    Contract, ContractId,
+};
 use minimint_api::db::Database;
 use mint_client::clients::gateway::{GatewayClient, GatewayClientConfig, GatewayClientError};
 use rand::{CryptoRng, RngCore};
@@ -14,7 +17,7 @@ use std::time::Duration;
 use thiserror::Error;
 use tokio::sync::Mutex;
 use tokio::time::Instant;
-use tracing::{debug, error, instrument, warn};
+use tracing::{debug, error, info, instrument, warn};
 
 #[macro_use]
 extern crate serde_json;
@@ -65,17 +68,12 @@ impl LnGateway {
 
     // TODO: payment hash should be Hash, not &str
     pub async fn buy_preimage(&self, payment_hash: &Hash) -> Result<String, LnGatewayError> {
-        let offers: Vec<IncomingContractOffer> = self
+        let txid = self
             .federation_client
-            .ln_client()
-            .get_offers()
-            .await
-            .map_err(|e| LnGatewayError::Other)?;
+            .buy_preimage_offer(payment_hash)
+            .await?;
 
-        let offer = match offers.iter().find(|o| &o.hash == payment_hash) {
-            Some(o) => o,
-            None => return Err(LnGatewayError::Other),
-        };
+        info!("trying to buy preimage {:?}", txid);
 
         // Wait for decryption
 

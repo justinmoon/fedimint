@@ -122,11 +122,12 @@ pub async fn fixtures(
                     .expect("connect to ln_socket"),
             );
             let fed = FederationTest::new(server_config.clone(), &bitcoin_rpc).await;
-            let user = UserTest::new(client_config.clone(), peers);
+            let user = UserTest::new(client_config.clone(), peers.clone());
             let gateway = GatewayTest::new(
                 Box::new(lightning_rpc),
                 client_config,
                 lightning.gateway_node_pub_key,
+                peers,
             )
             .await;
 
@@ -138,11 +139,12 @@ pub async fn fixtures(
             let bitcoin_rpc = || Box::new(bitcoin.clone()) as Box<dyn BitcoindRpc>;
             let lightning = FakeLightningTest::new();
             let fed = FederationTest::new(server_config.clone(), &bitcoin_rpc).await;
-            let user = UserTest::new(client_config.clone(), peers);
+            let user = UserTest::new(client_config.clone(), peers.clone());
             let gateway = GatewayTest::new(
                 Box::new(lightning.clone()),
                 client_config,
                 lightning.gateway_node_pub_key,
+                peers,
             )
             .await;
 
@@ -186,7 +188,9 @@ pub struct GatewayTest {
     pub server: LnGateway,
     pub keys: LightningGateway,
     pub user_client: UserClient,
+    pub user: UserTest,
     pub client: Arc<GatewayClient>,
+    pub database: Box<dyn Database>,
 }
 
 impl GatewayTest {
@@ -194,6 +198,7 @@ impl GatewayTest {
         ln_client: Box<dyn LnRpc>,
         client: ClientConfig,
         node_pub_key: secp256k1::PublicKey,
+        peers: Vec<PeerId>,
     ) -> Self {
         let mut rng = OsRng::new().unwrap();
         let ctx = bitcoin::secp256k1::Secp256k1::new();
@@ -212,7 +217,8 @@ impl GatewayTest {
         };
 
         let database = Box::new(MemDatabase::new());
-        let user_client = UserClient::new(client, database.clone(), Default::default());
+        let user_client = UserClient::new(client.clone(), database.clone(), Default::default());
+        let user = UserTest::new(client, peers);
 
         let client = Arc::new(GatewayClient::new(federation_client, database.clone()));
 
@@ -226,7 +232,9 @@ impl GatewayTest {
             server,
             keys,
             user_client,
+            user,
             client,
+            database,
         }
     }
 }
@@ -338,6 +346,7 @@ impl FederationTest {
     /// Inserts coins directly into the databases of federation nodes, runs consensus to sign them
     /// then fetches the coins for the user client.
     pub async fn mint_coins_for_user(&self, user: &UserTest, amount: Amount) {
+        info!("1");
         let (finalization, coins) = user
             .client
             .mint_client()
@@ -346,6 +355,7 @@ impl FederationTest {
             txid: Default::default(),
             out_idx: 0,
         };
+        info!("2");
         for server in &self.servers {
             let mut batch = DbBatch::new();
             let mut batch_tx = batch.transaction();
@@ -372,6 +382,7 @@ impl FederationTest {
                 .unwrap();
             server.borrow_mut().database.apply_batch(batch).unwrap();
         }
+        info!("3");
         let mut batch = DbBatch::new();
         user.client.mint_client().save_coin_finalization_data(
             batch.transaction(),
@@ -380,6 +391,7 @@ impl FederationTest {
         );
         user.database.apply_batch(batch).unwrap();
 
+        info!("4");
         self.run_consensus_epochs(2).await;
         user.client.fetch_all_coins().await.unwrap();
     }

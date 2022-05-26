@@ -4,6 +4,7 @@ use crate::api::ApiError;
 use crate::BorrowedClientContext;
 use bitcoin::schnorr::KeyPair;
 use db::{CoinKey, CoinKeyPrefix, OutputFinalizationKey, OutputFinalizationKeyPrefix};
+use log::info;
 use minimint::modules::mint::config::MintClientConfig;
 use minimint::modules::mint::tiered::coins::Coins;
 use minimint::modules::mint::{
@@ -144,18 +145,21 @@ impl<'c> MintClient<'c> {
         amount: Amount,
         mut rng: R,
     ) -> (CoinFinalizationData, Coins<BlindToken>) {
+        info!("a");
         let (coin_finalization_data, sig_req) = CoinFinalizationData::new(
             amount,
             &self.context.config.tbs_pks,
             self.context.secp,
             &mut rng,
         );
+        info!("b");
 
         let coin_output = sig_req
             .0
             .into_iter()
             .map(|(amt, token)| (amt, BlindToken(token)))
             .collect();
+        info!("c");
 
         (coin_finalization_data, coin_output)
     }
