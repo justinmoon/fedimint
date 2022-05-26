@@ -7,7 +7,7 @@ use minimint::modules::ln::contracts::{
     incoming::{DecryptedPreimage, IncomingContract, IncomingContractOffer},
     Contract, ContractId,
 };
-use minimint_api::db::Database;
+use minimint_api::{db::Database, TransactionId};
 use mint_client::clients::gateway::{GatewayClient, GatewayClientConfig, GatewayClientError};
 use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
@@ -72,10 +72,15 @@ impl LnGateway {
             .federation_client
             .buy_preimage_offer(payment_hash)
             .await?;
+        // let txid: TransactionId = Default::default();
 
         info!("trying to buy preimage {:?}", txid);
 
-        // Wait for decryption
+        // Wait for decryption ... poll /transaction/:id
+        let preimage = self
+            .federation_client
+            .await_preimage_decryption(txid)
+            .await?;
 
         // If preimage invalid, claw back funds and raise error
         // (or will the background thread find it???)

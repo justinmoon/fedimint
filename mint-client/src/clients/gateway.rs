@@ -14,7 +14,7 @@ use minimint::outcome::TransactionStatus;
 use minimint::transaction::{agg_sign, Input, Output, Transaction, TransactionItem};
 use minimint_api::db::batch::DbBatch;
 use minimint_api::db::Database;
-use minimint_api::{Amount, OutPoint, PeerId};
+use minimint_api::{Amount, OutPoint, PeerId, TransactionId};
 use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -24,6 +24,7 @@ use minimint::modules::ln::contracts::{
     Contract,
 };
 use minimint::modules::ln::{ContractOrOfferOutput, ContractOutput};
+use tracing::info;
 
 // use minimint_ln::contracts::{Contract, ContractOutcome, IdentifyableContract};
 // use minimint_ln::{
@@ -315,6 +316,21 @@ impl GatewayClient {
             .find_by_prefix(&OutgoingPaymentClaimKeyPrefix)
             .map(|res| res.expect("DB error").0 .0)
             .collect()
+    }
+
+    // TODO: return a preimage
+    pub async fn await_preimage_decryption(
+        &self,
+        txid: TransactionId,
+    ) -> Result<TransactionStatus> {
+        loop {
+            let status = self.context.api.fetch_tx_outcome(txid).await?;
+            info!("tx status: {:?}", status);
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            break;
+        }
+        // tIXME:
+        Ok(TransactionStatus::Error(String::from("foobar")))
     }
 
     // TODO: improve error propagation on tx transmission
