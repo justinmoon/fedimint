@@ -1637,6 +1637,7 @@ dependencies = [
  "async-std",
  "async-trait",
  "clap",
+ "bitcoin_hashes",
  "cln-plugin",
  "cln-rpc",
  "futures",

@@ -10,6 +10,7 @@ use minimint_ln::contracts::incoming::IncomingContractOffer;
 use minimint_wallet::WalletConsensusItem::PegOutSignature;
 use serde_json::json;
 use std::ops::Sub;
+use std::sync::{Arc, Mutex};
 use tracing::info;
 
 mod fixture;
@@ -208,12 +209,9 @@ async fn receive_lightning_payment_via_gateway() {
             "payment_hash": invoice.payment_hash()
         }
     });
-    let preimage = buy_preimage(
-        std::sync::Arc::new(std::sync::Mutex::new(Some(gateway.server))),
-        json,
-    )
-    .await
-    .unwrap();
+    let preimage = buy_preimage(Arc::new(Mutex::new(Some(gateway.server))), json)
+        .await
+        .unwrap();
     assert_eq!(
         "0000000000000000000000000000000000000000000000000000000000000000",
         preimage,

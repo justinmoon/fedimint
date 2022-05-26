@@ -2,10 +2,11 @@ use crate::api::{ApiError, FederationApi};
 use crate::clients::gateway::db::{
     OutgoingPaymentClaimKey, OutgoingPaymentClaimKeyPrefix, OutgoingPaymentKey,
 };
+// use crate::clients::user::{UserClient, UserClientError};
 use crate::ln::outgoing::OutgoingContractAccount;
 use crate::ln::{LnClient, LnClientError};
 use crate::mint::{MintClient, MintClientError};
-use crate::{api, OwnedClientContext};
+use crate::{api, OwnedClientContext, UserClient};
 use lightning_invoice::Invoice;
 use minimint::config::ClientConfig;
 use minimint::modules::ln::contracts::{outgoing, ContractId, IdentifyableContract};
@@ -69,7 +70,7 @@ impl GatewayClient {
         }
     }
 
-    fn ln_client(&self) -> LnClient {
+    pub fn ln_client(&self) -> LnClient {
         LnClient {
             context: self.context.borrow_with_module_config(|cfg| &cfg.common.ln),
         }

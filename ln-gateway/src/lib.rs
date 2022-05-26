@@ -2,7 +2,8 @@ pub mod ln;
 pub mod plugin;
 
 use crate::ln::{LightningError, LnRpc};
-use minimint::modules::ln::contracts::ContractId;
+use bitcoin_hashes::sha256::Hash;
+use minimint::modules::ln::contracts::{incoming::IncomingContractOffer, ContractId};
 use minimint_api::db::Database;
 use mint_client::clients::gateway::{GatewayClient, GatewayClientConfig, GatewayClientError};
 use rand::{CryptoRng, RngCore};
@@ -60,6 +61,33 @@ impl LnGateway {
             ln_client,
             fetcher,
         }
+    }
+
+    // TODO: payment hash should be Hash, not &str
+    pub async fn buy_preimage(&self, payment_hash: &Hash) -> Result<String, LnGatewayError> {
+        let offers: Vec<IncomingContractOffer> = self
+            .federation_client
+            .ln_client()
+            .get_offers()
+            .await
+            .map_err(|e| LnGatewayError::Other)?;
+
+        let offer = match offers.iter().find(|o| &o.hash == payment_hash) {
+            Some(o) => o,
+            None => return Err(LnGatewayError::Other),
+        };
+
+        // Wait for decryption
+
+        // If preimage invalid, claw back funds and raise error
+        // (or will the background thread find it???)
+
+        // If preimage valid, return it so that plugin can complete htlc
+        // TODO: save to db??
+
+        Ok(String::from(
+            "0000000000000000000000000000000000000000000000000000000000000000",
+        ))
     }
 
     #[instrument(skip_all, fields(%contract_id))]
@@ -166,6 +194,8 @@ pub enum LnGatewayError {
     FederationError(GatewayClientError),
     #[error("Our LN node could not route the payment: {0:?}")]
     CouldNotRoute(LightningError),
+    #[error("Other")]
+    Other,
 }
 
 impl From<GatewayClientError> for LnGatewayError {
