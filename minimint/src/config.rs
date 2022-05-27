@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::path::PathBuf;
+use tracing::info;
 
 #[derive(Parser)]
 pub struct ServerOpts {
@@ -179,6 +180,7 @@ impl ServerConfig {
 }
 
 pub fn load_from_file<T: DeserializeOwned>(path: &Path) -> T {
+    info!("path: {:?}", path);
     let file = std::fs::File::open(path).expect("Can't read cfg file.");
     serde_json::from_reader(file).expect("Could not parse cfg file.")
 }

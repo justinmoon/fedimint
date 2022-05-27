@@ -6,6 +6,7 @@ use minimint::modules::mint::tiered::coins::Coins;
 use minimint::modules::wallet::txoproof::TxOutProof;
 use minimint_api::encoding::Decodable;
 use minimint_api::Amount;
+use mint_client::clients::gateway::{GatewayClient, GatewayClientConfig};
 use mint_client::mint::SpendableCoin;
 use mint_client::{ClientAndGatewayConfig, UserClient};
 use serde::{Deserialize, Serialize};
@@ -20,6 +21,13 @@ struct Options {
     workdir: PathBuf,
     #[clap(subcommand)]
     command: Command,
+}
+
+// copy-pasted from ln-gateway/src/lib.rs
+#[derive(Debug, Serialize, Deserialize)]
+pub struct LnGatewayConfig {
+    pub federation_client: GatewayClientConfig,
+    pub ln_socket: PathBuf,
 }
 
 #[derive(Parser)]
@@ -64,6 +72,9 @@ enum Command {
 
     /// Display wallet info (holdings, tiers)
     Info,
+
+    /// Display gateway stuff
+    Gw,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -94,7 +105,19 @@ async fn main() {
 
     let client = UserClient::new(cfg.client, Box::new(db), Default::default());
 
+    let gw_cfg_path = opts.workdir.join("gateway.json");
+    let gw_db_path = opts.workdir.join("gateway.db");
+    let gw_db = sled::open(&gw_db_path)
+        .unwrap()
+        .open_tree("mint-client")
+        .unwrap();
+    let gw_cfg: LnGatewayConfig = load_from_file(&gw_cfg_path);
+    let gw_client = GatewayClient::new(gw_cfg.federation_client, Box::new(gw_db));
+
     match opts.command {
+        Command::Gw => {
+            println!("{:?}", gw_client.mint_client().coins());
+        }
         Command::PegInAddress => {
             println!("{}", client.get_new_pegin_address(&mut rng))
         }
