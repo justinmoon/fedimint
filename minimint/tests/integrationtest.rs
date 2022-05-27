@@ -1,9 +1,9 @@
 use assert_matches::assert_matches;
+use bitcoin::schnorr::PublicKey;
 use bitcoin::Amount;
 use cln_plugin::{Error, Plugin};
 use fixture::fixtures;
 use fixture::{rng, sats};
-use ln_gateway::plugin::buy_preimage;
 use minimint::consensus::ConsensusItem;
 use minimint_api::Amount as MinimintAmount;
 use minimint_ln::contracts::incoming::IncomingContractOffer;
@@ -175,50 +175,66 @@ async fn lightning_gateway_pays_invoice() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn receive_lightning_payment_via_gateway() {
-    let (fed, user, _, gateway, lightning) = fixtures(2, 0, &[sats(10), sats(1000)]).await;
-
     // TODO: we need to mint coins for gateway
-    fed.mint_coins_for_user(&gateway.user, sats(9999999)).await; // 1% LN fee
+    // fed.mint_coins_for_user(&gateway.user, sats(9999999)).await; // 1% LN fee
+
+    // hack to give gateway some coins in lieu of ^^
+    let (fed, user, _, gateway, lightning) = fixtures(2, 0, &[sats(10), sats(1000)]).await;
+    let invoice = lightning.invoice(sats(1000));
+    fed.mint_coins_for_user(&user, sats(1010)).await; // 1% LN fee
+    let contract_id = user
+        .client
+        .fund_outgoing_ln_contract(&gateway.keys, invoice, rng())
+        .await
+        .unwrap();
+    fed.run_consensus_epochs(2).await; // send coins to LN contract
+    let contract_account = user.client.wait_contract(contract_id).await.unwrap();
+    assert_eq!(contract_account.amount, sats(1010));
+    gateway
+        .server
+        .pay_invoice(contract_id, rng())
+        .await
+        .unwrap();
+    fed.run_consensus_epochs(4).await; // contract to mint coins, sign coins
+    gateway.server.await_contract_claimed(contract_id).await;
+    assert_eq!(user.total_coins(), sats(0));
+    assert_eq!(gateway.user_client.coins().amount(), sats(1010));
+    assert_eq!(lightning.amount_sent(), sats(1000));
+    // hack done
 
     // Create invoice and offer in the federation (should this block in the future?)
-    let invoice = user
+    let (keypair, invoice) = user
         .client
-        .create_invoice_and_offer(&gateway.keys, MinimintAmount::from_msat(1000), rng())
+        .create_invoice_and_offer(&gateway.keys, MinimintAmount::from_msat(10000), rng())
         .await
         .unwrap();
 
     // Run 2 epochs to get the offer to show up p
-    fed.run_consensus_epochs(2).await; // announce preimage sale
+    fed.run_consensus_epochs(2).await;
 
     let offers = user.client.get_offers().await.unwrap();
     assert_eq!(&offers[0].hash, invoice.payment_hash());
 
-    // Call business logic of the core-lightning gateway plugin
-    // FIXME: values hard-coded from https://github.com/ElementsProject/lightning/blob/master/doc/PLUGINS.md#htlc_accepted
-    let json = json!({
-        // "onion": {
-        //     "payload": "",
-        //     "short_channel_id": "1x2x3",
-        //     "forward_amount": "42msat",
-        //     "outgoing_cltv_value": 500014,
-        //     "shared_secret": "0000000000000000000000000000000000000000000000000000000000000000",
-        //     "next_onion": "[1365bytes of serialized onion]"
-        // },
-        "htlc": {
-            // FIXME: fix these other values ...
-            // "amount": "43msat",
-            // "cltv_expiry": 500028,
-            // "cltv_expiry_relative": 10,
-            "payment_hash": invoice.payment_hash()
-        }
-    });
-    let preimage = buy_preimage(Arc::new(Mutex::new(Some(gateway.server))), json)
+    // Gateway deposits ecash to trigger preimage decryption by the federation
+    let txid = gateway
+        .server
+        .buy_preimage_offer(invoice.payment_hash())
         .await
         .unwrap();
-    assert_eq!(
-        "0000000000000000000000000000000000000000000000000000000000000000",
-        preimage,
-    );
+
+    fed.run_consensus_epochs(5).await; // announce preimage sale
+
+    // Gateway receives decrypted preimage and it matches the invoice payment hash
+    let preimage = gateway
+        .server
+        .await_preimage_decryption(txid)
+        .await
+        .unwrap();
+
+    let secp = bitcoin::secp256k1::Secp256k1::new();
+    assert_eq!(PublicKey::from_keypair(&secp, &keypair), preimage.0);
+
+    fed.run_consensus_epochs(2).await; // announce preimage sale
 
     // TODO: run some epochs to allow for preimage decryption
 

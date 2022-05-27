@@ -12,7 +12,6 @@ pub mod config;
 pub mod contracts;
 mod db;
 
-use std::io::{Error, Write};
 use crate::config::LightningModuleConfig;
 use crate::contracts::incoming::{
     DecryptedPreimage, EncryptedPreimage, IncomingContractOffer, OfferId, PreimageDecryptionShare,
@@ -36,9 +35,10 @@ use minimint_api::{Amount, FederationModule, PeerId};
 use minimint_api::{InputMeta, OutPoint};
 use secp256k1::rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
+use std::io::{Error, Write};
 use std::sync::Arc;
 use thiserror::Error;
-use tracing::{debug, error, info_span, instrument, trace, warn};
+use tracing::{debug, error, info, info_span, instrument, trace, warn};
 
 /// The lightning module implements an account system. It does not have the privacy guarantees of
 /// the e-cash mint module but instead allows for smart contracting. There exist three contract
@@ -90,17 +90,6 @@ pub enum ContractOrOfferOutput {
     Contract(ContractOutput),
     Offer(contracts::incoming::IncomingContractOffer),
 }
-
-
-// FIXME: do we need to implement this?
-// impl IdentifyableContract for ContractOrOfferOutput {
-//     fn contract_id(&self) -> ContractId {
-//         match self {
-//             Self::Contract(c) => c.contract.contract_id(),
-//             Self::Offer(c) => c.contract_id(),
-//         }
-//     }
-// }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Deserialize, Serialize, Encodable, Decodable)]
 pub struct ContractOutput {

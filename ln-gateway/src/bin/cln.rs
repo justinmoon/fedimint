@@ -1,7 +1,6 @@
 #[macro_use]
 extern crate serde_json;
-use cln_plugin::{options, Builder, Error, Plugin};
-use ln_gateway::plugin::buy_preimage;
+use cln_plugin::{anyhow, options, Builder, Error, Plugin};
 use ln_gateway::{LnGateway, LnGatewayConfig};
 use minimint::config::load_from_file;
 use minimint::modules::ln::contracts::ContractId;
@@ -10,21 +9,32 @@ use std::{path::PathBuf, sync::Arc};
 use tide::Response;
 
 use log::{debug, warn};
-// use tracing::{debug, warn};
-// use tracing_subscriber::EnvFilter;
 
 pub async fn htlc_accepted_handler(
     p: Plugin<State>,
     v: serde_json::Value,
 ) -> Result<serde_json::Value, Error> {
-    debug!("htlc_accepted observed");
+    log::debug!("htlc_accepted observed {:?}", v);
 
-    // TODO: buy this from federation
-    // If the preimage matches, complete the payment
-    // Check that the amount is matches
-    // You've lost ecash tokens, but gained lightning btc
-    // let preimage = "0000000000000000000000000000000000000000000000000000000000000000";
-    let preimage = buy_preimage(p.state().gateway.clone(), v).await?;
+    // c-lightning can build up a queue of htlcs. this helps clear out the barrage.
+    // tokio::time::sleep(std::time::Duration::from_millis(3000)).await;
+    // return Ok(json!({
+    // "result": "fail",
+    //   "failure_message": "2002"
+    // }));
+
+    // let preimage = buy_preimage(p.state().gateway.clone(), v).await?;
+    let gateway = p.state().gateway.lock().unwrap().take().unwrap();
+
+    let payment_hash: bitcoin_hashes::sha256::Hash = v["htlc"]["payment_hash"]
+        .as_str()
+        .ok_or(anyhow!("Core-lightning gave us invalid payment hash"))?
+        .parse()?;
+
+    // fIXME: why && ?
+    let txid = gateway.buy_preimage_offer(&&payment_hash).await?;
+
+    let preimage = gateway.await_preimage_decryption(txid).await?;
 
     Ok(json!({
       "result": "resolve",
@@ -61,7 +71,7 @@ async fn run_gateway(
 ) -> tide::Result<()> {
     // Give core-lightning some time to startup RPC socket (ln socket wasn't there ...)
     // FIXME: is there a better way?
-    tokio::time::sleep(std::time::Duration::from_millis(3000)).await;
+    // tokio::time::sleep(std::time::Duration::from_millis(3000)).await;
 
     let cfg_path = workdir.join("gateway.json");
     let db_path = workdir.join("gateway.db");

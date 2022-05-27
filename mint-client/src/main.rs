@@ -105,18 +105,27 @@ async fn main() {
 
     let client = UserClient::new(cfg.client, Box::new(db), Default::default());
 
-    let gw_cfg_path = opts.workdir.join("gateway.json");
-    let gw_db_path = opts.workdir.join("gateway.db");
-    let gw_db = sled::open(&gw_db_path)
-        .unwrap()
-        .open_tree("mint-client")
-        .unwrap();
-    let gw_cfg: LnGatewayConfig = load_from_file(&gw_cfg_path);
-    let gw_client = GatewayClient::new(gw_cfg.federation_client, Box::new(gw_db));
+    // FIXME: this can't run at the same time as the gateway ...
+    // let gw_cfg_path = opts.workdir.join("gateway.json");
+    // let gw_db_path = opts.workdir.join("gateway.db");
+    // let gw_db = sled::open(&gw_db_path)
+    //     .unwrap()
+    //     .open_tree("mint-client")
+    //     .unwrap();
+    // let gw_cfg: LnGatewayConfig = load_from_file(&gw_cfg_path);
+    // let gw_client = GatewayClient::new(gw_cfg.federation_client, Box::new(gw_db));
 
     match opts.command {
         Command::Gw => {
-            println!("{:?}", gw_client.mint_client().coins());
+            // let coins = gw_client.mint_client().coins();
+            // info!(
+            //     "Gateway owns {} coins with a total value of {}",
+            //     coins.coin_count(),
+            //     coins.amount()
+            // );
+            // for (amount, coins) in coins.coins {
+            //     info!("We own {} coins of denomination {}", coins.len(), amount);
+            // }
         }
         Command::PegInAddress => {
             println!("{}", client.get_new_pegin_address(&mut rng))
@@ -196,7 +205,7 @@ async fn main() {
 
         Command::LnInvoice { amount } => {
             // TODO: client.fund_incoming_contract and client.wait_contract_timeout to put pre-image for sale
-            let invoice = client
+            let (_, invoice) = client
                 .create_invoice_and_offer(&cfg.gateway, amount, &mut rng)
                 .await
                 .expect("couldn't create invoice");

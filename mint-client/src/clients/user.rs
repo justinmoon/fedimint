@@ -4,12 +4,14 @@ use crate::ln::{LnClient, LnClientError};
 use crate::mint::{MintClient, MintClientError, SpendableCoin};
 use crate::wallet::{WalletClient, WalletClientError};
 use crate::{api, ClientAndGatewayConfig, OwnedClientContext};
+use bitcoin::schnorr::KeyPair;
 use bitcoin::{Address, Transaction};
 use bitcoin_hashes::Hash;
 use lightning::ln::PaymentSecret;
 use lightning::routing::network_graph::RoutingFees;
 use lightning::routing::router::{RouteHint, RouteHintHop};
 use lightning_invoice::{CreationError, Currency, Invoice, InvoiceBuilder};
+use log::info;
 use minimint::config::ClientConfig;
 use minimint::modules::ln::contracts::incoming::{
     DecryptedPreimage, EncryptedPreimage, IncomingContract, IncomingContractOffer,
@@ -26,7 +28,7 @@ use minimint_api::db::Database;
 use minimint_api::{Amount, TransactionId};
 use minimint_api::{OutPoint, PeerId};
 use rand::{CryptoRng, RngCore};
-use secp256k1_zkp::{All, Secp256k1};
+use secp256k1_zkp::{All, Secp256k1, SecretKey};
 use std::time::Duration;
 use thiserror::Error;
 
@@ -408,12 +410,15 @@ impl UserClient {
         gateway: &LightningGateway,
         amount: Amount,
         mut rng: R,
-    ) -> Result<Invoice, ClientError> {
+    ) -> Result<(KeyPair, Invoice), ClientError> {
         let mut batch = DbBatch::new();
 
         // Hard-coding preimage (pubkey) for now
         // FIXME: this needs to be threshold-encrypted to the federation
-        let raw_payment_secret = [0; 32];
+        let (payment_keypair, payment_public_key) =
+            self.context.secp.generate_schnorrsig_keypair(&mut rng);
+
+        let raw_payment_secret = payment_public_key.serialize();
         let payment_hash = bitcoin::secp256k1::hashes::sha256::Hash::hash(&raw_payment_secret);
         let payment_secret = PaymentSecret(raw_payment_secret);
 
@@ -444,6 +449,11 @@ impl UserClient {
             .private_route(gateway_route_hint)
             .build_signed(|hash| self.context.secp.sign_recoverable(hash, &node_secret_key))?;
 
+        info!(
+            "COMBINED PUBKEY {:?}\n\n\n",
+            self.context.config.ln.threshold_pub_key
+        );
+
         let offer = IncomingContractOffer {
             amount,
             hash: payment_hash,
@@ -467,7 +477,7 @@ impl UserClient {
         let mint_tx_id = self.context.api.submit_transaction(transaction).await?;
 
         // TODO: should we return the txid ^^ ???
-        Ok(invoice)
+        Ok((payment_keypair, invoice))
     }
 }
 

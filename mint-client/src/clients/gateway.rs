@@ -9,8 +9,10 @@ use crate::mint::{MintClient, MintClientError};
 use crate::{api, OwnedClientContext, UserClient};
 use lightning_invoice::Invoice;
 use minimint::config::ClientConfig;
-use minimint::modules::ln::contracts::{outgoing, ContractId, IdentifyableContract};
-use minimint::outcome::TransactionStatus;
+use minimint::modules::ln::contracts::{
+    outgoing, ContractId, ContractOutcome, IdentifyableContract,
+};
+use minimint::outcome::{OutputOutcome, TransactionStatus};
 use minimint::transaction::{agg_sign, Input, Output, Transaction, TransactionItem};
 use minimint_api::db::batch::DbBatch;
 use minimint_api::db::Database;
@@ -25,12 +27,6 @@ use minimint::modules::ln::contracts::{
 };
 use minimint::modules::ln::{ContractOrOfferOutput, ContractOutput};
 use tracing::info;
-
-// use minimint_ln::contracts::{Contract, ContractOutcome, IdentifyableContract};
-// use minimint_ln::{
-//     ContractInput, ContractOrOfferOutput, ContractOutput, LightningModule, LightningModuleError,
-//     OutputOutcome,
-// };
 
 pub struct GatewayClient {
     context: OwnedClientContext<GatewayClientConfig>,
@@ -281,7 +277,7 @@ impl GatewayClient {
         });
         let incoming_output =
             minimint::transaction::Output::LN(ContractOrOfferOutput::Contract(ContractOutput {
-                amount: Amount::from_msat(1000), // FIXME: don't hard-code
+                amount: Amount::from_msat(10000), // FIXME: don't hard-code
                 contract: contract.clone(),
             }));
 
@@ -318,19 +314,42 @@ impl GatewayClient {
             .collect()
     }
 
-    // TODO: return a preimage
+    // FIXME: this can deadlock very easily ... was coded just for the happy path
     pub async fn await_preimage_decryption(
         &self,
         txid: TransactionId,
-    ) -> Result<TransactionStatus> {
+    ) -> Result<minimint::modules::ln::contracts::incoming::Preimage> {
         loop {
-            let status = self.context.api.fetch_tx_outcome(txid).await?;
-            info!("tx status: {:?}", status);
+            match self.context.api.fetch_tx_outcome(txid).await {
+                Ok(status) => match status {
+                    TransactionStatus::Accepted { outputs, .. } => {
+                        match &outputs[0] {
+                            OutputOutcome::LN(minimint::modules::ln::OutputOutcome::Contract {
+                                outcome,
+                                ..
+                            }) => {
+                                match outcome {
+                                    ContractOutcome::Incoming(DecryptedPreimage::Some(
+                                        preimage,
+                                    )) => return Ok(preimage.clone()),
+                                    ContractOutcome::Incoming(DecryptedPreimage::Pending) => {}
+                                    ContractOutcome::Incoming(DecryptedPreimage::Invalid) => {
+                                        return Err(GatewayClientError::InvalidPreimage)
+                                    }
+                                    _ => return Err(GatewayClientError::WrongContractType),
+                                };
+                            }
+                            _ => return Err(GatewayClientError::WrongTransactionType),
+                        };
+                    }
+                    TransactionStatus::Error(error) => {
+                        return Err(GatewayClientError::InvalidTransaction(error))
+                    }
+                },
+                Err(error) => return Err(GatewayClientError::MintApiError(error)),
+            };
             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-            break;
         }
-        // tIXME:
-        Ok(TransactionStatus::Error(String::from("foobar")))
     }
 
     // TODO: improve error propagation on tx transmission
@@ -446,6 +465,14 @@ pub enum GatewayClientError {
     TimeoutTooClose,
     #[error("No offer")]
     NoOffer,
+    #[error("Wrong contract type")]
+    WrongContractType,
+    #[error("Wrong transaction type")]
+    WrongTransactionType,
+    #[error("Invalid transaction {0}")]
+    InvalidTransaction(String),
+    #[error("Invalid preimage")]
+    InvalidPreimage,
 }
 
 impl From<LnClientError> for GatewayClientError {

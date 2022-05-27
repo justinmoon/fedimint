@@ -78,7 +78,7 @@ async fn submit_transaction(mut req: Request<State>) -> tide::Result {
     trace!(?req, "Received API request");
     let transaction: Transaction = req.body_json().await?;
     let tx_id = transaction.tx_hash();
-    debug!("Sending peg-in request to consensus");
+    tracing::info!("Sending peg-in request to consensus");
     req.state()
         .fedimint
         .submit_transaction(transaction)

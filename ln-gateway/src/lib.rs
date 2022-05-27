@@ -1,10 +1,9 @@
 pub mod ln;
-pub mod plugin;
 
 use crate::ln::{LightningError, LnRpc};
 use bitcoin_hashes::sha256::Hash;
 use minimint::modules::ln::contracts::{
-    incoming::{DecryptedPreimage, IncomingContract, IncomingContractOffer},
+    incoming::{DecryptedPreimage, IncomingContract, IncomingContractOffer, Preimage},
     Contract, ContractId,
 };
 use minimint_api::{db::Database, TransactionId};
@@ -66,31 +65,34 @@ impl LnGateway {
         }
     }
 
-    // TODO: payment hash should be Hash, not &str
-    pub async fn buy_preimage(&self, payment_hash: &Hash) -> Result<String, LnGatewayError> {
+    pub async fn buy_preimage_offer(
+        &self,
+        payment_hash: &Hash,
+    ) -> Result<TransactionId, LnGatewayError> {
+        info!("Gateway::buy_preimage");
         let txid = self
             .federation_client
             .buy_preimage_offer(payment_hash)
             .await?;
-        // let txid: TransactionId = Default::default();
+        Ok(txid)
+    }
 
-        info!("trying to buy preimage {:?}", txid);
-
+    pub async fn await_preimage_decryption(
+        &self,
+        txid: TransactionId,
+    ) -> Result<Preimage, LnGatewayError> {
         // Wait for decryption ... poll /transaction/:id
         let preimage = self
             .federation_client
             .await_preimage_decryption(txid)
             .await?;
 
-        // If preimage invalid, claw back funds and raise error
+        // TODO: If preimage invalid, claw back funds and raise error
         // (or will the background thread find it???)
 
-        // If preimage valid, return it so that plugin can complete htlc
-        // TODO: save to db??
+        // TODO: save preimage to db in case lightning node is down???
 
-        Ok(String::from(
-            "0000000000000000000000000000000000000000000000000000000000000000",
-        ))
+        Ok(preimage)
     }
 
     #[instrument(skip_all, fields(%contract_id))]
