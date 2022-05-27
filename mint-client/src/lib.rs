@@ -42,7 +42,7 @@ impl<CO> OwnedClientContext<CO> {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ClientAndGatewayConfig {
     pub client: ClientConfig,
     pub gateway: LightningGateway,

@@ -213,7 +213,7 @@ async fn receive_lightning_payment_via_gateway() {
     // Gateway deposits ecash to trigger preimage decryption by the federation
     let txid = gateway
         .server
-        .buy_preimage_offer(invoice.payment_hash())
+        .buy_preimage_offer(invoice.payment_hash(), rng())
         .await
         .unwrap();
 

@@ -64,10 +64,11 @@ impl LnGateway {
     pub async fn buy_preimage_offer(
         &self,
         payment_hash: &Hash,
+        rng: impl RngCore + CryptoRng,
     ) -> Result<TransactionId, LnGatewayError> {
         let txid = self
             .federation_client
-            .buy_preimage_offer(payment_hash)
+            .buy_preimage_offer(payment_hash, rng)
             .await?;
         Ok(txid)
     }

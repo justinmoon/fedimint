@@ -241,6 +241,7 @@ impl GatewayClient {
     pub async fn buy_preimage_offer(
         &self,
         payment_hash: &bitcoin_hashes::sha256::Hash,
+        mut rng: impl RngCore + CryptoRng,
     ) -> Result<minimint_api::TransactionId> {
         let mut batch = DbBatch::new();
 
@@ -254,9 +255,7 @@ impl GatewayClient {
         // Inputs
         let (coin_keys, coin_input) = self
             .mint_client()
-            .create_coin_input(batch.transaction(), offer.amount)
-            // .map_err(|e| Err(GatewayClientError::MintClientError(e)))
-            .expect("TODO: map this error"); // TODO
+            .create_coin_input(batch.transaction(), offer.amount)?;
 
         // Outputs
         let our_pub_key = secp256k1_zkp::schnorrsig::PublicKey::from_keypair(
@@ -279,7 +278,6 @@ impl GatewayClient {
         let inputs = vec![minimint::transaction::Input::Mint(coin_input)];
         let outputs = vec![incoming_output];
         let txid = minimint::transaction::Transaction::tx_hash_from_parts(&inputs, &outputs);
-        let mut rng = rand::rngs::OsRng::new().unwrap(); // FIXME: this should be an argument
         let signature = minimint::transaction::agg_sign(
             &coin_keys,
             txid.as_hash(),
@@ -478,6 +476,12 @@ impl From<LnClientError> for GatewayClientError {
 impl From<ApiError> for GatewayClientError {
     fn from(e: ApiError) -> Self {
         GatewayClientError::MintApiError(e)
+    }
+}
+
+impl From<MintClientError> for GatewayClientError {
+    fn from(e: MintClientError) -> Self {
+        GatewayClientError::MintClientError(e)
     }
 }
 
