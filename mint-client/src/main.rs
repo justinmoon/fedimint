@@ -6,7 +6,6 @@ use minimint::modules::mint::tiered::coins::Coins;
 use minimint::modules::wallet::txoproof::TxOutProof;
 use minimint_api::encoding::Decodable;
 use minimint_api::Amount;
-use mint_client::clients::gateway::GatewayClientConfig;
 use mint_client::mint::SpendableCoin;
 use mint_client::{ClientAndGatewayConfig, UserClient};
 use serde::{Deserialize, Serialize};
@@ -21,13 +20,6 @@ struct Options {
     workdir: PathBuf,
     #[clap(subcommand)]
     command: Command,
-}
-
-// copy-pasted from ln-gateway/src/lib.rs
-#[derive(Debug, Serialize, Deserialize)]
-pub struct LnGatewayConfig {
-    pub federation_client: GatewayClientConfig,
-    pub ln_socket: PathBuf,
 }
 
 #[derive(Parser)]
@@ -62,19 +54,11 @@ enum Command {
     /// Pay a lightning invoice via a gateway
     LnPay { bolt11: lightning_invoice::Invoice },
 
-    /// Create a lightning invoice to receive payment via gateway
-    LnInvoice { amount: Amount },
-
-    /// TODO: LnPaid { bolt11 } -- check if I've been paid? or maybe wait for payment?
-
     /// Fetch (re-)issued coins and finalize issuance process
     Fetch,
 
     /// Display wallet info (holdings, tiers)
     Info,
-
-    /// Display gateway stuff
-    Gw,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -105,28 +89,7 @@ async fn main() {
 
     let client = UserClient::new(cfg.client, Box::new(db), Default::default());
 
-    // FIXME: this can't run at the same time as the gateway ...
-    // let gw_cfg_path = opts.workdir.join("gateway.json");
-    // let gw_db_path = opts.workdir.join("gateway.db");
-    // let gw_db = sled::open(&gw_db_path)
-    //     .unwrap()
-    //     .open_tree("mint-client")
-    //     .unwrap();
-    // let gw_cfg: LnGatewayConfig = load_from_file(&gw_cfg_path);
-    // let gw_client = GatewayClient::new(gw_cfg.federation_client, Box::new(gw_db));
-
     match opts.command {
-        Command::Gw => {
-            // let coins = gw_client.mint_client().coins();
-            // println!(
-            //     "Gateway owns {} coins with a total value of {}",
-            //     coins.coin_count(),
-            //     coins.amount()
-            // );
-            // for (amount, coins) in coins.coins {
-            //     println!("We own {} coins of denomination {}", coins.len(), amount);
-            // }
-        }
         Command::PegInAddress => {
             println!("{}", client.get_new_pegin_address(&mut rng))
         }
@@ -195,24 +158,13 @@ async fn main() {
                 "Funded outgoing contract, notifying gateway",
             );
 
-            http.post(&format!("{}/pay_invoice", &cfg.gateway.api))
+            http.post(&format!("{}/pay_invoice", cfg.gateway.api))
                 .json(&contract_id)
                 .timeout(Duration::from_secs(15))
                 .send()
                 .await
                 .unwrap();
         }
-
-        Command::LnInvoice { amount } => {
-            // TODO: client.fund_incoming_contract and client.wait_contract_timeout to put pre-image for sale
-            let (_, invoice) = client
-                .create_invoice_and_offer(&cfg.gateway, amount, &mut rng)
-                .await
-                .expect("couldn't create invoice");
-            print!("{}", invoice);
-        } // TODO
-          // Command::LnPaid
-          // Check the status of the invoice
     }
 }
 
