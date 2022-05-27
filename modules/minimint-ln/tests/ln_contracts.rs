@@ -157,11 +157,10 @@ async fn test_incoming() {
     };
     let offer_output = ContractOrOfferOutput::Offer(offer.clone());
     let offer_out_point = OutPoint {
-        txid: Default::default(), // huh?
+        txid: Default::default(),
         out_idx: 0,
     };
 
-    // FIXME: why 2 outputs? - seems it is the test framework
     fed.consensus_round(&[], &[(offer_out_point, offer_output)])
         .await;
     let offers = fed.fetch_from_all(|m| m.get_offers());
@@ -183,7 +182,6 @@ async fn test_incoming() {
     };
     let outputs = [(incoming_out_point, incoming_output)];
 
-    // Pre-image is still being decrypted
     fed.consensus_round(&[], &outputs).await;
     match fed.output_outcome(incoming_out_point).unwrap() {
         OutputOutcome::Contract { outcome, .. } => {
@@ -195,8 +193,6 @@ async fn test_incoming() {
         _ => panic!(),
     };
 
-    // FIXME: why doesn't this pay some ecash tokens into this???
-    // Do we need an "account" contract to transfer money in here?
     let incoming_input = ContractInput {
         crontract_id: contract.contract_id(),
         amount: Amount::from_sat(42),
