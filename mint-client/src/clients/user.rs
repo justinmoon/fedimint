@@ -357,11 +357,6 @@ impl UserClient {
         Ok(contract_id)
     }
 
-    // func_incoming_ln_contract
-    // ln_client().create_incoming_ouput
-    // create input with matching amount (plus fee?)
-    // submit transaction
-
     pub async fn wait_contract(
         &self,
         contract: ContractId,
@@ -398,8 +393,6 @@ impl UserClient {
             .map_err(|_| ClientError::WaitContractTimeout)?
     }
 
-    // announce_preimage_sale?
-    // initiate_preimage_sale?
     // shoould we split this into 2 functions -- create invoice and announce offer?
     pub async fn create_invoice_and_offer<R: RngCore + CryptoRng>(
         &self,

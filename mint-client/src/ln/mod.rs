@@ -31,7 +31,6 @@ pub struct LnClient<'c> {
 impl<'c> LnClient<'c> {
     /// Create an output that incentivizes a Lighning gateway to pay an invoice for us. It has time
     /// till the block height defined by `timelock`, after that we can claim our money back.
-    /// FIXME: this doesn't need to be async
     pub async fn create_outgoing_output<'a>(
         &'a self,
         mut batch: BatchTx<'a>,
@@ -125,29 +124,20 @@ impl<'c> LnClient<'c> {
         )
     }
 
-    // TODO: get_incoming_contract
-
-    // FIXME: does this deserve its own function???
-    // Should this create invoice and ouput?
     pub fn create_incoming_output<'a>(
         &'a self,
-        // mut batch: BatchTx<'a>,
         amount: Amount,
         payment_hash: Hash,
         payment_secret: [u8; 32],
     ) -> Result<ContractOrOfferOutput> {
-        // TODO: create and save secret key here???
-        let offer = IncomingContractOffer {
+        Ok(ContractOrOfferOutput::Offer(IncomingContractOffer {
             amount,
             hash: payment_hash,
             encrypted_preimage: EncryptedPreimage::new(
                 payment_secret,
                 &self.context.config.threshold_pub_key,
             ),
-        };
-        let offer_output = ContractOrOfferOutput::Offer(offer.clone());
-
-        Ok(offer_output)
+        }))
     }
 
     pub async fn get_offers(&self) -> Result<Vec<IncomingContractOffer>> {

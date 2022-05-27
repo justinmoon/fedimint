@@ -9,8 +9,10 @@ use crate::{api, OwnedClientContext};
 use lightning_invoice::Invoice;
 use minimint::config::ClientConfig;
 use minimint::modules::ln::contracts::{
-    outgoing, ContractId, ContractOutcome, IdentifyableContract,
+    incoming::{DecryptedPreimage, IncomingContract, IncomingContractOffer},
+    outgoing, Contract, ContractId, ContractOutcome, IdentifyableContract,
 };
+use minimint::modules::ln::{ContractOrOfferOutput, ContractOutput};
 use minimint::outcome::{OutputOutcome, TransactionStatus};
 use minimint::transaction::{agg_sign, Input, Output, Transaction, TransactionItem};
 use minimint_api::db::batch::DbBatch;
@@ -19,12 +21,6 @@ use minimint_api::{Amount, OutPoint, PeerId, TransactionId};
 use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-
-use minimint::modules::ln::contracts::{
-    incoming::{DecryptedPreimage, IncomingContract, IncomingContractOffer},
-    Contract,
-};
-use minimint::modules::ln::{ContractOrOfferOutput, ContractOutput};
 
 pub struct GatewayClient {
     context: OwnedClientContext<GatewayClientConfig>,
@@ -77,13 +73,13 @@ impl GatewayClient {
         }
     }
 
-    pub fn ln_client(&self) -> LnClient {
+    fn ln_client(&self) -> LnClient {
         LnClient {
             context: self.context.borrow_with_module_config(|cfg| &cfg.common.ln),
         }
     }
 
-    pub fn mint_client(&self) -> MintClient {
+    fn mint_client(&self) -> MintClient {
         MintClient {
             context: self
                 .context
