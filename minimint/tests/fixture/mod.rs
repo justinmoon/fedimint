@@ -126,7 +126,6 @@ pub async fn fixtures(
                 Box::new(lightning_rpc),
                 client_config,
                 lightning.gateway_node_pub_key,
-                peers,
             )
             .await;
 
@@ -143,7 +142,6 @@ pub async fn fixtures(
                 Box::new(lightning.clone()),
                 client_config,
                 lightning.gateway_node_pub_key,
-                peers,
             )
             .await;
 
@@ -183,9 +181,7 @@ pub struct GatewayTest {
     pub server: LnGateway,
     pub keys: LightningGateway,
     pub user_client: UserClient,
-    pub user: UserTest,
     pub client: Arc<GatewayClient>,
-    pub database: Box<dyn Database>,
 }
 
 impl GatewayTest {
@@ -193,7 +189,6 @@ impl GatewayTest {
         ln_client: Box<dyn LnRpc>,
         client: ClientConfig,
         node_pub_key: secp256k1::PublicKey,
-        peers: Vec<PeerId>,
     ) -> Self {
         let mut rng = OsRng::new().unwrap();
         let ctx = bitcoin::secp256k1::Secp256k1::new();
@@ -212,24 +207,15 @@ impl GatewayTest {
         };
 
         let database = Box::new(MemDatabase::new());
-        let user_client = UserClient::new(client.clone(), database.clone(), Default::default());
-        let user = UserTest::new(client, peers);
-
+        let user_client = UserClient::new(client, database.clone(), Default::default());
         let client = Arc::new(GatewayClient::new(federation_client, database.clone()));
-
-        // TODO: delete this. gateway is a plugin now.
-        // TODO: tell gateway lightning node to restart the c-lightning plugin
-        // Or we could have the gateway watch the config file for changes ???
-        // That will be slightly hard because it spawns a thread so it would need to also sent the config across that thread ...
         let server = LnGateway::new(client.clone(), ln_client).await;
 
         GatewayTest {
             server,
             keys,
             user_client,
-            user,
             client,
-            database,
         }
     }
 }

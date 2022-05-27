@@ -1624,7 +1624,6 @@ dependencies = [
  "futures",
  "hex",
  "lightning-invoice",
- "log",
  "minimint",
  "minimint-api",
  "mint-client",
