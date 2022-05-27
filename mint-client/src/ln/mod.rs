@@ -180,6 +180,7 @@ mod tests {
     use async_trait::async_trait;
     use lightning_invoice::Invoice;
     use minimint::modules::ln::config::LightningModuleClientConfig;
+    use minimint::modules::ln::contracts::incoming::IncomingContractOffer;
     use minimint::modules::ln::contracts::{ContractId, IdentifyableContract};
     use minimint::modules::ln::ContractOrOfferOutput;
     use minimint::modules::ln::{ContractAccount, LightningModule};
@@ -234,6 +235,10 @@ mod tests {
 
         async fn fetch_consensus_block_height(&self) -> crate::api::Result<u64> {
             unimplemented!()
+        }
+
+        async fn fetch_offers(&self) -> crate::api::Result<Vec<IncomingContractOffer>> {
+            unimplemented!();
         }
     }
 

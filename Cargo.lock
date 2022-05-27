@@ -662,24 +662,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cln-plugin"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2043841c090a404cb81b145c8ad3c66bae122ba722387fc322b93c157d596433"
-dependencies = [
- "anyhow",
- "bytes",
- "cln-rpc",
- "futures",
- "log",
- "serde",
- "serde_json",
- "tokio",
- "tokio-stream",
- "tokio-util 0.6.10",
-]
-
-[[package]]
 name = "cln-rpc"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1638,7 +1620,6 @@ dependencies = [
  "async-trait",
  "bitcoin_hashes",
  "clap",
- "cln-plugin",
  "cln-rpc",
  "futures",
  "hex",
@@ -1738,7 +1719,6 @@ checksum = "2a60c7ce501c71e03a9c9c0d35b861413ae925bd979cc7a4e30d060069aaac8d"
 name = "minimint"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "assert_matches",
  "async-trait",
  "bincode",
@@ -1746,7 +1726,6 @@ dependencies = [
  "bitcoincore-rpc",
  "clap",
  "clightningrpc",
- "cln-plugin",
  "cln-rpc",
  "futures",
  "hbbft",
@@ -1910,7 +1889,6 @@ dependencies = [
  "hex",
  "lightning",
  "lightning-invoice",
- "log",
  "minimint",
  "minimint-api",
  "miniscript",
@@ -3330,17 +3308,6 @@ dependencies = [
  "proc-macro2 1.0.39",
  "quote 1.0.18",
  "syn 1.0.95",
-]
-
-[[package]]
-name = "tokio-stream"
-version = "0.1.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "50145484efff8818b5ccd256697f36863f587da82cf8b409c53adf1e840798e3"
-dependencies = [
- "futures-core",
- "pin-project-lite 0.2.9",
- "tokio",
 ]
 
 [[package]]

@@ -138,6 +138,7 @@ mod tests {
     use async_trait::async_trait;
     use bitcoin::Address;
     use minimint::config::FeeConsensus;
+    use minimint::modules::ln::contracts::incoming::IncomingContractOffer;
     use minimint::modules::ln::contracts::ContractId;
     use minimint::modules::ln::ContractAccount;
     use minimint::modules::wallet::bitcoind::test::{FakeBitcoindRpc, FakeBitcoindRpcController};
@@ -186,6 +187,10 @@ mod tests {
 
         async fn fetch_consensus_block_height(&self) -> crate::api::Result<u64> {
             unimplemented!()
+        }
+
+        async fn fetch_offers(&self) -> crate::api::Result<Vec<IncomingContractOffer>> {
+            unimplemented!();
         }
     }
 

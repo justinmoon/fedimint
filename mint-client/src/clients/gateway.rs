@@ -2,11 +2,10 @@ use crate::api::{ApiError, FederationApi};
 use crate::clients::gateway::db::{
     OutgoingPaymentClaimKey, OutgoingPaymentClaimKeyPrefix, OutgoingPaymentKey,
 };
-// use crate::clients::user::{UserClient, UserClientError};
 use crate::ln::outgoing::OutgoingContractAccount;
 use crate::ln::{LnClient, LnClientError};
 use crate::mint::{MintClient, MintClientError};
-use crate::{api, OwnedClientContext, UserClient};
+use crate::{api, OwnedClientContext};
 use lightning_invoice::Invoice;
 use minimint::config::ClientConfig;
 use minimint::modules::ln::contracts::{
@@ -26,7 +25,6 @@ use minimint::modules::ln::contracts::{
     Contract,
 };
 use minimint::modules::ln::{ContractOrOfferOutput, ContractOutput};
-use tracing::info;
 
 pub struct GatewayClient {
     context: OwnedClientContext<GatewayClientConfig>,

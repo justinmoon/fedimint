@@ -35,10 +35,9 @@ use minimint_api::{Amount, FederationModule, PeerId};
 use minimint_api::{InputMeta, OutPoint};
 use secp256k1::rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
-use std::io::{Error, Write};
 use std::sync::Arc;
 use thiserror::Error;
-use tracing::{debug, error, info, info_span, instrument, trace, warn};
+use tracing::{debug, error, info_span, instrument, trace, warn};
 
 /// The lightning module implements an account system. It does not have the privacy guarantees of
 /// the e-cash mint module but instead allows for smart contracting. There exist three contract

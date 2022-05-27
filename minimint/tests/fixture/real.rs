@@ -5,7 +5,6 @@ use std::str::FromStr;
 use std::thread;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use bitcoin::secp256k1;
 use bitcoin::{Address, Transaction};
 use bitcoincore_rpc::Client;
@@ -43,14 +42,6 @@ impl LightningTest for RealLightningTest {
     fn amount_sent(&self) -> Amount {
         self.initial_balance
             .sub(Self::channel_balance(&self.rpc_gateway))
-    }
-
-    fn pay(&self, invoice: Invoice) -> Result<(), anyhow::Error> {
-        let invoice = self
-            .rpc_other
-            .pay(&invoice.to_string(), Default::default())
-            .unwrap();
-        Ok(())
     }
 }
 

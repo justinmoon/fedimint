@@ -35,10 +35,6 @@ tokio-util = { version = "0.6.0", features = [ "compat" ] }
 tracing ="0.1.22"
 tracing-subscriber = { version = "0.3.1", features = [ "env-filter" ] }
 
-# FIXME: just for the LightningTest trait which wanted to return a result ...
-anyhow = "1.0.51"
-cln-plugin = "0.1.0"
-
 [dev-dependencies]
 bitcoincore-rpc = "0.14.0"
 cln-rpc = "0.1"

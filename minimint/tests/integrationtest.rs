@@ -1,17 +1,12 @@
 use assert_matches::assert_matches;
 use bitcoin::schnorr::PublicKey;
 use bitcoin::Amount;
-use cln_plugin::{Error, Plugin};
 use fixture::fixtures;
 use fixture::{rng, sats};
 use minimint::consensus::ConsensusItem;
 use minimint_api::Amount as MinimintAmount;
-use minimint_ln::contracts::incoming::IncomingContractOffer;
 use minimint_wallet::WalletConsensusItem::PegOutSignature;
-use serde_json::json;
 use std::ops::Sub;
-use std::sync::{Arc, Mutex};
-use tracing::info;
 
 mod fixture;
 

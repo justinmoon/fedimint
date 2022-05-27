@@ -62,10 +62,6 @@ impl LightningTest for FakeLightningTest {
     fn amount_sent(&self) -> Amount {
         Amount::from_msat(*self.amount_sent.lock().unwrap())
     }
-
-    fn pay(&self, invoice: Invoice) -> Result<(), anyhow::Error> {
-        unimplemented!();
-    }
 }
 
 #[async_trait]

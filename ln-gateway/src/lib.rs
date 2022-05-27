@@ -2,10 +2,7 @@ pub mod ln;
 
 use crate::ln::{LightningError, LnRpc};
 use bitcoin_hashes::sha256::Hash;
-use minimint::modules::ln::contracts::{
-    incoming::{DecryptedPreimage, IncomingContract, IncomingContractOffer, Preimage},
-    Contract, ContractId,
-};
+use minimint::modules::ln::contracts::{incoming::Preimage, ContractId};
 use minimint_api::{db::Database, TransactionId};
 use mint_client::clients::gateway::{GatewayClient, GatewayClientConfig, GatewayClientError};
 use rand::{CryptoRng, RngCore};
@@ -16,9 +13,8 @@ use std::time::Duration;
 use thiserror::Error;
 use tokio::sync::Mutex;
 use tokio::time::Instant;
-use tracing::{debug, error, info, instrument, warn};
+use tracing::{debug, error, instrument, warn};
 
-#[macro_use]
 extern crate serde_json;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -69,7 +65,6 @@ impl LnGateway {
         &self,
         payment_hash: &Hash,
     ) -> Result<TransactionId, LnGatewayError> {
-        info!("Gateway::buy_preimage");
         let txid = self
             .federation_client
             .buy_preimage_offer(payment_hash)
@@ -155,10 +150,6 @@ impl LnGateway {
             .await;
         debug!("Claim transaction accepted");
     }
-
-    pub async fn foo(&self) {
-        ()
-    }
 }
 
 /// This function runs as a background process fetching issued token signatures and driving forward
@@ -199,8 +190,6 @@ pub enum LnGatewayError {
     FederationError(GatewayClientError),
     #[error("Our LN node could not route the payment: {0:?}")]
     CouldNotRoute(LightningError),
-    #[error("Other")]
-    Other,
 }
 
 impl From<GatewayClientError> for LnGatewayError {

@@ -6,7 +6,7 @@ use minimint::modules::mint::tiered::coins::Coins;
 use minimint::modules::wallet::txoproof::TxOutProof;
 use minimint_api::encoding::Decodable;
 use minimint_api::Amount;
-use mint_client::clients::gateway::{GatewayClient, GatewayClientConfig};
+use mint_client::clients::gateway::GatewayClientConfig;
 use mint_client::mint::SpendableCoin;
 use mint_client::{ClientAndGatewayConfig, UserClient};
 use serde::{Deserialize, Serialize};
@@ -118,13 +118,13 @@ async fn main() {
     match opts.command {
         Command::Gw => {
             // let coins = gw_client.mint_client().coins();
-            // info!(
+            // println!(
             //     "Gateway owns {} coins with a total value of {}",
             //     coins.coin_count(),
             //     coins.amount()
             // );
             // for (amount, coins) in coins.coins {
-            //     info!("We own {} coins of denomination {}", coins.len(), amount);
+            //     println!("We own {} coins of denomination {}", coins.len(), amount);
             // }
         }
         Command::PegInAddress => {

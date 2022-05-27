@@ -15,7 +15,6 @@ use futures::executor::block_on;
 use futures::future::join_all;
 use itertools::Itertools;
 use lightning_invoice::Invoice;
-use mint_client::ClientAndGatewayConfig;
 use rand::rngs::OsRng;
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -178,10 +177,6 @@ pub trait LightningTest {
 
     /// Returns the amount that the gateway LN node has sent
     fn amount_sent(&self) -> Amount;
-
-    /// Pays invoice from a non-gateway LN node
-    // FIXME: shoudl this just panic???
-    fn pay(&self, invoice: Invoice) -> Result<(), anyhow::Error>;
 }
 
 pub struct GatewayTest {
@@ -346,7 +341,6 @@ impl FederationTest {
     /// Inserts coins directly into the databases of federation nodes, runs consensus to sign them
     /// then fetches the coins for the user client.
     pub async fn mint_coins_for_user(&self, user: &UserTest, amount: Amount) {
-        info!("1");
         let (finalization, coins) = user
             .client
             .mint_client()
@@ -355,7 +349,6 @@ impl FederationTest {
             txid: Default::default(),
             out_idx: 0,
         };
-        info!("2");
         for server in &self.servers {
             let mut batch = DbBatch::new();
             let mut batch_tx = batch.transaction();
@@ -382,7 +375,6 @@ impl FederationTest {
                 .unwrap();
             server.borrow_mut().database.apply_batch(batch).unwrap();
         }
-        info!("3");
         let mut batch = DbBatch::new();
         user.client.mint_client().save_coin_finalization_data(
             batch.transaction(),
@@ -391,7 +383,6 @@ impl FederationTest {
         );
         user.database.apply_batch(batch).unwrap();
 
-        info!("4");
         self.run_consensus_epochs(2).await;
         user.client.fetch_all_coins().await.unwrap();
     }
