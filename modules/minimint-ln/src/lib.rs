@@ -208,8 +208,6 @@ impl FederationModule for LightningModule {
 
         let pub_key = match account.contract {
             FundedContract::Outgoing(outgoing) => {
-                // The gateway gets the money if they present valid preimage
-                // If timeout, user can sweep back
                 if outgoing.timelock > block_height(interconnect) {
                     // If the timelock hasn't expired yet …
                     let preimage_hash = bitcoin_hashes::sha256::Hash::hash(
