@@ -164,39 +164,16 @@ async fn lightning_gateway_pays_invoice() {
 
     gateway.server.await_contract_claimed(contract_id).await;
     assert_eq!(user.total_coins(), sats(0));
-    assert_eq!(gateway.user_client.coins().amount(), sats(1010));
+    assert_eq!(gateway.user.client.coins().amount(), sats(1010));
     assert_eq!(lightning.amount_sent(), sats(1000));
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn receive_lightning_payment_via_gateway() {
-    // TODO: we need to mint coins for gateway
-    // fed.mint_coins_for_user(&gateway.user, sats(9999999)).await; // 1% LN fee
-
-    // hack to give gateway some coins in lieu of ^^
-    let (fed, user, _, gateway, lightning) = fixtures(2, 0, &[sats(10), sats(1000)]).await;
-    let invoice = lightning.invoice(sats(1000));
-    fed.mint_coins_for_user(&user, sats(1010)).await; // 1% LN fee
-    let contract_id = user
-        .client
-        .fund_outgoing_ln_contract(&gateway.keys, invoice, rng())
-        .await
-        .unwrap();
-    fed.run_consensus_epochs(2).await; // send coins to LN contract
-    let contract_account = user.client.wait_contract(contract_id).await.unwrap();
-    assert_eq!(contract_account.amount, sats(1010));
-    gateway
-        .server
-        .pay_invoice(contract_id, rng())
-        .await
-        .unwrap();
-    fed.run_consensus_epochs(4).await; // contract to mint coins, sign coins
-    gateway.server.await_contract_claimed(contract_id).await;
+    let (fed, user, _, gateway, _) = fixtures(2, 0, &[sats(10), sats(1000)]).await;
+    fed.mint_coins_for_user(&gateway.user, sats(1010)).await;
     assert_eq!(user.total_coins(), sats(0));
-    assert_eq!(gateway.user_client.coins().amount(), sats(1010));
-    assert_eq!(lightning.amount_sent(), sats(1000));
-    // hack done
-
+    assert_eq!(gateway.user.total_coins(), sats(1010));
     // Create invoice and offer in the federation (should this block in the future?)
     let (keypair, invoice) = user
         .client
