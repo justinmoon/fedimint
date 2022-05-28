@@ -180,14 +180,14 @@ pub trait LightningTest {
 pub struct GatewayTest {
     pub server: LnGateway,
     pub keys: LightningGateway,
-    pub user_client: UserClient,
+    pub user: UserTest,
     pub client: Arc<GatewayClient>,
 }
 
 impl GatewayTest {
     async fn new(
         ln_client: Box<dyn LnRpc>,
-        client: ClientConfig,
+        client_config: ClientConfig,
         node_pub_key: secp256k1::PublicKey,
     ) -> Self {
         let mut rng = OsRng::new().unwrap();
@@ -195,7 +195,7 @@ impl GatewayTest {
         let (secret_key_fed, public_key_fed) = ctx.generate_schnorrsig_keypair(&mut rng);
 
         let federation_client = GatewayClientConfig {
-            common: client.clone(),
+            common: client_config.clone(),
             redeem_key: secret_key_fed,
             timelock_delta: 10,
         };
@@ -207,14 +207,19 @@ impl GatewayTest {
         };
 
         let database = Box::new(MemDatabase::new());
-        let user_client = UserClient::new(client, database.clone(), Default::default());
+        let user_client = UserClient::new(client_config.clone(), database.clone(), Default::default());
+        let user = UserTest {
+            client: user_client,
+            config: client_config,
+            database: database.clone()
+        };
         let client = Arc::new(GatewayClient::new(federation_client, database.clone()));
         let server = LnGateway::new(client.clone(), ln_client).await;
 
         GatewayTest {
             server,
             keys,
-            user_client,
+            user,
             client,
         }
     }
