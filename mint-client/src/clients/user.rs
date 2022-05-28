@@ -6,17 +6,17 @@ use crate::wallet::{WalletClient, WalletClientError};
 use crate::{api, OwnedClientContext};
 use bitcoin::{Address, Transaction};
 use lightning_invoice::Invoice;
-use minimint::config::ClientConfig;
-use minimint::modules::ln::contracts::{ContractId, IdentifyableContract};
-use minimint::modules::ln::{ContractAccount, ContractOrOfferOutput};
-use minimint::modules::mint::tiered::coins::Coins;
-use minimint::modules::wallet::txoproof::TxOutProof;
-use minimint::transaction as mint_tx;
-use minimint::transaction::{Output, TransactionItem};
 use minimint_api::db::batch::DbBatch;
 use minimint_api::db::Database;
 use minimint_api::{Amount, TransactionId};
 use minimint_api::{OutPoint, PeerId};
+use minimint_ln::contracts::{ContractId, IdentifyableContract};
+use minimint_ln::{ContractAccount, ContractOrOfferOutput};
+use minimint_mint::tiered::coins::Coins;
+use minimint_shared::transaction as mint_tx;
+use minimint_shared::transaction::{Output, TransactionItem};
+use minimint_shared::ClientConfig;
+use minimint_wallet::txoproof::TxOutProof;
 use rand::{CryptoRng, RngCore};
 use secp256k1_zkp::{All, Secp256k1};
 use std::time::Duration;
@@ -110,7 +110,7 @@ impl UserClient {
             coin_finalization_data,
         );
 
-        let peg_in_req_sig = minimint::transaction::agg_sign(
+        let peg_in_req_sig = minimint_shared::transaction::agg_sign(
             &[peg_in_key],
             txid.as_hash(),
             &self.context.secp,
@@ -173,7 +173,7 @@ impl UserClient {
             coin_finalization_data,
         );
 
-        let signature = minimint::transaction::agg_sign(
+        let signature = minimint_shared::transaction::agg_sign(
             &coin_keys,
             txid.as_hash(),
             &self.context.secp,
@@ -218,7 +218,7 @@ impl UserClient {
         let outputs = vec![mint_tx::Output::Wallet(pegout_output)];
         let txid = mint_tx::Transaction::tx_hash_from_parts(&inputs, &outputs);
 
-        let signature = minimint::transaction::agg_sign(
+        let signature = minimint_shared::transaction::agg_sign(
             &coin_keys,
             txid.as_hash(),
             &self.context.secp,
@@ -327,7 +327,7 @@ impl UserClient {
         let outputs = vec![ln_output];
         let txid = mint_tx::Transaction::tx_hash_from_parts(&inputs, &outputs);
 
-        let signature = minimint::transaction::agg_sign(
+        let signature = minimint_shared::transaction::agg_sign(
             &coin_keys,
             txid.as_hash(),
             &self.context.secp,

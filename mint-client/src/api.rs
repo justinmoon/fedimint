@@ -1,10 +1,10 @@
 use async_trait::async_trait;
 use futures::{Future, StreamExt, TryFutureExt};
-use minimint::modules::ln::contracts::ContractId;
-use minimint::modules::ln::ContractAccount;
-use minimint::outcome::{MismatchingVariant, TransactionStatus, TryIntoOutcome};
-use minimint::transaction::Transaction;
 use minimint_api::{OutPoint, PeerId, TransactionId};
+use minimint_ln::contracts::ContractId;
+use minimint_ln::ContractAccount;
+use minimint_shared::outcome::{MismatchingVariant, TransactionStatus, TryIntoOutcome};
+use minimint_shared::transaction::Transaction;
 use reqwest::{StatusCode, Url};
 use serde::de::DeserializeOwned;
 use serde::Serialize;

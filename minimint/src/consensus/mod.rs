@@ -7,9 +7,7 @@ use crate::config::ServerConfig;
 use crate::consensus::conflictfilter::ConflictFilterable;
 use crate::consensus::interconnect::FediMintInterconnect;
 use crate::db::{AcceptedTransactionKey, ProposedTransactionKey, ProposedTransactionKeyPrefix};
-use crate::outcome::OutputOutcome;
 use crate::rng::RngGenerator;
-use crate::transaction::{Input, Output, Transaction, TransactionError};
 use hbbft::honey_badger::Batch;
 use minimint_api::db::batch::{BatchTx, DbBatch};
 use minimint_api::db::Database;
@@ -18,6 +16,8 @@ use minimint_api::{FederationModule, OutPoint, PeerId, TransactionId};
 use minimint_derive::UnzipConsensus;
 use minimint_ln::{LightningModule, LightningModuleError};
 use minimint_mint::{Mint, MintError};
+use minimint_shared::outcome::OutputOutcome;
+use minimint_shared::transaction::{Input, Output, Transaction, TransactionError};
 use minimint_wallet::{Wallet, WalletError};
 use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
@@ -331,7 +331,7 @@ where
     pub fn transaction_status(
         &self,
         txid: TransactionId,
-    ) -> Option<crate::outcome::TransactionStatus> {
+    ) -> Option<minimint_shared::outcome::TransactionStatus> {
         let accepted: Option<AcceptedTransaction> = self
             .db
             .get_value(&AcceptedTransactionKey(txid))
@@ -374,7 +374,7 @@ where
                 })
                 .collect();
 
-            Some(crate::outcome::TransactionStatus::Accepted {
+            Some(minimint_shared::outcome::TransactionStatus::Accepted {
                 epoch: accepted_tx.epoch,
                 outputs,
             })

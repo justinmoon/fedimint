@@ -1,7 +1,7 @@
 pub mod ln;
 
 use crate::ln::{LightningError, LnRpc};
-use minimint::modules::ln::contracts::ContractId;
+use minimint_ln::contracts::ContractId;
 use minimint_api::db::Database;
 use mint_client::clients::gateway::{GatewayClient, GatewayClientConfig, GatewayClientError};
 use rand::{CryptoRng, RngCore};

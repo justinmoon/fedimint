@@ -1,7 +1,7 @@
 use crate::config::ServerConfig;
 use crate::consensus::FediMintConsensus;
-use crate::transaction::Transaction;
 use minimint_api::{FederationModule, TransactionId};
+use minimint_shared::transaction::Transaction;
 use std::fmt::Formatter;
 use std::sync::Arc;
 use tide::{Body, Request, Response, Server};

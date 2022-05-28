@@ -1,8 +1,8 @@
 use crate::consensus::AcceptedTransaction;
-use crate::transaction::Transaction;
 use minimint_api::db::DatabaseKeyPrefixConst;
 use minimint_api::encoding::{Decodable, Encodable};
 use minimint_api::TransactionId;
+use minimint_shared::transaction::Transaction;
 use std::fmt::Debug;
 
 pub const DB_PREFIX_PROPOSED_TRANSACTION: u8 = 0x01;

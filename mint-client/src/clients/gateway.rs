@@ -7,13 +7,13 @@ use crate::ln::{LnClient, LnClientError};
 use crate::mint::{MintClient, MintClientError};
 use crate::{api, OwnedClientContext};
 use lightning_invoice::Invoice;
-use minimint::config::ClientConfig;
-use minimint::modules::ln::contracts::{outgoing, ContractId, IdentifyableContract};
-use minimint::outcome::TransactionStatus;
-use minimint::transaction::{agg_sign, Input, Output, Transaction, TransactionItem};
 use minimint_api::db::batch::DbBatch;
 use minimint_api::db::Database;
 use minimint_api::{Amount, OutPoint, PeerId};
+use minimint_ln::contracts::{outgoing, ContractId, IdentifyableContract};
+use minimint_shared::outcome::TransactionStatus;
+use minimint_shared::transaction::{agg_sign, Input, Output, Transaction, TransactionItem};
+use minimint_shared::ClientConfig;
 use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -371,10 +371,10 @@ impl From<ApiError> for GatewayClientError {
 
 mod db {
     use crate::ln::outgoing::OutgoingContractAccount;
-    use minimint::modules::ln::contracts::ContractId;
-    use minimint::transaction::Transaction;
     use minimint_api::db::DatabaseKeyPrefixConst;
     use minimint_api::encoding::{Decodable, Encodable};
+    use minimint_ln::contracts::ContractId;
+    use minimint_shared::transaction::Transaction;
 
     const DB_PREFIX_OUTGOING_PAYMENT: u8 = 0x50;
     const DB_PREFIX_OUTGOING_PAYMENT_CLAIM: u8 = 0x51;

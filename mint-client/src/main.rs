@@ -1,11 +1,11 @@
 use bitcoin::{Address, Transaction};
 use bitcoin_hashes::hex::ToHex;
 use clap::Parser;
-use minimint::config::load_from_file;
-use minimint::modules::mint::tiered::coins::Coins;
-use minimint::modules::wallet::txoproof::TxOutProof;
 use minimint_api::encoding::Decodable;
 use minimint_api::Amount;
+use minimint_mint::tiered::coins::Coins;
+use minimint_shared::load_from_file;
+use minimint_wallet::txoproof::TxOutProof;
 use mint_client::mint::SpendableCoin;
 use mint_client::{ClientAndGatewayConfig, UserClient};
 use serde::{Deserialize, Serialize};

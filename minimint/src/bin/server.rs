@@ -1,5 +1,6 @@
 use clap::Parser;
-use minimint::config::{load_from_file, ServerConfig, ServerOpts};
+use minimint_shared::{load_from_file};
+use minimint::config::{ServerConfig, ServerOpts};
 use minimint::run_minimint;
 use tracing_subscriber::EnvFilter;
 

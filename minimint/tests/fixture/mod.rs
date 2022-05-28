@@ -28,7 +28,6 @@ use ln_gateway::LnGateway;
 use minimint::config::ServerConfigParams;
 use minimint::config::{ClientConfig, FeeConsensus, ServerConfig};
 use minimint::consensus::{ConsensusItem, ConsensusOutcome, FediMintConsensus};
-use minimint::transaction::{Input, Output};
 use minimint::MinimintServer;
 use minimint_api::config::GenerateConfig;
 use minimint_api::db::batch::DbBatch;
@@ -38,6 +37,7 @@ use minimint_api::{Amount, FederationModule, OutPoint, PeerId};
 use minimint_ln::contracts::Contract;
 use minimint_ln::{ContractOrOfferOutput, ContractOutput};
 use minimint_mint::PartiallySignedRequest;
+use minimint_shared::transaction::{Input, Output};
 use minimint_wallet::bitcoind::BitcoindRpc;
 use minimint_wallet::config::WalletConfig;
 use minimint_wallet::db::UnsignedTransactionKey;
@@ -339,7 +339,7 @@ impl FederationTest {
         for server in &self.servers {
             let mut batch = DbBatch::new();
             let mut batch_tx = batch.transaction();
-            let transaction = minimint::transaction::Transaction {
+            let transaction = minimint_shared::transaction::Transaction {
                 inputs: vec![],
                 outputs: vec![Output::Mint(coins.clone())],
                 signature: None,
@@ -552,7 +552,7 @@ impl FederationTest {
             ConsensusItem::LN(minimint_ln::DecryptionShareCI { contract_id, .. }) => {
                 format!("LN Decrytion Share for contract {:.8}", contract_id)
             }
-            ConsensusItem::Transaction(minimint::transaction::Transaction {
+            ConsensusItem::Transaction(minimint_shared::transaction::Transaction {
                 inputs,
                 outputs,
                 ..

@@ -1,8 +1,8 @@
-use crate::transaction::{Input, Output, Transaction};
 use minimint_ln::contracts::{ContractId, IdentifyableContract};
 use minimint_ln::ContractOrOfferOutput;
 use minimint_mint::tiered::coins::Coins;
 use minimint_mint::Coin;
+use minimint_shared::transaction::{Input, Output, Transaction};
 use minimint_wallet::txoproof::PegInProof;
 use std::collections::HashSet;
 

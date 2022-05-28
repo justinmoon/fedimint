@@ -4,14 +4,14 @@ use crate::api::ApiError;
 use crate::BorrowedClientContext;
 use bitcoin::schnorr::KeyPair;
 use db::{CoinKey, CoinKeyPrefix, OutputFinalizationKey, OutputFinalizationKeyPrefix};
-use minimint::modules::mint::config::MintClientConfig;
-use minimint::modules::mint::tiered::coins::Coins;
-use minimint::modules::mint::{
-    BlindToken, Coin, CoinNonce, InvalidAmountTierError, Keys, SigResponse, SignRequest,
-};
 use minimint_api::db::batch::{BatchItem, BatchTx};
 use minimint_api::encoding::{Decodable, Encodable};
 use minimint_api::{Amount, OutPoint, TransactionId};
+use minimint_mint::config::MintClientConfig;
+use minimint_mint::tiered::coins::Coins;
+use minimint_mint::{
+    BlindToken, Coin, CoinNonce, InvalidAmountTierError, Keys, SigResponse, SignRequest,
+};
 use rand::{CryptoRng, Rng, RngCore};
 use secp256k1_zkp::{Secp256k1, Signing};
 use serde::{Deserialize, Serialize};
@@ -420,17 +420,17 @@ mod tests {
     use crate::OwnedClientContext;
     use async_trait::async_trait;
     use bitcoin::hashes::Hash;
-    use minimint::modules::ln::contracts::ContractId;
-    use minimint::modules::ln::ContractAccount;
-    use minimint::modules::mint::config::MintClientConfig;
-    use minimint::modules::mint::Mint;
-    use minimint::outcome::{OutputOutcome, TransactionStatus};
-    use minimint::transaction::Transaction;
     use minimint_api::db::batch::DbBatch;
     use minimint_api::db::mem_impl::MemDatabase;
     use minimint_api::db::Database;
     use minimint_api::module::testing::FakeFed;
     use minimint_api::{Amount, OutPoint, TransactionId};
+    use minimint_ln::contracts::ContractId;
+    use minimint_ln::ContractAccount;
+    use minimint_mint::config::MintClientConfig;
+    use minimint_mint::Mint;
+    use minimint_shared::outcome::{OutputOutcome, TransactionStatus};
+    use minimint_shared::transaction::Transaction;
     use std::sync::Arc;
 
     type Fed = FakeFed<Mint, MintClientConfig>;

@@ -1,8 +1,8 @@
-use minimint::modules::ln::contracts::outgoing::{OutgoingContract, Preimage};
-use minimint::modules::ln::contracts::IdentifyableContract;
-use minimint::modules::ln::ContractInput;
 use minimint_api::encoding::{Decodable, Encodable};
 use minimint_api::Amount;
+use minimint_ln::contracts::outgoing::{OutgoingContract, Preimage};
+use minimint_ln::contracts::IdentifyableContract;
+use minimint_ln::ContractInput;
 
 #[derive(Debug, Encodable, Decodable)]
 pub struct OutgoingContractData {

@@ -3,13 +3,12 @@ use clap::Parser;
 use hbbft::crypto::serde_impl::SerdeSecret;
 use minimint_api::config::GenerateConfig;
 use minimint_api::PeerId;
-use minimint_ln::config::{LightningModuleClientConfig, LightningModuleConfig};
-use minimint_mint::config::{MintClientConfig, MintConfig};
-use minimint_wallet::config::{WalletClientConfig, WalletConfig};
-use serde::de::DeserializeOwned;
+use minimint_ln::config::LightningModuleConfig;
+use minimint_mint::config::MintConfig;
+use minimint_shared::{ClientConfig, FeeConsensus};
+use minimint_wallet::config::WalletConfig;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::path::Path;
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -54,26 +53,6 @@ pub struct ServerConfigParams {
     pub hbbft_base_port: u16,
     pub api_base_port: u16,
     pub amount_tiers: Vec<minimint_api::Amount>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ClientConfig {
-    pub api_endpoints: Vec<String>,
-    pub mint: MintClientConfig,
-    pub wallet: WalletClientConfig,
-    pub ln: LightningModuleClientConfig,
-    pub fee_consensus: FeeConsensus,
-}
-
-// TODO: get rid of it here, modules should govern their oen fees
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FeeConsensus {
-    pub fee_coin_spend_abs: minimint_api::Amount,
-    pub fee_peg_in_abs: minimint_api::Amount,
-    pub fee_coin_issuance_abs: minimint_api::Amount,
-    pub fee_peg_out_abs: minimint_api::Amount,
-    pub fee_contract_input: minimint_api::Amount,
-    pub fee_contract_output: minimint_api::Amount,
 }
 
 impl GenerateConfig for ServerConfig {
@@ -176,11 +155,6 @@ impl ServerConfig {
     pub fn max_faulty(&self) -> usize {
         hbbft::util::max_faulty(self.peers.len())
     }
-}
-
-pub fn load_from_file<T: DeserializeOwned>(path: &Path) -> T {
-    let file = std::fs::File::open(path).expect("Can't read cfg file.");
-    serde_json::from_reader(file).expect("Could not parse cfg file.")
 }
 
 mod serde_binary_human_readable {

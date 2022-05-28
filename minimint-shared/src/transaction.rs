@@ -1,4 +1,4 @@
-use crate::config::FeeConsensus;
+use crate::FeeConsensus;
 use bitcoin::hashes::Hash as BitcoinHash;
 use minimint_api::encoding::{Decodable, Encodable};
 use minimint_api::{Amount, FederationModule, TransactionId};

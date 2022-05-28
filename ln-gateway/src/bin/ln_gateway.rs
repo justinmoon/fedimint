@@ -1,7 +1,7 @@
 use clap::Parser;
 use ln_gateway::{LnGateway, LnGatewayConfig};
-use minimint::config::load_from_file;
-use minimint::modules::ln::contracts::ContractId;
+use minimint_ln::contracts::ContractId;
+use minimint_shared::load_from_file;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tide::Response;

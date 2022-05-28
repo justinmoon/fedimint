@@ -8,16 +8,12 @@ use crate::ln::gateway::LightningGateway;
 use crate::ln::outgoing::{OutgoingContractAccount, OutgoingContractData};
 use crate::BorrowedClientContext;
 use lightning_invoice::Invoice;
-use minimint::modules::ln::config::LightningModuleClientConfig;
-use minimint::modules::ln::contracts::outgoing::OutgoingContract;
-use minimint::modules::ln::contracts::{
-    Contract, ContractId, FundedContract, IdentifyableContract,
-};
-use minimint::modules::ln::{
-    ContractAccount, ContractInput, ContractOrOfferOutput, ContractOutput,
-};
 use minimint_api::db::batch::BatchTx;
 use minimint_api::Amount;
+use minimint_ln::config::LightningModuleClientConfig;
+use minimint_ln::contracts::outgoing::OutgoingContract;
+use minimint_ln::contracts::{Contract, ContractId, FundedContract, IdentifyableContract};
+use minimint_ln::{ContractAccount, ContractInput, ContractOrOfferOutput, ContractOutput};
 use rand::{CryptoRng, RngCore};
 use thiserror::Error;
 
@@ -143,16 +139,16 @@ mod tests {
     use crate::OwnedClientContext;
     use async_trait::async_trait;
     use lightning_invoice::Invoice;
-    use minimint::modules::ln::config::LightningModuleClientConfig;
-    use minimint::modules::ln::contracts::{ContractId, IdentifyableContract};
-    use minimint::modules::ln::ContractOrOfferOutput;
-    use minimint::modules::ln::{ContractAccount, LightningModule};
-    use minimint::outcome::{OutputOutcome, TransactionStatus};
-    use minimint::transaction::Transaction;
     use minimint_api::db::batch::DbBatch;
     use minimint_api::db::mem_impl::MemDatabase;
     use minimint_api::module::testing::FakeFed;
     use minimint_api::{Amount, OutPoint, TransactionId};
+    use minimint_ln::config::LightningModuleClientConfig;
+    use minimint_ln::contracts::{ContractId, IdentifyableContract};
+    use minimint_ln::ContractOrOfferOutput;
+    use minimint_ln::{ContractAccount, LightningModule};
+    use minimint_shared::outcome::{OutputOutcome, TransactionStatus};
+    use minimint_shared::transaction::Transaction;
     use std::sync::Arc;
 
     type Fed = FakeFed<LightningModule, LightningModuleClientConfig>;

@@ -1623,8 +1623,9 @@ dependencies = [
  "futures",
  "hex",
  "lightning-invoice",
- "minimint",
  "minimint-api",
+ "minimint-ln",
+ "minimint-shared",
  "mint-client",
  "rand 0.6.5",
  "secp256k1",
@@ -1736,6 +1737,7 @@ dependencies = [
  "minimint-derive",
  "minimint-ln",
  "minimint-mint",
+ "minimint-shared",
  "minimint-wallet",
  "mint-client",
  "rand 0.6.5",
@@ -1832,6 +1834,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "minimint-shared"
+version = "0.1.0"
+dependencies = [
+ "bitcoin",
+ "minimint-api",
+ "minimint-ln",
+ "minimint-mint",
+ "minimint-wallet",
+ "rand 0.6.5",
+ "secp256k1-zkp",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "minimint-wallet"
 version = "0.1.0"
 dependencies = [
@@ -1887,8 +1905,11 @@ dependencies = [
  "hex",
  "lightning",
  "lightning-invoice",
- "minimint",
  "minimint-api",
+ "minimint-ln",
+ "minimint-mint",
+ "minimint-shared",
+ "minimint-wallet",
  "miniscript",
  "rand 0.6.5",
  "reqwest",

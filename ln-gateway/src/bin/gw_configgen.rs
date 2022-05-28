@@ -1,6 +1,6 @@
 use clap::Parser;
 use ln_gateway::LnGatewayConfig;
-use minimint::config::load_from_file;
+use minimint_shared::{load_from_file, ClientConfig};
 use mint_client::clients::gateway::GatewayClientConfig;
 use mint_client::ln::gateway::LightningGateway;
 use mint_client::ClientAndGatewayConfig;
@@ -18,8 +18,7 @@ struct Opts {
 fn main() {
     let opts = Opts::parse();
     let federation_client_cfg_path = opts.workdir.join("federation_client.json");
-    let federation_client_cfg: minimint::config::ClientConfig =
-        load_from_file(&federation_client_cfg_path);
+    let federation_client_cfg: ClientConfig = load_from_file(&federation_client_cfg_path);
 
     let mut rng = thread_rng();
     let ctx = secp256k1::Secp256k1::new();

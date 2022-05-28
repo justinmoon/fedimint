@@ -36,10 +36,8 @@ pub mod net;
 /// MiniMint toplevel config
 pub mod config;
 
-pub mod outcome;
 /// Some abstractions to handle randomness
 mod rng;
-pub mod transaction;
 
 pub mod modules {
     pub use minimint_ln as ln;
