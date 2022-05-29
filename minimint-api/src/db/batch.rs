@@ -154,6 +154,7 @@ impl BatchItem {
         K: DatabaseKeyPrefix + Send + 'static,
         V: SerializableDatabaseValue + Send + 'static,
     {
+        tracing::info!("\n\nINSERT {:?} {:?}", key, value);
         BatchItem::InsertNewElement(Element::new(key, value))
     }
 
@@ -163,6 +164,7 @@ impl BatchItem {
         K: DatabaseKeyPrefix + Send + 'static,
         V: SerializableDatabaseValue + Send + 'static,
     {
+        tracing::info!("\n\nREPLACE {:?} {:?}", key, value);
         BatchItem::InsertElement(Element::new(key, value))
     }
 
@@ -171,6 +173,7 @@ impl BatchItem {
     where
         K: DatabaseKeyPrefix + Send + 'static,
     {
+        tracing::info!("\n\nDELETE {:?}", key);
         BatchItem::DeleteElement(Box::new(key))
     }
 
@@ -179,6 +182,7 @@ impl BatchItem {
     where
         K: DatabaseKeyPrefix + Send + 'static,
     {
+        tracing::info!("\n\nDELETE??? {:?}", key);
         BatchItem::MaybeDeleteElement(Box::new(key))
     }
 }

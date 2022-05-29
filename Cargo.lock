@@ -1890,6 +1890,7 @@ dependencies = [
  "lightning-invoice",
  "minimint",
  "minimint-api",
+ "minimint-ln",
  "miniscript",
  "rand 0.6.5",
  "reqwest",

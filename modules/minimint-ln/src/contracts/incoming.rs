@@ -105,9 +105,7 @@ impl EncryptedPreimage {
 
 impl IdentifyableContract for IncomingContract {
     fn contract_id(&self) -> ContractId {
-        let mut engine = ContractId::engine();
-        Encodable::consensus_encode(self, &mut engine).expect("Hashing never fails");
-        ContractId::from_engine(engine)
+        ContractId::from_hash(self.hash)
     }
 }
 

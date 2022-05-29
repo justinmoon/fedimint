@@ -4,7 +4,6 @@ use bitcoin::Amount;
 use fixture::fixtures;
 use fixture::{rng, sats};
 use minimint::consensus::ConsensusItem;
-use minimint_api::Amount as MinimintAmount;
 use minimint_wallet::WalletConsensusItem::PegOutSignature;
 use std::ops::Sub;
 
@@ -170,14 +169,16 @@ async fn lightning_gateway_pays_invoice() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn receive_lightning_payment_via_gateway() {
+    let amount = sats(2000);
     let (fed, user, _, gateway, _) = fixtures(2, 0, &[sats(10), sats(1000)]).await;
-    fed.mint_coins_for_user(&gateway.user, sats(1010)).await;
+    fed.mint_coins_for_user(&gateway.user, amount).await;
     assert_eq!(user.total_coins(), sats(0));
-    assert_eq!(gateway.user.total_coins(), sats(1010));
+    assert_eq!(gateway.user.total_coins(), amount);
+
     // Create invoice and offer in the federation (should this block in the future?)
     let (keypair, invoice) = user
         .client
-        .create_invoice_and_offer(&gateway.keys, MinimintAmount::from_msat(10000), rng())
+        .create_invoice_and_offer(&gateway.keys, amount, rng())
         .await
         .unwrap();
 
@@ -188,9 +189,9 @@ async fn receive_lightning_payment_via_gateway() {
     assert_eq!(&offers[0].hash, invoice.payment_hash());
 
     // Gateway deposits ecash to trigger preimage decryption by the federation
-    let txid = gateway
+    let (txid, contract_id) = gateway
         .server
-        .buy_preimage_offer(invoice.payment_hash(), rng())
+        .buy_preimage_offer(invoice.payment_hash(), &amount, rng())
         .await
         .unwrap();
 
@@ -203,18 +204,30 @@ async fn receive_lightning_payment_via_gateway() {
         .await
         .unwrap();
 
+    // Check that the preimage matches user pubkey
     let secp = bitcoin::secp256k1::Secp256k1::new();
     assert_eq!(PublicKey::from_keypair(&secp, &keypair), preimage.0);
 
-    fed.run_consensus_epochs(2).await; // announce preimage sale
+    // User claims their ecash
+    user.client
+        .claim_incoming_contract(contract_id, keypair, rng())
+        .await
+        .unwrap();
+    fed.run_consensus_epochs(4).await; // FIXME: why does this need 4 rounds?
 
-    // TODO: run some epochs to allow for preimage decryption
+    // User fetches their coins
+    user.client.fetch_all_coins().await.unwrap();
+    fed.run_consensus_epochs(2).await;
 
-    // TODO: gateway plugin code (another function besides buy_preimage that is also called by htlc_accepted_handler)
-    // polls federation for the actual decrypted preimage. This gets returned by htlc_accepted_handler
-    // separate functions because there are epochs in between
+    // Ecash tokens have been transferred from gateway to user
+    assert_eq!(gateway.user.client.coins().amount(), sats(0));
+    assert_eq!(user.total_coins(), amount);
+}
 
-    // TODO: user wallet withdraws their ecash tokens and balances check out
+#[tokio::test(flavor = "multi_thread")]
+#[ignore]
+async fn receive_lightning_payment_via_gateway_invalid_preimage() {
+    unimplemented!();
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -17,7 +17,6 @@ pub struct OutgoingContractAccount {
 }
 
 impl OutgoingContractAccount {
-    #[allow(dead_code)]
     pub fn claim(&self, preimage: Preimage) -> ContractInput {
         ContractInput {
             crontract_id: self.contract.contract_id(),

@@ -241,16 +241,23 @@ impl GatewayClient {
     pub async fn buy_preimage_offer(
         &self,
         payment_hash: &bitcoin_hashes::sha256::Hash,
+        amount: &Amount,
         mut rng: impl RngCore + CryptoRng,
-    ) -> Result<minimint_api::TransactionId> {
+    ) -> Result<(minimint_api::TransactionId, ContractId)> {
         let mut batch = DbBatch::new();
 
         // See if there's an offer for this payment hash.
         let offers: Vec<IncomingContractOffer> = self.ln_client().get_offers().await?;
-        let offer = match offers.iter().find(|o| &o.hash == payment_hash) {
-            Some(o) => o,
-            None => return Err(GatewayClientError::NoOffer),
-        };
+        let offer: IncomingContractOffer =
+            match offers.into_iter().find(|o| &o.hash == payment_hash) {
+                Some(o) => {
+                    if &o.amount != amount || &o.hash != payment_hash {
+                        return Err(GatewayClientError::InvalidOffer);
+                    }
+                    o
+                }
+                None => return Err(GatewayClientError::NoOffer),
+            };
 
         // Inputs
         let (coin_keys, coin_input) = self
@@ -270,7 +277,7 @@ impl GatewayClient {
         });
         let incoming_output =
             minimint::transaction::Output::LN(ContractOrOfferOutput::Contract(ContractOutput {
-                amount: Amount::from_msat(10000), // FIXME: don't hard-code
+                amount: amount.clone(),
                 contract: contract.clone(),
             }));
 
@@ -293,7 +300,7 @@ impl GatewayClient {
 
         self.context.db.apply_batch(batch).expect("DB error");
 
-        Ok(mint_tx_id)
+        Ok((mint_tx_id, contract.contract_id()))
     }
 
     /// Lists all claim transactions for outgoing contracts that we have submitted but were not part
@@ -457,6 +464,8 @@ pub enum GatewayClientError {
     TimeoutTooClose,
     #[error("No offer")]
     NoOffer,
+    #[error("Invalid offer")]
+    InvalidOffer,
     #[error("Wrong contract type")]
     WrongContractType,
     #[error("Wrong transaction type")]

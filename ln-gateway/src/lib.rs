@@ -3,7 +3,7 @@ pub mod ln;
 use crate::ln::{LightningError, LnRpc};
 use bitcoin_hashes::sha256::Hash;
 use minimint::modules::ln::contracts::{incoming::Preimage, ContractId};
-use minimint_api::{db::Database, TransactionId};
+use minimint_api::{db::Database, Amount, TransactionId};
 use mint_client::clients::gateway::{GatewayClient, GatewayClientConfig, GatewayClientError};
 use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
@@ -64,13 +64,14 @@ impl LnGateway {
     pub async fn buy_preimage_offer(
         &self,
         payment_hash: &Hash,
+        amount: &Amount,
         rng: impl RngCore + CryptoRng,
-    ) -> Result<TransactionId, LnGatewayError> {
-        let txid = self
+    ) -> Result<(TransactionId, ContractId), LnGatewayError> {
+        let (txid, contract_id) = self
             .federation_client
-            .buy_preimage_offer(payment_hash, rng)
+            .buy_preimage_offer(payment_hash, amount, rng)
             .await?;
-        Ok(txid)
+        Ok((txid, contract_id))
     }
 
     pub async fn await_preimage_decryption(

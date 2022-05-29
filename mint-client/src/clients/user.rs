@@ -5,7 +5,7 @@ use crate::mint::{MintClient, MintClientError, SpendableCoin};
 use crate::wallet::{WalletClient, WalletClientError};
 use crate::{api, OwnedClientContext};
 use bitcoin::schnorr::KeyPair;
-use bitcoin::{Address, Transaction};
+use bitcoin::{Address, Transaction as BitcoinTransaction};
 use bitcoin_hashes::Hash;
 use lightning::ln::PaymentSecret;
 use lightning::routing::network_graph::RoutingFees;
@@ -88,7 +88,7 @@ impl UserClient {
     pub async fn peg_in<R: RngCore + CryptoRng>(
         &self,
         txout_proof: TxOutProof,
-        btc_transaction: Transaction,
+        btc_transaction: BitcoinTransaction,
         mut rng: R,
     ) -> Result<TransactionId, ClientError> {
         let mut batch = DbBatch::new();
@@ -464,6 +464,58 @@ impl UserClient {
         // TODO: should we return the txid ^^ ???
         Ok((payment_keypair, invoice))
     }
+
+    pub async fn claim_incoming_contract(
+        &self,
+        contract_id: ContractId,
+        keypair: KeyPair,
+        mut rng: impl RngCore + CryptoRng,
+    ) -> Result<OutPoint, ClientError> {
+        // Lookup contract
+        let contract = self.ln_client().get_incoming_contract(contract_id).await?;
+        if contract.contract.contract_id() != contract_id {
+            return Err(ClientError::ContractLookupError);
+        }
+
+        // Input claims this contract
+        let input = mint_tx::Input::LN(contract.claim());
+
+        // Output pays us ecash tokens
+        let (finalization_data, mint_output) = self
+            .mint_client()
+            .create_coin_output(input.amount(), &mut rng);
+        let output = Output::Mint(mint_output);
+
+        let inputs = vec![input];
+        let outputs = vec![output];
+        let txid = mint_tx::Transaction::tx_hash_from_parts(&inputs, &outputs);
+        let signature = mint_tx::agg_sign(&[keypair], txid.as_hash(), &self.context.secp, &mut rng);
+
+        let out_point = OutPoint { txid, out_idx: 0 };
+        let mut batch = DbBatch::new();
+        self.mint_client().save_coin_finalization_data(
+            batch.transaction(),
+            out_point,
+            finalization_data,
+        );
+
+        let transaction = mint_tx::Transaction {
+            inputs,
+            outputs,
+            signature: Some(signature),
+        };
+
+        // TODO: database stuff (this was copied GatewayClient::claim_outgoing_contract)
+        // batch.autocommit(|batch| {
+        //     batch.append_delete(OutgoingPaymentKey(contract_id));
+        //     batch.append_insert(OutgoingPaymentClaimKey(contract_id), transaction.clone());
+        // });
+        self.context.db.apply_batch(batch).expect("DB error");
+
+        self.context.api.submit_transaction(transaction).await?;
+
+        Ok(out_point)
+    }
 }
 
 #[derive(Error, Debug)]
@@ -482,6 +534,8 @@ pub enum ClientError {
     WaitContractTimeout,
     #[error("Error fetching offer")]
     FetchOfferError,
+    #[error("Failed to lookup contract")]
+    ContractLookupError,
     #[error("Failed to create lightning invoice: {0}")]
     InvoiceError(CreationError),
 }

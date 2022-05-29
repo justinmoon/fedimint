@@ -1,10 +1,12 @@
 mod db;
 pub mod gateway;
+pub mod incoming;
 pub mod outgoing;
 
 use crate::api::ApiError;
 use crate::ln::db::{OutgoingPaymentKey, OutgoingPaymentKeyPrefix};
 use crate::ln::gateway::LightningGateway;
+use crate::ln::incoming::IncomingContractAccount;
 use crate::ln::outgoing::{OutgoingContractAccount, OutgoingContractData};
 use crate::BorrowedClientContext;
 use bitcoin_hashes::sha256::Hash;
@@ -98,6 +100,16 @@ impl<'c> LnClient<'c> {
         }
     }
 
+    pub async fn get_incoming_contract(&self, id: ContractId) -> Result<IncomingContractAccount> {
+        let account = self.get_contract_account(id).await?;
+        match account.contract {
+            FundedContract::Incoming(c) => Ok(IncomingContractAccount {
+                amount: account.amount,
+                contract: c.contract,
+            }),
+            _ => Err(LnClientError::WrongAccountType),
+        }
+    }
     pub fn refundable_outgoing_contracts(&self, block_height: u64) -> Vec<OutgoingContractData> {
         // TODO: unify block height type
         self.context
