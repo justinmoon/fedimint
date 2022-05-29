@@ -207,11 +207,12 @@ impl GatewayTest {
         };
 
         let database = Box::new(MemDatabase::new());
-        let user_client = UserClient::new(client_config.clone(), database.clone(), Default::default());
+        let user_client =
+            UserClient::new(client_config.clone(), database.clone(), Default::default());
         let user = UserTest {
             client: user_client,
             config: client_config,
-            database: database.clone()
+            database: database.clone(),
         };
         let client = Arc::new(GatewayClient::new(federation_client, database.clone()));
         let server = LnGateway::new(client.clone(), ln_client).await;
@@ -227,7 +228,7 @@ impl GatewayTest {
 
 pub struct UserTest {
     pub client: UserClient,
-    config: ClientConfig,
+    pub config: ClientConfig,
     database: Box<dyn Database>,
 }
 
@@ -295,7 +296,7 @@ pub struct FederationTest {
 struct ServerTest {
     outcome_receiver: Receiver<ConsensusOutcome>,
     proposal_sender: Sender<Vec<ConsensusItem>>,
-    consensus: Arc<FediMintConsensus<OsRng>>,
+    pub consensus: Arc<FediMintConsensus<OsRng>>,
     cfg: ServerConfig,
     bitcoin_rpc: Box<dyn BitcoindRpc>,
     database: Arc<dyn Database>,
@@ -306,6 +307,17 @@ impl FederationTest {
     /// Filters out redundant consensus rounds where the block height doesn't change
     pub fn last_consensus(&self) -> Vec<ConsensusItem> {
         self.last_consensus_items.borrow().clone()
+    }
+
+    /// Submit a minimint transaction to all federation servers
+    pub fn submit_transaction(&self, transaction: minimint::transaction::Transaction) {
+        for server in &self.servers {
+            server
+                .borrow_mut()
+                .consensus
+                .submit_transaction(transaction.clone())
+                .unwrap();
+        }
     }
 
     /// Returns a fixture that only calls on a subset of the peers.  Note that PeerIds are always

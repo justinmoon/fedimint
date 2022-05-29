@@ -1,9 +1,13 @@
 use assert_matches::assert_matches;
+use bitcoin::hashes::Hash;
 use bitcoin::schnorr::PublicKey;
 use bitcoin::Amount;
 use fixture::fixtures;
 use fixture::{rng, sats};
 use minimint::consensus::ConsensusItem;
+use minimint::transaction::{Output, Transaction};
+use minimint_ln::contracts::incoming::{EncryptedPreimage, IncomingContractOffer};
+use minimint_ln::ContractOrOfferOutput;
 use minimint_wallet::WalletConsensusItem::PegOutSignature;
 use std::ops::Sub;
 
@@ -168,7 +172,7 @@ async fn lightning_gateway_pays_invoice() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn receive_lightning_payment_via_gateway() {
+async fn receive_lightning_payment() {
     let amount = sats(2000);
     let (fed, user, _, gateway, _) = fixtures(2, 0, &[sats(10), sats(1000)]).await;
     fed.mint_coins_for_user(&gateway.user, amount).await;
@@ -225,9 +229,82 @@ async fn receive_lightning_payment_via_gateway() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore]
-async fn receive_lightning_payment_via_gateway_invalid_preimage() {
-    unimplemented!();
+async fn receive_lightning_payment_invalid_preimage() {
+    let amount = sats(2000);
+    let (fed, user, _, gateway, _) = fixtures(2, 0, &[sats(10), sats(1000)]).await;
+    fed.mint_coins_for_user(&gateway.user, amount).await;
+    assert_eq!(user.total_coins(), sats(0));
+    assert_eq!(gateway.user.total_coins(), amount);
+
+    // Create invoice and offer in the federation (should this block in the future?)
+    // let (keypair, invoice) = user
+    //     .client
+    //     .create_invoice_and_offer(&gateway.keys, amount, rng())
+    //     .await
+    //     .unwrap();
+
+    // Create offer with bad encrypted preimage that doesn't hash to "payment hash"
+    // let real_preimage = [0; 32];
+    // let fake_preimage = [1; 32];
+    let secp = bitcoin::secp256k1::Secp256k1::new();
+    let (_, fake_pubkey) = secp.generate_schnorrsig_keypair(&mut rng());
+    let (real_keypair, real_pubkey) = secp.generate_schnorrsig_keypair(&mut rng());
+    let payment_hash = bitcoin::hashes::sha256::Hash::hash(&real_pubkey.serialize());
+    let offer = IncomingContractOffer {
+        amount,
+        hash: payment_hash,
+        encrypted_preimage: EncryptedPreimage::new(
+            fake_pubkey.serialize(),
+            &user.config.ln.threshold_pub_key,
+        ),
+    };
+    let offer_output = ContractOrOfferOutput::Offer(offer.clone());
+    let ln_output = Output::LN(offer_output);
+    let inputs = vec![];
+    let outputs = vec![ln_output];
+    let transaction = Transaction {
+        inputs,
+        outputs,
+        signature: None,
+    };
+    fed.submit_transaction(transaction);
+
+    // Run 2 epochs to get the offer to show up p
+    fed.run_consensus_epochs(2).await;
+
+    // Gateway deposits ecash to trigger preimage decryption by the federation
+    let (txid, contract_id) = gateway
+        .server
+        .buy_preimage_offer(&payment_hash, &amount, rng())
+        .await
+        .unwrap();
+
+    // Assert that everyone has 0 ecash right now
+    assert_eq!(user.total_coins(), sats(0));
+    assert_eq!(gateway.user.total_coins(), sats(0));
+
+    fed.run_consensus_epochs(5).await; // announce preimage sale
+
+    // Gateway receives decrypted preimage and it matches the invoice payment hash
+    // let response = gateway.server.await_preimage_decryption(txid).await;
+    // assert!(response.is_err());
+
+    // User claims their ecash
+    // let response = user
+    //     .client
+    //     .claim_incoming_contract(contract_id, real_keypair, rng())
+    //     .await;
+    // assert!(response.is_err());
+
+    // FIXME: does the gateway get their coins here?
+    // fed.run_consensus_epochs(4).await; // FIXME: why does this need 4 rounds?
+
+    // Gateway got their tokens back
+    let fetchable = gateway.server.federation_client.list_fetchable_coins();
+    tracing::info!("fetchable {:?}", fetchable);
+    gateway.server.await_contract_claimed(contract_id).await;
+    assert_eq!(gateway.user.client.coins().amount(), amount);
+    assert_eq!(user.total_coins(), sats(0));
 }
 
 #[tokio::test(flavor = "multi_thread")]
