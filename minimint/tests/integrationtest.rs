@@ -238,7 +238,7 @@ async fn receive_lightning_payment_invalid_preimage() {
     // Manually contstruct offer w/ invalid preimage. Can't use library code because it uses correct preimage ;)
     let (fake_keypair, fake_pubkey) = secp().generate_schnorrsig_keypair(&mut rng());
     let (real_keypair, real_pubkey) = secp().generate_schnorrsig_keypair(&mut rng());
-    let payment_hash = bitcoin::hashes::sha256::Hash::hash(&real_pubkey.serialize());
+    let payment_hash = sha256(&real_pubkey.serialize());
     let offer = IncomingContractOffer {
         amount,
         hash: payment_hash,
@@ -247,12 +247,9 @@ async fn receive_lightning_payment_invalid_preimage() {
             &user.config.ln.threshold_pub_key,
         ),
     };
-    let offer_output = ContractOrOfferOutput::Offer(offer.clone());
-    let ln_output = Output::LN(offer_output);
-    let inputs = vec![];
-    let outputs = vec![ln_output];
+    let outputs = vec![Output::LN(ContractOrOfferOutput::Offer(offer.clone()))];
     let transaction = Transaction {
-        inputs,
+        inputs: vec![],
         outputs,
         signature: None,
     };
@@ -294,7 +291,7 @@ async fn receive_lightning_payment_invalid_preimage() {
         .unwrap();
     fed.run_consensus_epochs(4).await;
 
-    // FIXME: background_fetch finds these coins so this will fail, which is confusing IMO.
+    // TODO: disable background_fetch for this test and fetch the coins manually
     // gateway.client.fetch_coins(_outpoint).await.unwrap();
 
     // Gateway has clawed back their escrowed funds
@@ -302,7 +299,6 @@ async fn receive_lightning_payment_invalid_preimage() {
     assert_eq!(gateway.user.client.coins().amount(), amount);
 }
 
-// TODO: make sure that user can sweep their funds back
 #[tokio::test(flavor = "multi_thread")]
 async fn lightning_gateway_cannot_claim_invalid_preimage() {
     let (fed, user, _, gateway, lightning) = fixtures(2, 0, &[sats(10), sats(1000)]).await;

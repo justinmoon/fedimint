@@ -15,8 +15,6 @@ use tokio::sync::Mutex;
 use tokio::time::Instant;
 use tracing::{debug, error, instrument, warn};
 
-extern crate serde_json;
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LnGatewayConfig {
     pub federation_client: GatewayClientConfig,
