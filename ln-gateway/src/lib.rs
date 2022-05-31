@@ -78,17 +78,10 @@ impl LnGateway {
         &self,
         txid: TransactionId,
     ) -> Result<Preimage, LnGatewayError> {
-        // Wait for decryption ... poll /transaction/:id
         let preimage = self
             .federation_client
             .await_preimage_decryption(txid)
             .await?;
-
-        // TODO: If preimage invalid, claw back funds and raise error
-        // (or will the background thread find it???)
-
-        // TODO: save preimage to db in case lightning node is down???
-
         Ok(preimage)
     }
 

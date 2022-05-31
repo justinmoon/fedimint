@@ -8,6 +8,7 @@ use crate::mint::{MintClient, MintClientError};
 use crate::{api, OwnedClientContext};
 use lightning_invoice::Invoice;
 use minimint::config::ClientConfig;
+use minimint::modules::ln::contracts::incoming::Preimage;
 use minimint::modules::ln::contracts::{
     incoming::{DecryptedPreimage, IncomingContract, IncomingContractOffer},
     outgoing, Contract, ContractId, ContractOutcome, IdentifyableContract,
@@ -362,11 +363,7 @@ impl GatewayClient {
             .collect()
     }
 
-    // FIXME: this can deadlock very easily ... was coded just for the happy path
-    pub async fn await_preimage_decryption(
-        &self,
-        txid: TransactionId,
-    ) -> Result<minimint::modules::ln::contracts::incoming::Preimage> {
+    pub async fn await_preimage_decryption(&self, txid: TransactionId) -> Result<Preimage> {
         loop {
             match self.context.api.fetch_tx_outcome(txid).await {
                 Ok(status) => match status {
