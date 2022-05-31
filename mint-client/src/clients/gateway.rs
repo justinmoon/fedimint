@@ -310,7 +310,6 @@ impl GatewayClient {
         contract_id: ContractId,
         mut rng: impl RngCore + CryptoRng,
     ) -> Result<OutPoint> {
-        // FIXME: call this `get_incoming_account()` ??
         let contract_account = self.ln_client().get_incoming_account(contract_id).await?;
 
         // Input claims this contract
@@ -346,11 +345,6 @@ impl GatewayClient {
             signature: Some(signature),
         };
 
-        // TODO: database stuff (this was copied GatewayClient::claim_outgoing_contract)
-        // batch.autocommit(|batch| {
-        //     batch.append_delete(OutgoingPaymentKey(contract_id));
-        //     batch.append_insert(OutgoingPaymentClaimKey(contract_id), transaction.clone());
-        // });
         self.context.db.apply_batch(batch).expect("DB error");
 
         self.context.api.submit_transaction(transaction).await?;

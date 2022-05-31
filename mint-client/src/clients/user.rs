@@ -393,21 +393,14 @@ impl UserClient {
             .map_err(|_| ClientError::WaitContractTimeout)?
     }
 
-    // shoould we split this into 2 functions -- create invoice and announce offer?
     pub async fn create_invoice_and_offer<R: RngCore + CryptoRng>(
         &self,
         gateway: &LightningGateway,
         amount: Amount,
         mut rng: R,
     ) -> Result<(KeyPair, Invoice), ClientError> {
-        // TODO: save stuff!
-        // let mut batch = DbBatch::new();
-
-        // Hard-coding preimage (pubkey) for now
-        // FIXME: this needs to be threshold-encrypted to the federation
         let (payment_keypair, payment_public_key) =
             self.context.secp.generate_schnorrsig_keypair(&mut rng);
-
         let raw_payment_secret = payment_public_key.serialize();
         let payment_hash = bitcoin::secp256k1::hashes::sha256::Hash::hash(&raw_payment_secret);
         let payment_secret = PaymentSecret(raw_payment_secret);
@@ -458,10 +451,7 @@ impl UserClient {
             outputs,
             signature: None,
         };
-
         self.context.api.submit_transaction(transaction).await?;
-
-        // TODO: should we return the txid ^^ ???
         Ok((payment_keypair, invoice))
     }
 
@@ -502,15 +492,8 @@ impl UserClient {
             signature: Some(signature),
         };
 
-        // TODO: database stuff (this was copied GatewayClient::claim_outgoing_contract)
-        // batch.autocommit(|batch| {
-        //     batch.append_delete(OutgoingPaymentKey(contract_id));
-        //     batch.append_insert(OutgoingPaymentClaimKey(contract_id), transaction.clone());
-        // });
         self.context.db.apply_batch(batch).expect("DB error");
-
         self.context.api.submit_transaction(transaction).await?;
-
         Ok(out_point)
     }
 }
