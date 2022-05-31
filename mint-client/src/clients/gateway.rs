@@ -278,7 +278,7 @@ impl GatewayClient {
         });
         let incoming_output =
             minimint::transaction::Output::LN(ContractOrOfferOutput::Contract(ContractOutput {
-                amount: amount.clone(),
+                amount: *amount,
                 contract: contract.clone(),
             }));
 
