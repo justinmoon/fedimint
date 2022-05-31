@@ -181,7 +181,12 @@ async fn receive_lightning_payment() {
     // Create invoice and offer in the federation
     let (keypair, invoice) = user
         .client
-        .create_invoice_and_offer(&gateway.keys, amount, rng())
+        .create_invoice_and_offer(amount, rng())
+        .await
+        .unwrap();
+    let (keypair, invoice) = user
+        .client
+        .create_invoice_and_offer(amount, rng())
         .await
         .unwrap();
 

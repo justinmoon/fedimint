@@ -8,8 +8,6 @@ use bitcoin::schnorr::KeyPair;
 use bitcoin::{Address, Transaction as BitcoinTransaction};
 use bitcoin_hashes::Hash;
 use lightning::ln::PaymentSecret;
-use lightning::routing::network_graph::RoutingFees;
-use lightning::routing::router::{RouteHint, RouteHintHop};
 use lightning_invoice::{CreationError, Currency, Invoice, InvoiceBuilder};
 use minimint::config::ClientConfig;
 use minimint::modules::ln::contracts::incoming::{EncryptedPreimage, IncomingContractOffer};
@@ -395,7 +393,6 @@ impl UserClient {
 
     pub async fn create_invoice_and_offer<R: RngCore + CryptoRng>(
         &self,
-        gateway: &LightningGateway,
         amount: Amount,
         mut rng: R,
     ) -> Result<(KeyPair, Invoice), ClientError> {
@@ -405,31 +402,17 @@ impl UserClient {
         let payment_hash = bitcoin::secp256k1::hashes::sha256::Hash::hash(&raw_payment_secret);
         let payment_secret = PaymentSecret(raw_payment_secret);
 
-        // Final route to the user's contract inside the federation
+        // Temporary lightning node pubkey
         let (node_secret_key, node_public_key) = self.context.secp.generate_keypair(&mut rng);
-
-        // Route hint instructing payer how to route to gateway
-        let gateway_route_hint = RouteHint(vec![RouteHintHop {
-            src_node_id: gateway.node_pub_key,
-            short_channel_id: 8,
-            fees: RoutingFees {
-                base_msat: 0,
-                proportional_millionths: 0,
-            },
-            cltv_expiry_delta: (8 << 4) | 1,
-            htlc_minimum_msat: None,
-            htlc_maximum_msat: None,
-        }]);
 
         let invoice = InvoiceBuilder::new(Currency::Regtest)
             .amount_milli_satoshis(amount.milli_sat)
-            .description("description".into())
+            .description("".into())
             .payment_hash(payment_hash)
             .payment_secret(payment_secret)
             .current_timestamp()
             .min_final_cltv_expiry(144)
             .payee_pub_key(node_public_key)
-            .private_route(gateway_route_hint)
             .build_signed(|hash| self.context.secp.sign_recoverable(hash, &node_secret_key))?;
 
         let offer = IncomingContractOffer {

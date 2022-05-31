@@ -256,6 +256,7 @@ impl GatewayClient {
                     }
                     o
                 }
+                // FIXME: this should be an error LnClientError that we just bubble up
                 None => return Err(GatewayClientError::NoOffer),
             };
 
