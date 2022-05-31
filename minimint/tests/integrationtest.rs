@@ -3,9 +3,8 @@ use bitcoin::hashes::Hash;
 use bitcoin::schnorr::PublicKey;
 use bitcoin::Amount;
 use fixture::fixtures;
-use fixture::{rng, sats};
+use fixture::{rng, sats, secp, sha256};
 use minimint::consensus::ConsensusItem;
-use minimint::db::AcceptedTransactionKey;
 use minimint::transaction::{Output, Transaction};
 use minimint_ln::contracts::incoming::{EncryptedPreimage, IncomingContractOffer};
 use minimint_ln::ContractOrOfferOutput;
@@ -65,8 +64,7 @@ async fn peg_out_with_p2pkh() {
     let (fed, user, _, _, _) = fixtures(2, 0, &[sats(100), sats(1000)]).await;
     fed.mint_coins_for_user(&user, sats(4500)).await;
 
-    let ctx = bitcoin::secp256k1::Secp256k1::new();
-    let (_, public_key) = ctx.generate_keypair(&mut rng());
+    let (_, public_key) = secp().generate_keypair(&mut rng());
     let peg_out_address = bitcoin::Address::p2pkh(
         &bitcoin::ecdsa::PublicKey::new(public_key),
         bitcoin::Network::Regtest,
@@ -180,14 +178,14 @@ async fn receive_lightning_payment() {
     assert_eq!(user.total_coins(), sats(0));
     assert_eq!(gateway.user.total_coins(), amount);
 
-    // Create invoice and offer in the federation (should this block in the future?)
+    // Create invoice and offer in the federation
     let (keypair, invoice) = user
         .client
         .create_invoice_and_offer(&gateway.keys, amount, rng())
         .await
         .unwrap();
 
-    // Run 2 epochs to get the offer to show up p
+    // Wait 2 epochs for the offer to achieve consensus
     fed.run_consensus_epochs(2).await;
 
     let offers = user.client.get_offers().await.unwrap();
@@ -199,26 +197,26 @@ async fn receive_lightning_payment() {
         .buy_preimage_offer(invoice.payment_hash(), &amount, rng())
         .await
         .unwrap();
+    fed.run_consensus_epochs(5).await;
 
-    fed.run_consensus_epochs(5).await; // announce preimage sale
-
-    // Gateway receives decrypted preimage and it matches the invoice payment hash
+    // Gateway receives decrypted preimage
     let preimage = gateway
         .server
         .await_preimage_decryption(txid)
         .await
         .unwrap();
 
-    // Check that the preimage matches user pubkey
-    let secp = bitcoin::secp256k1::Secp256k1::new();
-    assert_eq!(PublicKey::from_keypair(&secp, &keypair), preimage.0);
+    // Check that the preimage matches user pubkey & lightning invoice preimage
+    let pubkey = PublicKey::from_keypair(&secp(), &keypair);
+    assert_eq!(pubkey, preimage.0);
+    assert_eq!(&sha256(&pubkey.serialize()), invoice.payment_hash());
 
     // User claims their ecash
     user.client
         .claim_incoming_contract(contract_id, keypair, rng())
         .await
         .unwrap();
-    fed.run_consensus_epochs(4).await; // FIXME: why does this need 4 rounds?
+    fed.run_consensus_epochs(4).await;
 
     // User fetches their coins
     user.client.fetch_all_coins().await.unwrap();
@@ -238,9 +236,8 @@ async fn receive_lightning_payment_invalid_preimage() {
     assert_eq!(gateway.user.total_coins(), amount);
 
     // Manually contstruct offer w/ invalid preimage. Can't use library code because it uses correct preimage ;)
-    let secp = bitcoin::secp256k1::Secp256k1::new();
-    let (fake_keypair, fake_pubkey) = secp.generate_schnorrsig_keypair(&mut rng());
-    let (real_keypair, real_pubkey) = secp.generate_schnorrsig_keypair(&mut rng());
+    let (fake_keypair, fake_pubkey) = secp().generate_schnorrsig_keypair(&mut rng());
+    let (real_keypair, real_pubkey) = secp().generate_schnorrsig_keypair(&mut rng());
     let payment_hash = bitcoin::hashes::sha256::Hash::hash(&real_pubkey.serialize());
     let offer = IncomingContractOffer {
         amount,
@@ -265,7 +262,7 @@ async fn receive_lightning_payment_invalid_preimage() {
     fed.run_consensus_epochs(2).await;
 
     // Gateway escrows ecash to trigger preimage decryption by the federation
-    let (txid, contract_id) = gateway
+    let (_, contract_id) = gateway
         .server
         .buy_preimage_offer(&payment_hash, &amount, rng())
         .await
@@ -290,17 +287,19 @@ async fn receive_lightning_payment_invalid_preimage() {
     assert!(response.is_err());
 
     // Gateway re-claims their funds
-    let outpoint = gateway
+    let _outpoint = gateway
         .client
         .claim_incoming_contract(contract_id, rng())
         .await
         .unwrap();
     fed.run_consensus_epochs(4).await;
-    gateway.client.fetch_coins(outpoint).await;
 
-    // Gateway clawed their escrowed funds back
-    assert_eq!(gateway.user.client.coins().amount(), amount);
+    // FIXME: background_fetch finds these coins so this will fail, which is confusing IMO.
+    // gateway.client.fetch_coins(_outpoint).await.unwrap();
+
+    // Gateway has clawed back their escrowed funds
     assert_eq!(user.total_coins(), sats(0));
+    assert_eq!(gateway.user.client.coins().amount(), amount);
 }
 
 // TODO: make sure that user can sweep their funds back

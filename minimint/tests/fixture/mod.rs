@@ -9,6 +9,7 @@ use std::sync::atomic::AtomicU16;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
+use bitcoin::hashes::{sha256, Hash};
 use bitcoin::{secp256k1, Address, Transaction};
 use cln_rpc::ClnRpc;
 use futures::executor::block_on;
@@ -61,6 +62,14 @@ pub fn rng() -> OsRng {
 
 pub fn sats(amount: u64) -> Amount {
     Amount::from_sat(amount)
+}
+
+pub fn sha256(data: &[u8]) -> sha256::Hash {
+    bitcoin::hashes::sha256::Hash::hash(data)
+}
+
+pub fn secp() -> secp256k1::Secp256k1<secp256k1::All> {
+    bitcoin::secp256k1::Secp256k1::new()
 }
 
 /// Generates the fixtures for an integration test and spawns API and HBBFT consensus threads for
@@ -121,7 +130,7 @@ pub async fn fixtures(
                     .expect("connect to ln_socket"),
             );
             let fed = FederationTest::new(server_config.clone(), &bitcoin_rpc).await;
-            let user = UserTest::new(client_config.clone(), peers.clone());
+            let user = UserTest::new(client_config.clone(), peers);
             let gateway = GatewayTest::new(
                 Box::new(lightning_rpc),
                 client_config,
@@ -137,7 +146,7 @@ pub async fn fixtures(
             let bitcoin_rpc = || Box::new(bitcoin.clone()) as Box<dyn BitcoindRpc>;
             let lightning = FakeLightningTest::new();
             let fed = FederationTest::new(server_config.clone(), &bitcoin_rpc).await;
-            let user = UserTest::new(client_config.clone(), peers.clone());
+            let user = UserTest::new(client_config.clone(), peers);
             let gateway = GatewayTest::new(
                 Box::new(lightning.clone()),
                 client_config,
@@ -296,7 +305,7 @@ pub struct FederationTest {
 struct ServerTest {
     outcome_receiver: Receiver<ConsensusOutcome>,
     proposal_sender: Sender<Vec<ConsensusItem>>,
-    pub consensus: Arc<FediMintConsensus<OsRng>>,
+    consensus: Arc<FediMintConsensus<OsRng>>,
     cfg: ServerConfig,
     bitcoin_rpc: Box<dyn BitcoindRpc>,
     database: Arc<dyn Database>,
