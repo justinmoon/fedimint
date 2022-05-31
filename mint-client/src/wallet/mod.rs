@@ -137,6 +137,7 @@ mod tests {
     use crate::OwnedClientContext;
     use async_trait::async_trait;
     use bitcoin::Address;
+
     use minimint::config::FeeConsensus;
     use minimint::modules::ln::contracts::incoming::IncomingContractOffer;
     use minimint::modules::ln::contracts::ContractId;
@@ -189,7 +190,10 @@ mod tests {
             unimplemented!()
         }
 
-        async fn fetch_offers(&self) -> crate::api::Result<Vec<IncomingContractOffer>> {
+        async fn fetch_offer(
+            &self,
+            _payment_hash: bitcoin::hashes::sha256::Hash,
+        ) -> crate::api::Result<IncomingContractOffer> {
             unimplemented!();
         }
     }

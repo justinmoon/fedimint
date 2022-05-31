@@ -1,5 +1,4 @@
 use assert_matches::assert_matches;
-use bitcoin::hashes::Hash;
 use bitcoin::schnorr::PublicKey;
 use bitcoin::Amount;
 use fixture::fixtures;
@@ -171,7 +170,7 @@ async fn lightning_gateway_pays_invoice() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn receive_lightning_payment() {
+async fn receive_lightning_payment_valid_preimage() {
     let amount = sats(2000);
     let (fed, user, _, gateway, _) = fixtures(2, 0, &[sats(10), sats(1000)]).await;
     fed.mint_coins_for_user(&gateway.user, amount).await;
@@ -184,17 +183,9 @@ async fn receive_lightning_payment() {
         .create_invoice_and_offer(amount, rng())
         .await
         .unwrap();
-    let (keypair, invoice) = user
-        .client
-        .create_invoice_and_offer(amount, rng())
-        .await
-        .unwrap();
 
     // Wait 2 epochs for the offer to achieve consensus
     fed.run_consensus_epochs(2).await;
-
-    let offers = user.client.get_offers().await.unwrap();
-    assert_eq!(&offers[0].hash, invoice.payment_hash());
 
     // Gateway deposits ecash to trigger preimage decryption by the federation
     let (txid, contract_id) = gateway

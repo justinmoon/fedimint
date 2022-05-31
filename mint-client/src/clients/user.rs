@@ -374,13 +374,6 @@ impl UserClient {
         }
     }
 
-    pub async fn get_offers(&self) -> Result<Vec<IncomingContractOffer>, ClientError> {
-        self.ln_client()
-            .get_offers()
-            .await
-            .map_err(|_| ClientError::FetchOfferError)
-    }
-
     pub async fn wait_contract_timeout(
         &self,
         contract: ContractId,
@@ -445,7 +438,7 @@ impl UserClient {
         mut rng: impl RngCore + CryptoRng,
     ) -> Result<OutPoint, ClientError> {
         // Lookup contract
-        let contract = self.ln_client().get_incoming_account(contract_id).await?;
+        let contract = self.ln_client().get_incoming_contract(contract_id).await?;
 
         // Input claims this contract
         let input = mint_tx::Input::LN(contract.claim());

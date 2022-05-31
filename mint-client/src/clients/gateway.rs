@@ -246,19 +246,11 @@ impl GatewayClient {
     ) -> Result<(minimint_api::TransactionId, ContractId)> {
         let mut batch = DbBatch::new();
 
-        // See if there's an offer for this payment hash.
-        let offers: Vec<IncomingContractOffer> = self.ln_client().get_offers().await?;
-        let offer: IncomingContractOffer =
-            match offers.into_iter().find(|o| &o.hash == payment_hash) {
-                Some(o) => {
-                    if &o.amount != amount || &o.hash != payment_hash {
-                        return Err(GatewayClientError::InvalidOffer);
-                    }
-                    o
-                }
-                // FIXME: this should be an error LnClientError that we just bubble up
-                None => return Err(GatewayClientError::NoOffer),
-            };
+        // Fetch offer for this payment hash
+        let offer: IncomingContractOffer = self.ln_client().get_offer(*payment_hash).await?;
+        if &offer.amount != amount || &offer.hash != payment_hash {
+            return Err(GatewayClientError::InvalidOffer);
+        }
 
         // Inputs
         let (coin_keys, coin_input) = self
@@ -310,7 +302,7 @@ impl GatewayClient {
         contract_id: ContractId,
         mut rng: impl RngCore + CryptoRng,
     ) -> Result<OutPoint> {
-        let contract_account = self.ln_client().get_incoming_account(contract_id).await?;
+        let contract_account = self.ln_client().get_incoming_contract(contract_id).await?;
 
         // Input claims this contract
         let input = Input::LN(contract_account.claim());

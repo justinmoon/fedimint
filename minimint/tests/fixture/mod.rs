@@ -237,7 +237,7 @@ impl GatewayTest {
 
 pub struct UserTest {
     pub client: UserClient,
-    config: ClientConfig,
+    pub config: ClientConfig,
     database: Box<dyn Database>,
 }
 

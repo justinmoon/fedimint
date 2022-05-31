@@ -474,7 +474,10 @@ mod tests {
             unimplemented!()
         }
 
-        async fn fetch_offers(&self) -> crate::api::Result<Vec<IncomingContractOffer>> {
+        async fn fetch_offer(
+            &self,
+            _payment_hash: bitcoin::hashes::sha256::Hash,
+        ) -> crate::api::Result<IncomingContractOffer> {
             unimplemented!();
         }
     }

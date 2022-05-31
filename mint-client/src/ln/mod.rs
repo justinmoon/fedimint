@@ -9,7 +9,7 @@ use crate::ln::gateway::LightningGateway;
 use crate::ln::incoming::IncomingContractAccount;
 use crate::ln::outgoing::{OutgoingContractAccount, OutgoingContractData};
 use crate::BorrowedClientContext;
-use bitcoin_hashes::sha256::Hash;
+use bitcoin_hashes::sha256::Hash as Sha256Hash;
 use lightning_invoice::Invoice;
 use minimint::modules::ln::config::LightningModuleClientConfig;
 use minimint::modules::ln::contracts::incoming::{EncryptedPreimage, IncomingContractOffer};
@@ -100,7 +100,7 @@ impl<'c> LnClient<'c> {
         }
     }
 
-    pub async fn get_incoming_account(&self, id: ContractId) -> Result<IncomingContractAccount> {
+    pub async fn get_incoming_contract(&self, id: ContractId) -> Result<IncomingContractAccount> {
         // FIXME: a little weird this fetches the "contract account" to get the "contract" ... why not fetch the contract directly ???
         let account = self.get_contract_account(id).await?;
         match account.contract {
@@ -140,7 +140,7 @@ impl<'c> LnClient<'c> {
     pub fn create_incoming_output(
         &self,
         amount: Amount,
-        payment_hash: Hash,
+        payment_hash: Sha256Hash,
         payment_secret: [u8; 32],
     ) -> Result<ContractOrOfferOutput> {
         Ok(ContractOrOfferOutput::Offer(IncomingContractOffer {
@@ -153,10 +153,10 @@ impl<'c> LnClient<'c> {
         }))
     }
 
-    pub async fn get_offers(&self) -> Result<Vec<IncomingContractOffer>> {
+    pub async fn get_offer(&self, payment_hash: Sha256Hash) -> Result<IncomingContractOffer> {
         self.context
             .api
-            .fetch_offers()
+            .fetch_offer(payment_hash)
             .await
             .map_err(LnClientError::ApiError)
     }
@@ -240,7 +240,10 @@ mod tests {
             unimplemented!()
         }
 
-        async fn fetch_offers(&self) -> crate::api::Result<Vec<IncomingContractOffer>> {
+        async fn fetch_offer(
+            &self,
+            _payment_hash: bitcoin::hashes::sha256::Hash,
+        ) -> crate::api::Result<IncomingContractOffer> {
             unimplemented!();
         }
     }
