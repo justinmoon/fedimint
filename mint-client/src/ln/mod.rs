@@ -101,7 +101,6 @@ impl<'c> LnClient<'c> {
     }
 
     pub async fn get_incoming_contract(&self, id: ContractId) -> Result<IncomingContractAccount> {
-        // FIXME: a little weird this fetches the "contract account" to get the "contract" ... why not fetch the contract directly ???
         let account = self.get_contract_account(id).await?;
         match account.contract {
             FundedContract::Incoming(c) => Ok(IncomingContractAccount {
