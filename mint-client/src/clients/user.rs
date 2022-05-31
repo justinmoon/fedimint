@@ -472,10 +472,7 @@ impl UserClient {
         mut rng: impl RngCore + CryptoRng,
     ) -> Result<OutPoint, ClientError> {
         // Lookup contract
-        let contract = self.ln_client().get_incoming_contract(contract_id).await?;
-        if contract.contract.contract_id() != contract_id {
-            return Err(ClientError::ContractLookupError);
-        }
+        let contract = self.ln_client().get_incoming_account(contract_id).await?;
 
         // Input claims this contract
         let input = mint_tx::Input::LN(contract.claim());
@@ -534,8 +531,6 @@ pub enum ClientError {
     WaitContractTimeout,
     #[error("Error fetching offer")]
     FetchOfferError,
-    #[error("Failed to lookup contract")]
-    ContractLookupError,
     #[error("Failed to create lightning invoice: {0}")]
     InvoiceError(CreationError),
 }

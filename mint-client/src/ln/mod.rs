@@ -89,7 +89,7 @@ impl<'c> LnClient<'c> {
             .map_err(LnClientError::ApiError)
     }
 
-    pub async fn get_outgoing_contract(&self, id: ContractId) -> Result<OutgoingContractAccount> {
+    pub async fn get_outgoing_account(&self, id: ContractId) -> Result<OutgoingContractAccount> {
         let account = self.get_contract_account(id).await?;
         match account.contract {
             FundedContract::Outgoing(c) => Ok(OutgoingContractAccount {
@@ -100,7 +100,7 @@ impl<'c> LnClient<'c> {
         }
     }
 
-    pub async fn get_incoming_contract(&self, id: ContractId) -> Result<IncomingContractAccount> {
+    pub async fn get_incoming_account(&self, id: ContractId) -> Result<IncomingContractAccount> {
         // FIXME: a little weird this fetches the "contract account" to get the "contract" ... why not fetch the contract directly ???
         let account = self.get_contract_account(id).await?;
         match account.contract {
@@ -331,7 +331,7 @@ mod tests {
             .await;
 
         let contract_acc = client
-            .get_outgoing_contract(contract.contract_id())
+            .get_outgoing_account(contract.contract_id())
             .await
             .unwrap();
 
@@ -370,7 +370,7 @@ mod tests {
         fed.lock().await.consensus_round(&[refund_input], &[]).await;
 
         let account = client
-            .get_outgoing_contract(contract.contract_id())
+            .get_outgoing_account(contract.contract_id())
             .await
             .unwrap();
         assert_eq!(account.amount, Amount::ZERO);

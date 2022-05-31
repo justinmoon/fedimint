@@ -88,12 +88,12 @@ impl GatewayClient {
     }
 
     /// Fetch the specified outgoing payment contract account
-    pub async fn fetch_outgoing_contract(
+    pub async fn fetch_outgoing_account(
         &self,
         contract_id: ContractId,
     ) -> Result<OutgoingContractAccount> {
         self.ln_client()
-            .get_outgoing_contract(contract_id)
+            .get_outgoing_account(contract_id)
             .await
             .map_err(GatewayClientError::LnClientError)
     }
@@ -153,7 +153,7 @@ impl GatewayClient {
     /// to be called prior to instructing the lightning node to pay the invoice since otherwise a
     /// crash could lead to loss of funds.
     ///
-    /// Not though that extended periods of staying offline will result in loss of funds anyway if
+    /// However note that extended periods of staying offline will result in loss of funds anyway if
     /// the client can not claim the respective contract in time.
     pub fn save_outgoing_payment(&self, contract: OutgoingContractAccount) {
         self.context
@@ -195,8 +195,7 @@ impl GatewayClient {
         preimage: [u8; 32],
         mut rng: impl RngCore + CryptoRng,
     ) -> Result<OutPoint> {
-        // FIXME: should we check that these contract id's match?
-        let contract = self.ln_client().get_outgoing_contract(contract_id).await?;
+        let contract = self.ln_client().get_outgoing_account(contract_id).await?;
         let input = Input::LN(contract.claim(outgoing::Preimage(preimage)));
 
         let (finalization_data, mint_output) = self
@@ -276,8 +275,6 @@ impl GatewayClient {
             decrypted_preimage: DecryptedPreimage::Pending,
             gateway_key: our_pub_key,
         });
-
-        tracing::info!("incomingcontract {:?}", contract);
         let incoming_output =
             minimint::transaction::Output::LN(ContractOrOfferOutput::Contract(ContractOutput {
                 amount: amount.clone(),
@@ -306,18 +303,15 @@ impl GatewayClient {
         Ok((mint_tx_id, contract.contract_id()))
     }
 
-    // FIXME: almost exactly the same as `claim_incoming_client` in UserClient
+    // FIXME: almost exactly the same as `claim_incoming_contract` in UserClient
     /// Claw back funds after outgoing contract that had invalid preimage
     pub async fn claim_incoming_contract(
         &self,
         contract_id: ContractId,
         mut rng: impl RngCore + CryptoRng,
     ) -> Result<OutPoint> {
-        // FIXME: call this `get_incoming_contract_account()` ??
-        let contract_account = self.ln_client().get_incoming_contract(contract_id).await?;
-        // if contract.contract.contract_id() != contract_id {
-        //     return Err(ClientError::ContractLookupError);
-        // }
+        // FIXME: call this `get_incoming_account()` ??
+        let contract_account = self.ln_client().get_incoming_account(contract_id).await?;
 
         // Input claims this contract
         let input = Input::LN(contract_account.claim());
@@ -427,7 +421,7 @@ impl GatewayClient {
             .db
             .get_value(&OutgoingPaymentClaimKey(contract_id))
             .expect("DB error")
-            .expect("Contract not found"));
+            .expect("Contract not found");
         let txid = transaction.tx_hash();
 
         let await_confirmed = || async {
