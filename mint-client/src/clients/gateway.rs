@@ -153,7 +153,7 @@ impl GatewayClient {
     /// to be called prior to instructing the lightning node to pay the invoice since otherwise a
     /// crash could lead to loss of funds.
     ///
-    /// However note that extended periods of staying offline will result in loss of funds anyway if
+    /// Note though that extended periods of staying offline will result in loss of funds anyway if
     /// the client can not claim the respective contract in time.
     pub fn save_outgoing_payment(&self, contract: OutgoingContractAccount) {
         self.context
