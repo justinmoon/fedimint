@@ -5,6 +5,7 @@ use bitcoin::Amount;
 use fixture::fixtures;
 use fixture::{rng, sats};
 use minimint::consensus::ConsensusItem;
+use minimint::db::AcceptedTransactionKey;
 use minimint::transaction::{Output, Transaction};
 use minimint_ln::contracts::incoming::{EncryptedPreimage, IncomingContractOffer};
 use minimint_ln::ContractOrOfferOutput;
@@ -236,18 +237,9 @@ async fn receive_lightning_payment_invalid_preimage() {
     assert_eq!(user.total_coins(), sats(0));
     assert_eq!(gateway.user.total_coins(), amount);
 
-    // Create invoice and offer in the federation (should this block in the future?)
-    // let (keypair, invoice) = user
-    //     .client
-    //     .create_invoice_and_offer(&gateway.keys, amount, rng())
-    //     .await
-    //     .unwrap();
-
-    // Create offer with bad encrypted preimage that doesn't hash to "payment hash"
-    // let real_preimage = [0; 32];
-    // let fake_preimage = [1; 32];
+    // Manually contstruct offer w/ invalid preimage. Can't use library code because it uses correct preimage ;)
     let secp = bitcoin::secp256k1::Secp256k1::new();
-    let (_, fake_pubkey) = secp.generate_schnorrsig_keypair(&mut rng());
+    let (fake_keypair, fake_pubkey) = secp.generate_schnorrsig_keypair(&mut rng());
     let (real_keypair, real_pubkey) = secp.generate_schnorrsig_keypair(&mut rng());
     let payment_hash = bitcoin::hashes::sha256::Hash::hash(&real_pubkey.serialize());
     let offer = IncomingContractOffer {
@@ -272,41 +264,46 @@ async fn receive_lightning_payment_invalid_preimage() {
     // Run 2 epochs to get the offer to show up p
     fed.run_consensus_epochs(2).await;
 
-    // Gateway deposits ecash to trigger preimage decryption by the federation
+    // Gateway escrows ecash to trigger preimage decryption by the federation
     let (txid, contract_id) = gateway
         .server
         .buy_preimage_offer(&payment_hash, &amount, rng())
         .await
         .unwrap();
 
-    // Assert that everyone has 0 ecash right now
+    // Now everyone has 0 ecash
     assert_eq!(user.total_coins(), sats(0));
     assert_eq!(gateway.user.total_coins(), sats(0));
 
-    fed.run_consensus_epochs(5).await; // announce preimage sale
+    fed.run_consensus_epochs(5).await;
 
-    // Gateway receives decrypted preimage and it matches the invoice payment hash
-    // let response = gateway.server.await_preimage_decryption(txid).await;
-    // assert!(response.is_err());
+    // User gets error when they try to claim gateway's escrowed ecash
+    let response = user
+        .client
+        .claim_incoming_contract(contract_id, real_keypair, rng())
+        .await;
+    assert!(response.is_err());
+    let response = user
+        .client
+        .claim_incoming_contract(contract_id, fake_keypair, rng())
+        .await;
+    assert!(response.is_err());
 
-    // User claims their ecash
-    // let response = user
-    //     .client
-    //     .claim_incoming_contract(contract_id, real_keypair, rng())
-    //     .await;
-    // assert!(response.is_err());
+    // Gateway re-claims their funds
+    let outpoint = gateway
+        .client
+        .claim_incoming_contract(contract_id, rng())
+        .await
+        .unwrap();
+    fed.run_consensus_epochs(4).await;
+    gateway.client.fetch_coins(outpoint).await;
 
-    // FIXME: does the gateway get their coins here?
-    // fed.run_consensus_epochs(4).await; // FIXME: why does this need 4 rounds?
-
-    // Gateway got their tokens back
-    let fetchable = gateway.server.federation_client.list_fetchable_coins();
-    tracing::info!("fetchable {:?}", fetchable);
-    gateway.server.await_contract_claimed(contract_id).await;
+    // Gateway clawed their escrowed funds back
     assert_eq!(gateway.user.client.coins().amount(), amount);
     assert_eq!(user.total_coins(), sats(0));
 }
 
+// TODO: make sure that user can sweep their funds back
 #[tokio::test(flavor = "multi_thread")]
 async fn lightning_gateway_cannot_claim_invalid_preimage() {
     let (fed, user, _, gateway, lightning) = fixtures(2, 0, &[sats(10), sats(1000)]).await;

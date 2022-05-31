@@ -195,6 +195,7 @@ impl GatewayClient {
         preimage: [u8; 32],
         mut rng: impl RngCore + CryptoRng,
     ) -> Result<OutPoint> {
+        // FIXME: should we check that these contract id's match?
         let contract = self.ln_client().get_outgoing_contract(contract_id).await?;
         let input = Input::LN(contract.claim(outgoing::Preimage(preimage)));
 
@@ -275,6 +276,8 @@ impl GatewayClient {
             decrypted_preimage: DecryptedPreimage::Pending,
             gateway_key: our_pub_key,
         });
+
+        tracing::info!("incomingcontract {:?}", contract);
         let incoming_output =
             minimint::transaction::Output::LN(ContractOrOfferOutput::Contract(ContractOutput {
                 amount: amount.clone(),
@@ -301,6 +304,64 @@ impl GatewayClient {
         self.context.db.apply_batch(batch).expect("DB error");
 
         Ok((mint_tx_id, contract.contract_id()))
+    }
+
+    // FIXME: almost exactly the same as `claim_incoming_client` in UserClient
+    /// Claw back funds after outgoing contract that had invalid preimage
+    pub async fn claim_incoming_contract(
+        &self,
+        contract_id: ContractId,
+        mut rng: impl RngCore + CryptoRng,
+    ) -> Result<OutPoint> {
+        // FIXME: call this `get_incoming_contract_account()` ??
+        let contract_account = self.ln_client().get_incoming_contract(contract_id).await?;
+        // if contract.contract.contract_id() != contract_id {
+        //     return Err(ClientError::ContractLookupError);
+        // }
+
+        // Input claims this contract
+        let input = Input::LN(contract_account.claim());
+
+        // Output pays us ecash tokens
+        let (finalization_data, mint_output) = self
+            .mint_client()
+            .create_coin_output(input.amount(), &mut rng);
+        let output = Output::Mint(mint_output);
+
+        let inputs = vec![input];
+        let outputs = vec![output];
+        let txid = Transaction::tx_hash_from_parts(&inputs, &outputs);
+        let signature = agg_sign(
+            &[self.context.config.redeem_key],
+            txid.as_hash(),
+            &self.context.secp,
+            &mut rng,
+        );
+
+        let out_point = OutPoint { txid, out_idx: 0 };
+        let mut batch = DbBatch::new();
+        self.mint_client().save_coin_finalization_data(
+            batch.transaction(),
+            out_point,
+            finalization_data,
+        );
+
+        let transaction = Transaction {
+            inputs,
+            outputs,
+            signature: Some(signature),
+        };
+
+        // TODO: database stuff (this was copied GatewayClient::claim_outgoing_contract)
+        // batch.autocommit(|batch| {
+        //     batch.append_delete(OutgoingPaymentKey(contract_id));
+        //     batch.append_insert(OutgoingPaymentClaimKey(contract_id), transaction.clone());
+        // });
+        self.context.db.apply_batch(batch).expect("DB error");
+
+        self.context.api.submit_transaction(transaction).await?;
+
+        Ok(out_point)
     }
 
     /// Lists all claim transactions for outgoing contracts that we have submitted but were not part
