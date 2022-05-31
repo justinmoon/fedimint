@@ -304,7 +304,6 @@ impl GatewayClient {
         Ok((mint_tx_id, contract.contract_id()))
     }
 
-    // FIXME: almost exactly the same as `claim_incoming_contract` in UserClient
     /// Claw back funds after outgoing contract that had invalid preimage
     pub async fn claim_incoming_contract(
         &self,
