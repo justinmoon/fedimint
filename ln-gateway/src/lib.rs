@@ -24,8 +24,7 @@ pub struct LnGatewayConfig {
 }
 
 pub struct LnGateway {
-    // FIXME: revert
-    pub federation_client: Arc<GatewayClient>,
+    federation_client: Arc<GatewayClient>,
     ln_client: Arc<dyn LnRpc>,
     fetcher: tokio::task::JoinHandle<()>,
 }

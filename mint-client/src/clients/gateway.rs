@@ -427,7 +427,7 @@ impl GatewayClient {
             .db
             .get_value(&OutgoingPaymentClaimKey(contract_id))
             .expect("DB error")
-            .expect(&format!("Contract not found {}", contract_id));
+            .expect("Contract not found"));
         let txid = transaction.tx_hash();
 
         let await_confirmed = || async {

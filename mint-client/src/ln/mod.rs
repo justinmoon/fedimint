@@ -137,8 +137,8 @@ impl<'c> LnClient<'c> {
         )
     }
 
-    pub fn create_incoming_output<'a>(
-        &'a self,
+    pub fn create_incoming_output(
+        &self,
         amount: Amount,
         payment_hash: Hash,
         payment_secret: [u8; 32],
