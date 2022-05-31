@@ -8,9 +8,8 @@ use crate::mint::{MintClient, MintClientError};
 use crate::{api, OwnedClientContext};
 use lightning_invoice::Invoice;
 use minimint::config::ClientConfig;
-use minimint::modules::ln::contracts::incoming::Preimage;
 use minimint::modules::ln::contracts::{
-    incoming::{DecryptedPreimage, IncomingContract, IncomingContractOffer},
+    incoming::{DecryptedPreimage, IncomingContract, IncomingContractOffer, Preimage},
     outgoing, Contract, ContractId, ContractOutcome, IdentifyableContract,
 };
 use minimint::modules::ln::{ContractOrOfferOutput, ContractOutput};
@@ -89,12 +88,12 @@ impl GatewayClient {
     }
 
     /// Fetch the specified outgoing payment contract account
-    pub async fn fetch_outgoing_account(
+    pub async fn fetch_outgoing_contract(
         &self,
         contract_id: ContractId,
     ) -> Result<OutgoingContractAccount> {
         self.ln_client()
-            .get_outgoing_account(contract_id)
+            .get_outgoing_contract(contract_id)
             .await
             .map_err(GatewayClientError::LnClientError)
     }
@@ -196,7 +195,7 @@ impl GatewayClient {
         preimage: [u8; 32],
         mut rng: impl RngCore + CryptoRng,
     ) -> Result<OutPoint> {
-        let contract = self.ln_client().get_outgoing_account(contract_id).await?;
+        let contract = self.ln_client().get_outgoing_contract(contract_id).await?;
         let input = Input::LN(contract.claim(outgoing::Preimage(preimage)));
 
         let (finalization_data, mint_output) = self

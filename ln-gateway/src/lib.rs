@@ -92,7 +92,7 @@ impl LnGateway {
         debug!("Fetching contract");
         let contract_account = self
             .federation_client
-            .fetch_outgoing_account(contract_id)
+            .fetch_outgoing_contract(contract_id)
             .await?;
 
         let payment_params = self
