@@ -197,29 +197,36 @@ async fn lightning_gateway_pays_invoice() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn receive_lightning_payment_valid_preimage() {
-    let amount = sats(2000);
-    let (fed, user, _, gateway, _) = fixtures(2, 0, &[sats(10), sats(1000)]).await;
-    fed.mint_coins_for_user(&gateway.user, amount).await;
+    let starting_balance = sats(3000);
+    let payment_amount = sats(1000);
+    let (fed, user, _, gateway, _) = fixtures(2, 0, &[sats(1000)]).await;
+    fed.mint_coins_for_user(&gateway.user, starting_balance)
+        .await;
     assert_eq!(user.total_coins(), sats(0));
-    assert_eq!(gateway.user.total_coins(), amount);
+    assert_eq!(gateway.user.total_coins(), starting_balance);
 
     // Create invoice and offer in the federation
     let (keypair, invoice) = user
         .client
-        .create_invoice_and_offer(amount, rng())
+        .create_invoice_and_offer(payment_amount, rng())
         .await
         .unwrap();
-
-    // Wait 2 epochs for the offer to achieve consensus
-    fed.run_consensus_epochs(2).await;
+    fed.run_consensus_epochs(2).await; // process offer
 
     // Gateway deposits ecash to trigger preimage decryption by the federation
     let (txid, contract_id) = gateway
         .server
-        .buy_preimage_offer(invoice.payment_hash(), &amount, rng())
+        .buy_preimage_offer(invoice.payment_hash(), &payment_amount, rng())
         .await
         .unwrap();
-    fed.run_consensus_epochs(5).await;
+    fed.run_consensus_epochs(4).await; // 2 epochs to process contract, 2 for preimage decryption
+
+    // Gateway funds have been escrowed
+    assert_eq!(
+        gateway.user.client.coins().amount(),
+        starting_balance - payment_amount
+    );
+    assert_eq!(user.total_coins(), sats(0));
 
     // Gateway receives decrypted preimage
     let preimage = gateway
@@ -238,34 +245,35 @@ async fn receive_lightning_payment_valid_preimage() {
         .claim_incoming_contract(contract_id, keypair, rng())
         .await
         .unwrap();
-    fed.run_consensus_epochs(4).await;
-
-    // User fetches their coins
-    user.client.fetch_all_coins().await.unwrap();
-    fed.run_consensus_epochs(2).await;
+    fed.run_consensus_epochs(4).await; // 2 epochs to process contract, 2 to sweep ecash from contract
 
     // Ecash tokens have been transferred from gateway to user
-    assert_eq!(gateway.user.client.coins().amount(), sats(0));
-    assert_eq!(user.total_coins(), amount);
+    user.client.fetch_all_coins().await.unwrap();
+    assert_eq!(
+        gateway.user.client.coins().amount(),
+        starting_balance - payment_amount
+    );
+    assert_eq!(user.total_coins(), payment_amount);
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn receive_lightning_payment_invalid_preimage() {
-    let amount = sats(2000);
-    let (fed, user, _, gateway, _) = fixtures(2, 0, &[sats(10), sats(1000)]).await;
-    fed.mint_coins_for_user(&gateway.user, amount).await;
+    let starting_balance = sats(3000);
+    let payment_amount = sats(1000);
+    let (fed, user, _, gateway, _) = fixtures(2, 0, &[sats(1000)]).await;
+    fed.mint_coins_for_user(&gateway.user, starting_balance)
+        .await;
     assert_eq!(user.total_coins(), sats(0));
-    assert_eq!(gateway.user.total_coins(), amount);
+    assert_eq!(gateway.user.total_coins(), starting_balance);
 
-    // Manually contstruct offer w/ invalid preimage. Can't use library code because it uses correct preimage ;)
-    let (fake_keypair, fake_pubkey) = secp().generate_schnorrsig_keypair(&mut rng());
-    let (real_keypair, real_pubkey) = secp().generate_schnorrsig_keypair(&mut rng());
-    let payment_hash = sha256(&real_pubkey.serialize());
+    // Manually contstruct offer where sha256(preimage) != hash
+    let (keypair, pubkey) = secp().generate_schnorrsig_keypair(&mut rng());
+    let payment_hash = sha256(&[0]);
     let offer = IncomingContractOffer {
-        amount,
+        amount: payment_amount,
         hash: payment_hash,
         encrypted_preimage: EncryptedPreimage::new(
-            fake_pubkey.serialize(),
+            pubkey.serialize(),
             &user.config.ln.threshold_pub_key,
         ),
     };
@@ -273,32 +281,27 @@ async fn receive_lightning_payment_invalid_preimage() {
     builder.output(Output::LN(ContractOrOfferOutput::Offer(offer.clone())));
     let tx = builder.build(&secp(), &mut rng());
     fed.submit_transaction(tx);
-
-    // Run 2 epochs to get the offer to show up p
-    fed.run_consensus_epochs(2).await;
+    fed.run_consensus_epochs(2).await; // process offer
 
     // Gateway escrows ecash to trigger preimage decryption by the federation
     let (_, contract_id) = gateway
         .server
-        .buy_preimage_offer(&payment_hash, &amount, rng())
+        .buy_preimage_offer(&payment_hash, &payment_amount, rng())
         .await
         .unwrap();
+    fed.run_consensus_epochs(4).await; // 2 epochs to process contract, 2 for preimage decryption
 
-    // Now everyone has 0 ecash
+    // Gateway funds have been escrowed
     assert_eq!(user.total_coins(), sats(0));
-    assert_eq!(gateway.user.total_coins(), sats(0));
-
-    fed.run_consensus_epochs(5).await;
+    assert_eq!(
+        gateway.user.total_coins(),
+        starting_balance - payment_amount
+    );
 
     // User gets error when they try to claim gateway's escrowed ecash
     let response = user
         .client
-        .claim_incoming_contract(contract_id, real_keypair, rng())
-        .await;
-    assert!(response.is_err());
-    let response = user
-        .client
-        .claim_incoming_contract(contract_id, fake_keypair, rng())
+        .claim_incoming_contract(contract_id, keypair, rng())
         .await;
     assert!(response.is_err());
 
@@ -308,14 +311,14 @@ async fn receive_lightning_payment_invalid_preimage() {
         .claim_incoming_contract(contract_id, rng())
         .await
         .unwrap();
-    fed.run_consensus_epochs(4).await;
+    fed.run_consensus_epochs(4).await; // 2 epochs to process contract, 2 to sweep ecash from contract
 
     // TODO: disable background_fetch for this test and fetch the coins manually
     // gateway.client.fetch_coins(_outpoint).await.unwrap();
 
     // Gateway has clawed back their escrowed funds
     assert_eq!(user.total_coins(), sats(0));
-    assert_eq!(gateway.user.client.coins().amount(), amount);
+    assert_eq!(gateway.user.client.coins().amount(), starting_balance);
 }
 
 #[tokio::test(flavor = "multi_thread")]

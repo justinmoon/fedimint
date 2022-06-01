@@ -6,7 +6,7 @@ use crate::mint::{MintClient, MintClientError, SpendableCoin};
 use crate::wallet::{WalletClient, WalletClientError};
 use crate::{api, OwnedClientContext};
 use bitcoin::schnorr::KeyPair;
-use bitcoin::{Address, Transaction as BitcoinTransaction};
+use bitcoin::{Address, Network, Transaction as BitcoinTransaction};
 use bitcoin_hashes::Hash;
 use lightning::ln::PaymentSecret;
 use lightning_invoice::{CreationError, Currency, Invoice, InvoiceBuilder};
@@ -30,6 +30,15 @@ use std::time::Duration;
 use thiserror::Error;
 
 const TIMELOCK: u64 = 100;
+
+fn network_to_currency(network: Network) -> Currency {
+    match network {
+        Network::Bitcoin => Currency::Bitcoin,
+        Network::Regtest => Currency::Regtest,
+        Network::Testnet => Currency::BitcoinTestnet,
+        Network::Signet => Currency::Signet,
+    }
+}
 
 pub struct UserClient {
     context: OwnedClientContext<ClientConfig>,
@@ -341,7 +350,7 @@ impl UserClient {
         // Temporary lightning node pubkey
         let (node_secret_key, node_public_key) = self.context.secp.generate_keypair(&mut rng);
 
-        let invoice = InvoiceBuilder::new(Currency::Regtest)
+        let invoice = InvoiceBuilder::new(network_to_currency(self.context.config.wallet.network))
             .amount_milli_satoshis(amount.milli_sat)
             .description("".into())
             .payment_hash(payment_hash)
