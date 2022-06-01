@@ -59,6 +59,9 @@ enum Command {
 
     /// Display wallet info (holdings, tiers)
     Info,
+
+    /// Create a lightning invoice to receive payment via gateway
+    LnInvoice { amount: Amount },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -164,6 +167,13 @@ async fn main() {
                 .send()
                 .await
                 .unwrap();
+        }
+        Command::LnInvoice { amount } => {
+            let (_, invoice) = client
+                .create_invoice_and_offer(amount, &cfg.gateway, &mut rng)
+                .await
+                .expect("Couldn't create invoice");
+            println!("{}", invoice)
         }
     }
 }

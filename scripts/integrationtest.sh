@@ -31,6 +31,7 @@ mkdir $CFG_DIR
 
 # Build all executables
 cd $SRC_DIR
+# TODO: Make sure this builds gateway plugin
 cargo build --release
 BIN_DIR="$SRC_DIR/target/release"
 
@@ -41,9 +42,10 @@ until [ "$($BTC_CLIENT getblockchaininfo | jq -r '.chain')" == "regtest" ]; do
   sleep $POLL_INTERVAL
 done
 
-# Start lightning nodes
-lightningd --network regtest --bitcoin-rpcuser=bitcoin --bitcoin-rpcpassword=bitcoin --lightning-dir=$LN1_DIR --addr=127.0.0.1:9000 &
-lightningd --network regtest --bitcoin-rpcuser=bitcoin --bitcoin-rpcpassword=bitcoin --lightning-dir=$LN2_DIR --addr=127.0.0.1:9001 &
+# Start lightning nodes. Lightning gateway is run as core-lightning plugin.
+lightningd --network regtest --bitcoin-rpcuser=bitcoin --bitcoin-rpcpassword=bitcoin --lightning-dir=$LN1_DIR --addr=127.0.0.1:9000 --plugin=$BIN_DIR/ln_gateway --minimint-cfg=$CFG_DIR &
+lightningd --network regtest --bitcoin-rpcuser=bitcoin --bitcoin-rpcpassword=bitcoin --lightning-dir=$LN2_DIR \
+    --addr=127.0.0.1:9001 &
 until [ -e $LN1_DIR/regtest/lightning-rpc ]; do
     sleep $POLL_INTERVAL
 done
@@ -53,10 +55,13 @@ done
 LN1="lightning-cli --network regtest --lightning-dir=$LN1_DIR"
 LN2="lightning-cli --network regtest --lightning-dir=$LN2_DIR"
 
+$BTC_CLIENT createwallet "" || true
+$BTC_CLIENT loadwallet "" || true
+
 # Run the Rust integration tests against the real Bitcoin / Lightning services
-export MINIMINT_TEST_REAL=1
-export MINIMINT_TEST_DIR=$TMP_DIR
-cargo test -p minimint-tests -- --test-threads=1
+# export MINIMINT_TEST_REAL=1
+# export MINIMINT_TEST_DIR=$TMP_DIR
+# cargo test -p minimint-tests -- --test-threads=1
 
 # Generate federation, gateway and client config
 $BIN_DIR/configgen -- $CFG_DIR 4 4000 5000 1000 10000 100000 1000000 10000000
@@ -100,40 +105,48 @@ function await_block_sync() {
 await_block_sync
 
 # Start LN gateway
-$BIN_DIR/ln_gateway $CFG_DIR &
+# $BIN_DIR/ln_gateway $CFG_DIR &
 
 #### BEGIN TESTS ####
 # peg in
-PEG_IN_ADDR="$($MINT_CLIENT peg-in-address)"
-TX_ID="$($BTC_CLIENT sendtoaddress $PEG_IN_ADDR 0.00099999)"
 
-# Confirm peg-in
-mine_blocks 11
-await_block_sync
-TXOUT_PROOF="$($BTC_CLIENT gettxoutproof "[\"$TX_ID\"]")"
-TRANSACTION="$($BTC_CLIENT getrawtransaction $TX_ID)"
-$MINT_CLIENT peg-in "$TXOUT_PROOF" "$TRANSACTION"
-$MINT_CLIENT fetch
+# PEG_IN_ADDR="$($MINT_CLIENT peg-in-address)"
+# TX_ID="$($BTC_CLIENT sendtoaddress $PEG_IN_ADDR 0.00099999)"
 
-# reissue
-TOKENS=$($MINT_CLIENT spend 42000)
-$MINT_CLIENT reissue $TOKENS
-$MINT_CLIENT fetch
+# # Confirm peg-in
+# mine_blocks 11
+# await_block_sync
+# TXOUT_PROOF="$($BTC_CLIENT gettxoutproof "[\"$TX_ID\"]")"
+# TRANSACTION="$($BTC_CLIENT getrawtransaction $TX_ID)"
+# $MINT_CLIENT peg-in "$TXOUT_PROOF" "$TRANSACTION"
+# $MINT_CLIENT fetch
 
-# peg out
-PEG_OUT_ADDR="$($BTC_CLIENT getnewaddress)"
-$MINT_CLIENT peg-out $PEG_OUT_ADDR 500
-sleep 5 # wait for tx to be included
-mine_blocks 120
-await_block_sync
-sleep 15
-mine_blocks 10
-RECEIVED=$($BTC_CLIENT getreceivedbyaddress $PEG_OUT_ADDR)
-[[ "$RECEIVED" = "0.00000500" ]]
+# # reissue
+# TOKENS=$($MINT_CLIENT spend 42000)
+# $MINT_CLIENT reissue $TOKENS
+# $MINT_CLIENT fetch
 
-# outgoing lightning
-INVOICE="$($LN2 invoice 100000 test test 1m | jq -r '.bolt11')"
-$MINT_CLIENT ln-pay $INVOICE
-INVOICE_RESULT="$($LN2 waitinvoice test)"
-INVOICE_STATUS="$(echo $INVOICE_RESULT | jq -r '.status')"
-[[ "$INVOICE_STATUS" = "paid" ]]
+# # peg out
+# PEG_OUT_ADDR="$($BTC_CLIENT getnewaddress)"
+# $MINT_CLIENT peg-out $PEG_OUT_ADDR 500
+# sleep 5 # wait for tx to be included
+# mine_blocks 120
+# await_block_sync
+# sleep 15
+# mine_blocks 10
+# RECEIVED=$($BTC_CLIENT getreceivedbyaddress $PEG_OUT_ADDR)
+# [[ "$RECEIVED" = "0.00000500" ]]
+
+# # outgoing lightning
+# INVOICE="$($LN2 invoice 100000 test test 1m | jq -r '.bolt11')"
+# $MINT_CLIENT ln-pay $INVOICE
+# INVOICE_RESULT="$($LN2 waitinvoice test)"
+# INVOICE_STATUS="$(echo $INVOICE_RESULT | jq -r '.status')"
+# [[ "$INVOICE_STATUS" = "paid" ]]
+
+# incoming lightning
+
+$MINT_CLIENT info
+# INVOICE="$($MINT_CLIENT ln-invoice 100000)"
+$MINT_CLIENT ln-invoice 100000
+$MINT_CLIENT info

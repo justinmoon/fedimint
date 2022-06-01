@@ -22,6 +22,7 @@ use minimint_api::{Amount, OutPoint, PeerId, TransactionId};
 use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use tracing::debug;
 
 pub struct GatewayClient {
     context: OwnedClientContext<GatewayClientConfig>,
@@ -304,6 +305,7 @@ impl GatewayClient {
     }
 
     pub async fn await_preimage_decryption(&self, txid: TransactionId) -> Result<Preimage> {
+        let mut retries = 30;
         loop {
             match self.context.api.fetch_tx_outcome(txid).await {
                 Ok(status) => match status {
@@ -327,13 +329,16 @@ impl GatewayClient {
                             _ => return Err(GatewayClientError::WrongTransactionType),
                         };
                     }
-                    TransactionStatus::Error(error) => {
-                        return Err(GatewayClientError::InvalidTransaction(error))
-                    }
+                    TransactionStatus::Error(_) => {} // retry
                 },
-                Err(error) => return Err(GatewayClientError::MintApiError(error)),
+                Err(_) => {} // retry
             };
+            debug!("waiting for preimage decryption");
             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            retries -= 1;
+            if retries == 0 {
+                return Err(GatewayClientError::Timeout);
+            }
         }
     }
 
@@ -460,6 +465,8 @@ pub enum GatewayClientError {
     InvalidTransaction(String),
     #[error("Invalid preimage")]
     InvalidPreimage,
+    #[error("Timeout")]
+    Timeout,
 }
 
 impl From<LnClientError> for GatewayClientError {

@@ -186,6 +186,7 @@ Jun 15 15:02:06.264  INFO mint_client: Fetched coins from issuance 47d8f08710423
 
 To pay a Lightning invoice using ecash tokens via the gateway we must run the gateway itself:
 
+TODO: remove this, include gateway in `lightningd` command
 ```shell
 cargo run --bin ln_gateway --release cfg
 ```
