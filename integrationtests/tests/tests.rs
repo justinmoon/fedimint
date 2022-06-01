@@ -1,12 +1,16 @@
 mod fixtures;
 
 use assert_matches::assert_matches;
+use bitcoin::schnorr::PublicKey;
 use bitcoin::Amount;
-use fixtures::fixtures;
-use fixtures::{rng, sats};
+use fixtures::{fixtures, rng, sats, secp, sha256};
 use futures::executor::block_on;
 use minimint::consensus::ConsensusItem;
+use minimint::transaction::Output;
+use minimint_ln::contracts::incoming::{EncryptedPreimage, IncomingContractOffer};
+use minimint_ln::ContractOrOfferOutput;
 use minimint_wallet::WalletConsensusItem::PegOutSignature;
+use mint_client::clients::transaction::TransactionBuilder;
 use std::ops::Sub;
 
 #[tokio::test(flavor = "multi_thread")]
@@ -68,8 +72,7 @@ async fn peg_out_with_p2pkh() {
     let (fed, user, _, _, _) = fixtures(2, 0, &[sats(100), sats(1000)]).await;
     fed.mint_coins_for_user(&user, sats(4500)).await;
 
-    let ctx = bitcoin::secp256k1::Secp256k1::new();
-    let (_, public_key) = ctx.generate_keypair(&mut rng());
+    let (_, public_key) = secp().generate_keypair(&mut rng());
     let peg_out_address = bitcoin::Address::p2pkh(
         &bitcoin::ecdsa::PublicKey::new(public_key),
         bitcoin::Network::Regtest,
@@ -188,8 +191,131 @@ async fn lightning_gateway_pays_invoice() {
     gateway.server.await_contract_claimed(contract_id).await;
     user.client.fetch_all_coins().await.unwrap();
     assert_eq!(user.total_coins(), sats(2000 - 1010));
-    assert_eq!(gateway.user_client.coins().amount(), sats(1010));
+    assert_eq!(gateway.user.client.coins().amount(), sats(1010));
     assert_eq!(lightning.amount_sent(), sats(1000));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn receive_lightning_payment_valid_preimage() {
+    let amount = sats(2000);
+    let (fed, user, _, gateway, _) = fixtures(2, 0, &[sats(10), sats(1000)]).await;
+    fed.mint_coins_for_user(&gateway.user, amount).await;
+    assert_eq!(user.total_coins(), sats(0));
+    assert_eq!(gateway.user.total_coins(), amount);
+
+    // Create invoice and offer in the federation
+    let (keypair, invoice) = user
+        .client
+        .create_invoice_and_offer(amount, rng())
+        .await
+        .unwrap();
+
+    // Wait 2 epochs for the offer to achieve consensus
+    fed.run_consensus_epochs(2).await;
+
+    // Gateway deposits ecash to trigger preimage decryption by the federation
+    let (txid, contract_id) = gateway
+        .server
+        .buy_preimage_offer(invoice.payment_hash(), &amount, rng())
+        .await
+        .unwrap();
+    fed.run_consensus_epochs(5).await;
+
+    // Gateway receives decrypted preimage
+    let preimage = gateway
+        .server
+        .await_preimage_decryption(txid)
+        .await
+        .unwrap();
+
+    // Check that the preimage matches user pubkey & lightning invoice preimage
+    let pubkey = PublicKey::from_keypair(&secp(), &keypair);
+    assert_eq!(pubkey, preimage.0);
+    assert_eq!(&sha256(&pubkey.serialize()), invoice.payment_hash());
+
+    // User claims their ecash
+    user.client
+        .claim_incoming_contract(contract_id, keypair, rng())
+        .await
+        .unwrap();
+    fed.run_consensus_epochs(4).await;
+
+    // User fetches their coins
+    user.client.fetch_all_coins().await.unwrap();
+    fed.run_consensus_epochs(2).await;
+
+    // Ecash tokens have been transferred from gateway to user
+    assert_eq!(gateway.user.client.coins().amount(), sats(0));
+    assert_eq!(user.total_coins(), amount);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn receive_lightning_payment_invalid_preimage() {
+    let amount = sats(2000);
+    let (fed, user, _, gateway, _) = fixtures(2, 0, &[sats(10), sats(1000)]).await;
+    fed.mint_coins_for_user(&gateway.user, amount).await;
+    assert_eq!(user.total_coins(), sats(0));
+    assert_eq!(gateway.user.total_coins(), amount);
+
+    // Manually contstruct offer w/ invalid preimage. Can't use library code because it uses correct preimage ;)
+    let (fake_keypair, fake_pubkey) = secp().generate_schnorrsig_keypair(&mut rng());
+    let (real_keypair, real_pubkey) = secp().generate_schnorrsig_keypair(&mut rng());
+    let payment_hash = sha256(&real_pubkey.serialize());
+    let offer = IncomingContractOffer {
+        amount,
+        hash: payment_hash,
+        encrypted_preimage: EncryptedPreimage::new(
+            fake_pubkey.serialize(),
+            &user.config.ln.threshold_pub_key,
+        ),
+    };
+    let mut builder = TransactionBuilder::default();
+    builder.output(Output::LN(ContractOrOfferOutput::Offer(offer.clone())));
+    let tx = builder.build(&secp(), &mut rng());
+    fed.submit_transaction(tx);
+
+    // Run 2 epochs to get the offer to show up p
+    fed.run_consensus_epochs(2).await;
+
+    // Gateway escrows ecash to trigger preimage decryption by the federation
+    let (_, contract_id) = gateway
+        .server
+        .buy_preimage_offer(&payment_hash, &amount, rng())
+        .await
+        .unwrap();
+
+    // Now everyone has 0 ecash
+    assert_eq!(user.total_coins(), sats(0));
+    assert_eq!(gateway.user.total_coins(), sats(0));
+
+    fed.run_consensus_epochs(5).await;
+
+    // User gets error when they try to claim gateway's escrowed ecash
+    let response = user
+        .client
+        .claim_incoming_contract(contract_id, real_keypair, rng())
+        .await;
+    assert!(response.is_err());
+    let response = user
+        .client
+        .claim_incoming_contract(contract_id, fake_keypair, rng())
+        .await;
+    assert!(response.is_err());
+
+    // Gateway re-claims their funds
+    let _outpoint = gateway
+        .client
+        .claim_incoming_contract(contract_id, rng())
+        .await
+        .unwrap();
+    fed.run_consensus_epochs(4).await;
+
+    // TODO: disable background_fetch for this test and fetch the coins manually
+    // gateway.client.fetch_coins(_outpoint).await.unwrap();
+
+    // Gateway has clawed back their escrowed funds
+    assert_eq!(user.total_coins(), sats(0));
+    assert_eq!(gateway.user.client.coins().amount(), amount);
 }
 
 #[tokio::test(flavor = "multi_thread")]

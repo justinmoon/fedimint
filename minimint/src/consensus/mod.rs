@@ -227,6 +227,9 @@ where
             self.mint
                 .end_consensus_epoch(db_batch.transaction(), self.rng_gen.get_rng())
                 .await;
+            self.ln
+                .end_consensus_epoch(db_batch.transaction(), self.rng_gen.get_rng())
+                .await;
             self.db.apply_batch(db_batch).expect("DB error");
         }
     }
@@ -251,6 +254,13 @@ where
                     .await
                     .into_iter()
                     .map(ConsensusItem::Mint),
+            )
+            .chain(
+                self.ln
+                    .consensus_proposal(self.rng_gen.get_rng())
+                    .await
+                    .into_iter()
+                    .map(ConsensusItem::LN),
             )
             .collect()
     }

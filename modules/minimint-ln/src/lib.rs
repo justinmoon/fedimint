@@ -526,6 +526,29 @@ impl FederationModule for LightningModule {
                     Ok(body.into())
                 },
             },
+            ApiEndpoint {
+                path_spec: "/offer/:payment_hash",
+                params: &["payment_hash"],
+                method: http::Method::Get,
+                handler: |module, params, _body| {
+                    let payment_hash: bitcoin_hashes::sha256::Hash = match params
+                        .get("payment_hash")
+                        .expect("Contract id not supplied")
+                        .parse()
+                    {
+                        Ok(id) => id,
+                        Err(_) => return Ok(http::Response::new(400)),
+                    };
+
+                    let offer = module
+                        .get_offer(payment_hash)
+                        .ok_or_else(|| http::Error::from_str(404, "Not found"))?;
+
+                    debug!(%payment_hash, "Sending offer info");
+                    let body = http::Body::from_json(&offer).expect("encoding error");
+                    Ok(body.into())
+                },
+            },
         ]
     }
 }
@@ -545,6 +568,15 @@ impl LightningModule {
             .threshold_pub_keys
             .public_key_share(peer.to_usize())
             .verify_decryption_share(&share.0, &message.0)
+    }
+
+    pub fn get_offer(
+        &self,
+        payment_hash: bitcoin_hashes::sha256::Hash,
+    ) -> Option<IncomingContractOffer> {
+        self.db
+            .get_value(&OfferKey(payment_hash))
+            .expect("DB error")
     }
 
     pub fn get_offers(&self) -> Vec<IncomingContractOffer> {

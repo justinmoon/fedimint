@@ -5,10 +5,13 @@ use crate::ln::{LnClient, LnClientError};
 use crate::mint::{MintClient, MintClientError, SpendableCoin};
 use crate::wallet::{WalletClient, WalletClientError};
 use crate::{api, OwnedClientContext};
-
-use bitcoin::{Address, Transaction};
-use lightning_invoice::Invoice;
+use bitcoin::schnorr::KeyPair;
+use bitcoin::{Address, Transaction as BitcoinTransaction};
+use bitcoin_hashes::Hash;
+use lightning::ln::PaymentSecret;
+use lightning_invoice::{CreationError, Currency, Invoice, InvoiceBuilder};
 use minimint::config::ClientConfig;
+use minimint::modules::ln::contracts::incoming::{EncryptedPreimage, IncomingContractOffer};
 use minimint::modules::ln::contracts::{ContractId, IdentifyableContract};
 use minimint::modules::ln::{ContractAccount, ContractOrOfferOutput};
 use minimint::modules::mint::tiered::coins::Coins;
@@ -86,7 +89,7 @@ impl UserClient {
     pub async fn peg_in<R: RngCore + CryptoRng>(
         &self,
         txout_proof: TxOutProof,
-        btc_transaction: Transaction,
+        btc_transaction: BitcoinTransaction,
         mut rng: R,
     ) -> Result<TransactionId, ClientError> {
         let mut tx = TransactionBuilder::default();
@@ -323,6 +326,65 @@ impl UserClient {
             .await
             .map_err(|_| ClientError::WaitContractTimeout)?
     }
+
+    pub async fn create_invoice_and_offer<R: RngCore + CryptoRng>(
+        &self,
+        amount: Amount,
+        mut rng: R,
+    ) -> Result<(KeyPair, Invoice), ClientError> {
+        let (payment_keypair, payment_public_key) =
+            self.context.secp.generate_schnorrsig_keypair(&mut rng);
+        let raw_payment_secret = payment_public_key.serialize();
+        let payment_hash = bitcoin::secp256k1::hashes::sha256::Hash::hash(&raw_payment_secret);
+        let payment_secret = PaymentSecret(raw_payment_secret);
+
+        // Temporary lightning node pubkey
+        let (node_secret_key, node_public_key) = self.context.secp.generate_keypair(&mut rng);
+
+        let invoice = InvoiceBuilder::new(Currency::Regtest)
+            .amount_milli_satoshis(amount.milli_sat)
+            .description("".into())
+            .payment_hash(payment_hash)
+            .payment_secret(payment_secret)
+            .current_timestamp()
+            .min_final_cltv_expiry(144)
+            .payee_pub_key(node_public_key)
+            .build_signed(|hash| self.context.secp.sign_recoverable(hash, &node_secret_key))?;
+
+        let offer = IncomingContractOffer {
+            amount,
+            hash: payment_hash,
+            encrypted_preimage: EncryptedPreimage::new(
+                raw_payment_secret,
+                &self.context.config.ln.threshold_pub_key,
+            ),
+        };
+        let offer_output = ContractOrOfferOutput::Offer(offer.clone());
+        let ln_output = Output::LN(offer_output);
+
+        // There is no input here because this is just an announcement
+        let mut tx = TransactionBuilder::default();
+        tx.output(ln_output);
+        self.submit_tx_with_change(tx, DbBatch::new(), &mut rng)
+            .await?;
+        Ok((payment_keypair, invoice))
+    }
+
+    pub async fn claim_incoming_contract(
+        &self,
+        contract_id: ContractId,
+        keypair: KeyPair,
+        mut rng: impl RngCore + CryptoRng,
+    ) -> Result<TransactionId, ClientError> {
+        // Lookup contract
+        let contract = self.ln_client().get_incoming_contract(contract_id).await?;
+
+        // Input claims this contract
+        let mut tx = TransactionBuilder::default();
+        tx.input(&mut vec![keypair], Input::LN(contract.claim()));
+        self.submit_tx_with_change(tx, DbBatch::new(), &mut rng)
+            .await
+    }
 }
 
 #[derive(Error, Debug)]
@@ -339,6 +401,10 @@ pub enum ClientError {
     PegInAmountTooSmall,
     #[error("Timed out while waiting for contract to be accepted")]
     WaitContractTimeout,
+    #[error("Error fetching offer")]
+    FetchOfferError,
+    #[error("Failed to create lightning invoice: {0}")]
+    InvoiceError(CreationError),
 }
 
 impl From<ApiError> for ClientError {
@@ -362,5 +428,11 @@ impl From<MintClientError> for ClientError {
 impl From<LnClientError> for ClientError {
     fn from(e: LnClientError) -> Self {
         ClientError::LnClientError(e)
+    }
+}
+
+impl From<CreationError> for ClientError {
+    fn from(e: CreationError) -> Self {
+        ClientError::InvoiceError(e)
     }
 }
