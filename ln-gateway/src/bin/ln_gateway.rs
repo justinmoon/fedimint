@@ -9,8 +9,7 @@ use std::sync::Arc;
 use tide::Response;
 use tokio::io::{stdin, stdout};
 use tokio::sync::Mutex;
-// use tracing::{debug, instrument};
-// use tracing_subscriber::EnvFilter;
+use tracing::instrument;
 
 #[derive(Clone)]
 pub struct State {
@@ -22,7 +21,7 @@ struct Opts {
     workdir: PathBuf,
 }
 
-// #[instrument(skip_all, err)]
+#[instrument(skip_all, err)]
 async fn pay_invoice(mut req: tide::Request<State>) -> tide::Result {
     let rng = rand::rngs::OsRng::new().unwrap();
     let contract: ContractId = req.body_json().await?;
@@ -124,11 +123,6 @@ async fn run_webserver(state: State) -> tide::Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-    // tracing_subscriber::fmt()
-    //     .with_env_filter(
-    //         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
-    //     )
-    //     .init();
     let gateway_mutex = Arc::new(Mutex::new(None));
     let state = State {
         gateway: gateway_mutex.clone(),

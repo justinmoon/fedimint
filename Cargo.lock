@@ -3404,6 +3404,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d0ecdcb44a79f0fe9844f0c4f33a342cbcbb5117de8001e6ba0dc2351327d09"
 dependencies = [
  "cfg-if 1.0.0",
+ "log",
  "pin-project-lite 0.2.9",
  "tracing-attributes",
  "tracing-core",
