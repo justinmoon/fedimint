@@ -21,6 +21,7 @@ use hbbft::honey_badger::Message;
 use itertools::Itertools;
 use lightning_invoice::Invoice;
 use ln_gateway::GatewayRequest;
+use minimint::gateway::LightningGateway;
 use minimint_api::task::spawn;
 use minimint_wallet::bitcoincore_rpc;
 use rand::rngs::OsRng;
@@ -52,7 +53,6 @@ use minimint_wallet::db::UTXOKey;
 use minimint_wallet::txoproof::TxOutProof;
 use minimint_wallet::SpendableUTXO;
 use mint_client::api::WsFederationApi;
-use mint_client::ln::gateway::LightningGateway;
 use mint_client::{GatewayClient, GatewayClientConfig, UserClient, UserClientConfig};
 use real::{RealBitcoinTest, RealLightningTest};
 

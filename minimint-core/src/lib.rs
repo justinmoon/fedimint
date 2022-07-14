@@ -6,12 +6,11 @@ pub mod modules {
     pub use minimint_wallet as wallet;
 }
 
-pub mod transaction;
-
 /// MiniMint toplevel config
 pub mod config;
-
+pub mod gateway;
 pub mod outcome;
+pub mod transaction;
 
 #[derive(Debug, Error)]
 pub enum CoreError {

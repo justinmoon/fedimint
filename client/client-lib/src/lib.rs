@@ -21,6 +21,7 @@ use minimint_api::{
     },
     Amount, OutPoint, PeerId, TransactionId,
 };
+use minimint_core::gateway::LightningGateway;
 use minimint_core::modules::ln::contracts::incoming::{
     DecryptedPreimage, IncomingContract, IncomingContractOffer, OfferId, Preimage,
 };
@@ -56,7 +57,7 @@ use crate::utils::{network_to_currency, OwnedClientContext};
 use crate::wallet::WalletClientError;
 use crate::{
     api::{ApiError, FederationApi},
-    ln::{gateway::LightningGateway, incoming::ConfirmedInvoice, LnClient},
+    ln::{incoming::ConfirmedInvoice, LnClient},
     mint::{MintClient, SpendableCoin},
     wallet::WalletClient,
 };

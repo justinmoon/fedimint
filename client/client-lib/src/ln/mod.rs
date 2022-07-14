@@ -1,12 +1,10 @@
 // TODO: once user and mint client are merged, make this private again
 pub mod db;
-pub mod gateway;
 pub mod incoming;
 pub mod outgoing;
 
 use crate::api::ApiError;
 use crate::ln::db::{OutgoingPaymentKey, OutgoingPaymentKeyPrefix};
-use crate::ln::gateway::LightningGateway;
 use crate::ln::incoming::IncomingContractAccount;
 use crate::ln::outgoing::{OutgoingContractAccount, OutgoingContractData};
 use crate::utils::BorrowedClientContext;
@@ -14,6 +12,7 @@ use bitcoin_hashes::sha256::Hash as Sha256Hash;
 use lightning_invoice::Invoice;
 use minimint_api::db::batch::BatchTx;
 use minimint_api::Amount;
+use minimint_core::gateway::LightningGateway;
 use minimint_core::modules::ln::config::LightningModuleClientConfig;
 use minimint_core::modules::ln::contracts::incoming::{EncryptedPreimage, IncomingContractOffer};
 use minimint_core::modules::ln::contracts::outgoing::OutgoingContract;
@@ -197,7 +196,6 @@ pub enum LnClientError {
 #[cfg(test)]
 mod tests {
     use crate::api::FederationApi;
-    use crate::ln::gateway::LightningGateway;
     use crate::ln::LnClient;
     use crate::OwnedClientContext;
     use async_trait::async_trait;
@@ -206,6 +204,7 @@ mod tests {
     use minimint_api::db::mem_impl::MemDatabase;
     use minimint_api::module::testing::FakeFed;
     use minimint_api::{Amount, OutPoint, TransactionId};
+    use minimint_core::gateway::LightningGateway;
     use minimint_core::modules::ln::config::LightningModuleClientConfig;
     use minimint_core::modules::ln::contracts::incoming::IncomingContractOffer;
     use minimint_core::modules::ln::contracts::{ContractId, IdentifyableContract};
