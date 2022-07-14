@@ -81,7 +81,7 @@ async fn main() {
         .init();
 
     let opts = Options::parse();
-    let cfg_path = opts.workdir.join("client.json");
+    let cfg_path = opts.workdir.join("federation_client.json");
     let db_path = opts.workdir.join("client.db");
     let cfg: UserClientConfig = load_from_file(&cfg_path);
     let db = sled::open(&db_path)
