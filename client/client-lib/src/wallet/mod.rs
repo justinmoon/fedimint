@@ -135,6 +135,7 @@ mod tests {
     use minimint_api::module::testing::FakeFed;
     use minimint_api::{Amount, OutPoint, TransactionId};
     use minimint_core::config::FeeConsensus;
+    use minimint_core::gateway::LightningGateway;
     use minimint_core::modules::ln::contracts::incoming::IncomingContractOffer;
     use minimint_core::modules::ln::contracts::ContractId;
     use minimint_core::modules::ln::ContractAccount;
@@ -190,6 +191,14 @@ mod tests {
             _payment_hash: bitcoin::hashes::sha256::Hash,
         ) -> crate::api::Result<IncomingContractOffer> {
             unimplemented!();
+        }
+
+        async fn fetch_gateways(&self) -> crate::api::Result<Vec<LightningGateway>> {
+            unimplemented!()
+        }
+
+        async fn register_gateway(&self, _gateway: LightningGateway) -> crate::api::Result<()> {
+            unimplemented!()
         }
     }
 

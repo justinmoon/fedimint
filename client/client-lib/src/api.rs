@@ -5,6 +5,7 @@ use jsonrpsee_core::Error as JsonRpcError;
 use jsonrpsee_types::error::CallError as RpcCallError;
 use minimint_api::task::{RwLock, RwLockWriteGuard};
 use minimint_api::{OutPoint, PeerId, TransactionId};
+use minimint_core::gateway::LightningGateway;
 use minimint_core::modules::ln::contracts::incoming::IncomingContractOffer;
 use minimint_core::modules::ln::contracts::ContractId;
 use minimint_core::modules::ln::ContractAccount;
@@ -40,6 +41,12 @@ pub trait FederationApi: Send + Sync {
 
     /// Fetch the current consensus block height (trailing actual block height)
     async fn fetch_consensus_block_height(&self) -> Result<u64>;
+
+    /// Fetch available lightning gateways
+    async fn fetch_gateways(&self) -> Result<Vec<LightningGateway>>;
+
+    /// Register a gateway with the federation
+    async fn register_gateway(&self, gateway: LightningGateway) -> Result<()>;
 }
 
 impl<'a> dyn FederationApi + 'a {
@@ -191,6 +198,14 @@ impl<C: JsonRpcClient + Send + Sync> FederationApi for WsFederationApi<C> {
 
     async fn fetch_offer(&self, payment_hash: Sha256Hash) -> Result<IncomingContractOffer> {
         self.request("/ln/offer", payment_hash).await
+    }
+
+    async fn fetch_gateways(&self) -> Result<Vec<LightningGateway>> {
+        self.request("/list_gateways", ()).await
+    }
+
+    async fn register_gateway(&self, gateway: LightningGateway) -> Result<()> {
+        self.request("/register_gateway", gateway).await
     }
 }
 

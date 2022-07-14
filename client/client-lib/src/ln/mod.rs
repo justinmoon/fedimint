@@ -265,6 +265,14 @@ mod tests {
         ) -> crate::api::Result<IncomingContractOffer> {
             unimplemented!();
         }
+
+        async fn fetch_gateways(&self) -> crate::api::Result<Vec<LightningGateway>> {
+            unimplemented!()
+        }
+
+        async fn register_gateway(&self, _gateway: LightningGateway) -> crate::api::Result<()> {
+            unimplemented!()
+        }
     }
 
     async fn new_mint_and_client() -> (

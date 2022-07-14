@@ -1,13 +1,13 @@
 //! Implements the client API through which users interact with the federation
 
-use crate::config::ServerConfig;
+use crate::{config::ServerConfig};
 use crate::consensus::MinimintConsensus;
 use crate::transaction::Transaction;
 use minimint_api::{
     module::{api_endpoint, ApiEndpoint, ApiError},
     FederationModule, TransactionId,
 };
-use minimint_core::outcome::TransactionStatus;
+use minimint_core::{outcome::TransactionStatus, gateway::LightningGateway};
 use std::fmt::Formatter;
 use std::sync::Arc;
 use tracing::debug;
@@ -124,6 +124,19 @@ fn server_endpoints() -> &'static [ApiEndpoint<MinimintConsensus<rand::rngs::OsR
 
                 debug!(transaction = %tx_hash, "Sending outcome");
                 Ok(tx_status)
+            }
+        },
+        api_endpoint! {
+            "/list_gateways",
+            async |minimint: &MinimintConsensus<rand::rngs::OsRng>, _v: ()| -> Vec<LightningGateway> {
+                Ok(minimint.list_gateways())
+            }
+        },
+        api_endpoint! {
+            "/register_gateway",
+            async |minimint: &MinimintConsensus<rand::rngs::OsRng>, gateway: LightningGateway| -> () {
+                minimint.register_gateway(gateway);
+                Ok(())
             }
         },
     ];

@@ -8,8 +8,8 @@ use crate::config::ServerConfig;
 use crate::consensus::conflictfilter::ConflictFilterable;
 use crate::consensus::interconnect::MinimintInterconnect;
 use crate::db::{
-    AcceptedTransactionKey, DropPeerKey, DropPeerKeyPrefix, ProposedTransactionKey,
-    ProposedTransactionKeyPrefix,
+    AcceptedTransactionKey, DropPeerKey, DropPeerKeyPrefix, LightningGatewayKey,
+    LightningGatewayKeyPrefix, ProposedTransactionKey, ProposedTransactionKeyPrefix,
 };
 use crate::outcome::OutputOutcome;
 use crate::rng::RngGenerator;
@@ -21,6 +21,7 @@ use minimint_api::db::Database;
 use minimint_api::encoding::{Decodable, Encodable};
 use minimint_api::module::audit::Audit;
 use minimint_api::{FederationModule, OutPoint, PeerId, TransactionId};
+use minimint_core::gateway::LightningGateway;
 use minimint_core::modules::ln::{LightningModule, LightningModuleError};
 use minimint_core::modules::mint::{Mint, MintError};
 use minimint_core::modules::wallet::{Wallet, WalletError};
@@ -512,6 +513,19 @@ where
 
     fn build_interconnect(&self) -> MinimintInterconnect<R> {
         MinimintInterconnect { minimint: self }
+    }
+
+    pub fn list_gateways(&self) -> Vec<LightningGateway> {
+        self.db
+            .find_by_prefix(&LightningGatewayKeyPrefix)
+            .map(|res| res.expect("DB error").1)
+            .collect()
+    }
+
+    pub fn register_gateway(&self, gateway: LightningGateway) {
+        self.db
+            .insert_entry(&LightningGatewayKey(gateway.node_pub_key), &gateway)
+            .expect("DB error");
     }
 }
 
