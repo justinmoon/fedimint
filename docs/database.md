@@ -21,8 +21,10 @@ The Database is split into different key spaces based on prefixing that can be u
 
 | Name                  | Prefix | Key                              | Value                           |
 |-----------------------|--------|----------------------------------|---------------------------------|
-| Pending Transactions  | `0x01`   | Transaction ID (sha256, 32bytes) | Transaction                     |
-| Accepted Transactions | `0x02`   | Transaction ID (sha256, 32bytes) | Confirmation epoch, Transaction |
+| Pending Transactions  | `0x01` | Transaction ID (sha256, 32bytes) | Transaction                     |
+| Accepted Transactions | `0x02` | Transaction ID (sha256, 32bytes) | Confirmation epoch, Transaction |
+| Drop Peer             | `0x03` | Peer ID (u16)                    |                                 |
+| Lightning Gateways    | `0x04` | Node Pubkey (PublicKey)          | LightningGateway                |
 
 ### Mint
 
@@ -65,3 +67,4 @@ The Database is split into different key spaces based on prefixing that can be u
 | Outgoing Payment Claim    | `0x24` | contract id (sha256)               | `Transaction`                |
 | Outgoing Contract Account | `0x25` | contract id (sha256)               | `OutgoingContractAccount`    |
 | Confirmed Invoice         | `0x26` | contract id (sha256 payment hash)  | `ConfirmedInvoice`           |
+| LightingGateway           | `0x27` |                                    | `LightningGateway`           |
