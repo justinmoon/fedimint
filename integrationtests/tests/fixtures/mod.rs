@@ -138,10 +138,7 @@ pub async fn fixtures(
             )
             .await;
 
-            let user_cfg = UserClientConfig {
-                client_config,
-                gateway: gateway.keys.clone(),
-            };
+            let user_cfg = UserClientConfig(client_config);
             let user = UserTest::new(user_cfg, peers).await;
 
             (fed, user, Box::new(bitcoin), gateway, Box::new(lightning))
@@ -161,10 +158,7 @@ pub async fn fixtures(
                 lightning.gateway_node_pub_key,
             )
             .await;
-            let user_cfg = UserClientConfig {
-                client_config,
-                gateway: gateway.keys.clone(),
-            };
+            let user_cfg = UserClientConfig(client_config);
             let user = UserTest::new(user_cfg, peers).await;
 
             (fed, user, Box::new(bitcoin), gateway, Box::new(lightning))
@@ -223,10 +217,7 @@ impl GatewayTest {
         };
 
         let database = Box::new(MemDatabase::new());
-        let user_cfg = UserClientConfig {
-            client_config: client_config.clone(),
-            gateway: keys.clone(),
-        };
+        let user_cfg = UserClientConfig(client_config.clone());
         let user_client =
             UserClient::new(user_cfg.clone(), database.clone(), Default::default()).await;
         let user = UserTest {
@@ -297,9 +288,9 @@ impl UserTest {
     async fn new(config: UserClientConfig, peers: Vec<PeerId>) -> Self {
         let api = Box::new(
             WsFederationApi::new(
-                config.client_config.max_evil,
+                config.0.max_evil,
                 config
-                    .client_config
+                    .0
                     .api_endpoints
                     .iter()
                     .enumerate()
