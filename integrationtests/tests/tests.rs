@@ -186,7 +186,7 @@ async fn drop_peers_who_dont_contribute_decryption_shares() {
     // Create lightning invoice whose associated "offer" is accepted by federation consensus
     let invoice = tokio::join!(
         user.client
-            .generate_invoice(payment_amount, "".into(), &gateway.keys, rng()),
+            .generate_invoice(payment_amount, "".into(), rng()),
         fed.run_consensus_epochs(1) // create offer
     )
     .0
@@ -262,7 +262,7 @@ async fn lightning_gateway_pays_invoice() {
     fed.mine_and_mint(&user, &*bitcoin, sats(2000)).await;
     let (contract_id, outpoint) = user
         .client
-        .fund_outgoing_ln_contract(&gateway.keys, invoice, rng())
+        .fund_outgoing_ln_contract(invoice, rng())
         .await
         .unwrap();
     fed.run_consensus_epochs(1).await; // send coins to LN contract
@@ -313,7 +313,7 @@ async fn receive_lightning_payment_valid_preimage() {
     // Create lightning invoice whose associated "offer" is accepted by federation consensus
     let invoice = tokio::join!(
         user.client
-            .generate_invoice(payment_amount, "".into(), &gateway.keys, rng()),
+            .generate_invoice(payment_amount, "".into(), rng()),
         fed.run_consensus_epochs(1),
     )
     .0
@@ -430,7 +430,7 @@ async fn lightning_gateway_cannot_claim_invalid_preimage() {
     fed.mine_and_mint(&user, &*bitcoin, sats(1010)).await; // 1% LN fee
     let (contract_id, _) = user
         .client
-        .fund_outgoing_ln_contract(&gateway.keys, invoice, rng())
+        .fund_outgoing_ln_contract(invoice, rng())
         .await
         .unwrap();
     fed.run_consensus_epochs(1).await; // send coins to LN contract
@@ -463,7 +463,7 @@ async fn lightning_gateway_can_abort_payment_to_return_user_funds() {
     fed.mine_and_mint(&user, &*bitcoin, sats(1010)).await; // 1% LN fee
     let (contract_id, _) = user
         .client
-        .fund_outgoing_ln_contract(&gateway.keys, invoice, rng())
+        .fund_outgoing_ln_contract(invoice, rng())
         .await
         .unwrap();
     fed.run_consensus_epochs(1).await; // send coins to LN contract
