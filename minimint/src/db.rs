@@ -1,9 +1,9 @@
 use crate::consensus::AcceptedTransaction;
 use crate::transaction::Transaction;
+use bitcoin::secp256k1::PublicKey;
 use minimint_api::db::DatabaseKeyPrefixConst;
 use minimint_api::encoding::{Decodable, Encodable};
 use minimint_api::{PeerId, TransactionId};
-use bitcoin::secp256k1::PublicKey;
 use minimint_core::gateway::LightningGateway;
 use std::fmt::Debug;
 

@@ -10,7 +10,6 @@ use mint_client::utils::{from_hex, parse_bitcoin_amount, parse_coins, serialize_
 use mint_client::{Client, UserClientConfig};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::time::Duration;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
@@ -146,8 +145,6 @@ async fn main() {
             client.peg_out(satoshis, address, &mut rng).await.unwrap();
         }
         Command::LnPay { bolt11 } => {
-            let http = reqwest::Client::new();
-
             let (contract_id, outpoint) = client
                 .fund_outgoing_ln_contract(bolt11, &mut rng)
                 .await
@@ -163,10 +160,8 @@ async fn main() {
                 "Funded outgoing contract, notifying gateway",
             );
 
-            http.post(&format!("{}/pay_invoice", cfg.gateway.api))
-                .json(&contract_id)
-                .timeout(Duration::from_secs(15))
-                .send()
+            client
+                .await_outgoing_contract_execution(contract_id)
                 .await
                 .expect("Gateway failed to execute contract");
         }
