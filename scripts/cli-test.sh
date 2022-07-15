@@ -7,8 +7,8 @@ export PEG_IN_AMOUNT=0.00099999
 
 source ./scripts/lib.sh
 source ./scripts/build.sh
-source ./scripts/setup-tests.sh
 ./scripts/start-fed.sh
+source ./scripts/setup-tests.sh
 ./scripts/pegin.sh # peg in user
 ./scripts/pegin.sh $PEG_IN_AMOUNT 1 # peg in gateway
 

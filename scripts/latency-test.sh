@@ -8,8 +8,8 @@ export RUST_LOG=error,ln_gateway=off
 export PEG_IN_AMOUNT=0.00099999
 
 source ./scripts/build.sh $FM_FED_SIZE
-source ./scripts/setup-tests.sh
 ./scripts/start-fed.sh
+source ./scripts/setup-tests.sh
 ./scripts/pegin.sh
 
 #### BEGIN TESTS ####
