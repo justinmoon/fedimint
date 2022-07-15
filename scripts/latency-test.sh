@@ -10,7 +10,7 @@ export PEG_IN_AMOUNT=0.00099999
 source ./scripts/build.sh $FM_FED_SIZE
 source ./scripts/bitcoind.sh
 ./scripts/start-fed.sh
-./scripts/lightningd.sh
+./scripts/lightningd.sh 1
 ./scripts/pegin.sh
 
 #### BEGIN TESTS ####

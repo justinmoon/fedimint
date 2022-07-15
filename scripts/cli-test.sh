@@ -9,7 +9,7 @@ source ./scripts/lib.sh
 source ./scripts/build.sh
 source ./scripts/bitcoind.sh
 ./scripts/start-fed.sh
-./scripts/lightningd.sh
+./scripts/lightningd.sh 1
 ./scripts/pegin.sh # peg in user
 ./scripts/pegin.sh $PEG_IN_AMOUNT 1 # peg in gateway
 
