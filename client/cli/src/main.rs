@@ -1,11 +1,12 @@
 use bitcoin::{Address, Transaction};
 use bitcoin_hashes::hex::ToHex;
 use clap::Parser;
-use minimint_api::Amount;
+use minimint_api::{Amount, PeerId};
 use minimint_core::config::load_from_file;
 use minimint_core::modules::mint::tiered::coins::Coins;
 use minimint_core::modules::wallet::txoproof::TxOutProof;
 
+use mint_client::api::WsFederationApiSer;
 use mint_client::mint::SpendableCoin;
 use mint_client::utils::{
     from_hex, parse_bitcoin_amount, parse_coins, parse_minimint_amount, serialize_coins,
@@ -73,6 +74,9 @@ enum Command {
 
     /// Wait for incoming invoice to be paid
     WaitInvoice { invoice: lightning_invoice::Invoice },
+
+    /// Federation endpoints -- clients can scan QR of this
+    Endpoints,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -199,6 +203,30 @@ async fn main() {
                 "Paid in minimint transaction {}. Call 'fetch' to get your coins.",
                 outpoint.txid
             );
+        }
+        Command::Endpoints => {
+            let config = client.config();
+            let max_evil = config.as_ref().max_evil;
+            let members: Vec<(PeerId, String)> = config
+                .as_ref()
+                .api_endpoints
+                .iter()
+                .enumerate()
+                .map(|(id, url)| {
+                    let peer_id = PeerId::from(id as u16); // FIXME: potentially wrong, currently works imo
+                    let url = url.parse().expect("Invalid URL in config");
+                    (peer_id, url)
+                })
+                .collect();
+            //     println!(
+            //         "{}",
+            //         serde_json::json!({ "max_evil": max_evil, "members": members })
+            //     );
+
+            // client.context.api
+
+            let cfg: WsFederationApiSer = WsFederationApiSer { members, max_evil };
+            println!("{}", serde_json::to_string(&cfg).unwrap());
         }
     }
 }

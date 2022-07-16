@@ -24,3 +24,14 @@ echo "  btc_client:   cli client for bitcoind"
 echo
 echo Use mint_client as follows:
 mint_client --help
+echo
+echo "Federation config lives here"
+
+# macos
+IP=$(ipconfig getifaddr en0)
+# linux
+# IP=$(hostname -I | awk '{print $1}')
+# ENDPOINTS=$($FM_MINT_CLIENT endpoints | sed "s/127.0.0.1/$IP/g")
+ENDPOINTS=$($FM_MINT_CLIENT endpoints)
+# echo $ENDPOINT
+qrencode -m 2 -t utf8 <<< $ENDPOINTS

@@ -11,6 +11,7 @@ use minimint_core::modules::ln::{ContractAccount, LightningGateway};
 use minimint_core::outcome::{TransactionStatus, TryIntoOutcome};
 use minimint_core::transaction::Transaction;
 use minimint_core::CoreError;
+use serde::{Deserialize, Serialize};
 use tracing::{error, instrument, warn};
 
 #[cfg(not(target_family = "wasm"))]
@@ -149,10 +150,29 @@ pub struct WsFederationApi<C = WsClient> {
 }
 
 #[derive(Debug)]
-struct FederationMember<C> {
+pub struct FederationMember<C> {
     url: String,
     peer_id: PeerId,
     client: RwLock<Option<C>>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WsFederationApiSer {
+    pub members: Vec<(PeerId, String)>,
+    pub max_evil: usize,
+}
+
+impl From<WsFederationApi> for WsFederationApiSer {
+    fn from(api: WsFederationApi) -> Self {
+        Self {
+            members: api
+                .members
+                .iter()
+                .map(|mem| (mem.peer_id, mem.url.clone()))
+                .collect(),
+            max_evil: api.max_evil,
+        }
+    }
 }
 
 pub type Result<T> = std::result::Result<T, ApiError>;
