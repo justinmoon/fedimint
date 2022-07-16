@@ -43,7 +43,7 @@ pub struct Mint {
     key_id: PeerId,
     sec_key: Keys<SecretKeyShare>,
     pub_key_shares: BTreeMap<PeerId, Keys<PublicKeyShare>>,
-    pub_key: HashMap<Amount, AggregatePublicKey>,
+    pub pub_key: HashMap<Amount, AggregatePublicKey>,
     threshold: usize, // TODO: move to cfg
     db: Arc<dyn Database>,
 }

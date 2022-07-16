@@ -7,8 +7,18 @@ use minimint_api::{
     module::{api_endpoint, ApiEndpoint, ApiError},
     FederationModule, TransactionId,
 };
+use minimint_core::{
+    config::{ClientConfig, FeeConsensus},
+    modules::{
+        ln::config::LightningModuleClientConfig,
+        mint::{config::MintClientConfig, Keys},
+    },
+    outcome::TransactionStatus,
+};
 use minimint_core::{gateway::LightningGateway, outcome::TransactionStatus};
+use minimint_wallet::config::WalletClientConfig;
 use std::fmt::Formatter;
+use std::iter::FromIterator;
 use std::sync::Arc;
 use tracing::debug;
 
@@ -138,6 +148,37 @@ fn server_endpoints() -> &'static [ApiEndpoint<MinimintConsensus<rand::rngs::OsR
                 minimint.register_gateway(gateway);
                 Ok(())
             }
+        },
+        api_endpoint! {
+            "/config",
+            async |minimint: &MinimintConsensus<rand::rngs::OsRng>, _v: ()| -> ClientConfig {
+                let api_endpoints: Vec<String> = minimint
+                    .cfg
+                    .peers
+                    .iter()
+                    .map(|(_, peer)| peer.connection.addr.clone())
+                    .collect();
+                let fee_consensus = FeeConsensus {
+                    fee_coin_spend_abs: minimint_api::Amount::ZERO,
+                    fee_peg_in_abs: minimint_api::Amount::from_sat(1000),
+                    fee_coin_issuance_abs: minimint_api::Amount::ZERO,
+                    fee_peg_out_abs: minimint_api::Amount::from_sat(1000),
+                    fee_contract_input: minimint_api::Amount::ZERO,
+                    fee_contract_output: minimint_api::Amount::ZERO,
+                };
+                let max_evil = hbbft::util::max_faulty(minimint.cfg.peers.len());
+                let mint = MintClientConfig {
+                    tbs_pks: Keys::from_iter(minimint.mint.pub_key.clone().into_iter()),
+                };
+                let wallet = WalletClientConfig {
+                    peg_in_descriptor: minimint.cfg.wallet.peg_in_descriptor.clone(),
+                    network: minimint.cfg.wallet.network,
+                };
+                let ln = LightningModuleClientConfig {
+                    threshold_pub_key: minimint.cfg.ln.threshold_pub_keys.public_key()
+
+                };
+                Ok(ClientConfig { api_endpoints, mint, wallet, ln, fee_consensus, max_evil }) }
         },
     ];
 
