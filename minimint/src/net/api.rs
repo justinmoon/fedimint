@@ -13,7 +13,6 @@ use minimint_core::{
         ln::config::LightningModuleClientConfig,
         mint::{config::MintClientConfig, Keys},
     },
-    outcome::TransactionStatus,
 };
 use minimint_core::{gateway::LightningGateway, outcome::TransactionStatus};
 use minimint_wallet::config::WalletClientConfig;
@@ -66,6 +65,8 @@ pub async fn run_server(cfg: ServerConfig, minimint: Arc<MinimintConsensus<rand:
         .build(&cfg.api_bind_addr)
         .await
         .expect("Could not start API server");
+
+    tracing::info!("running ws server on {}", &cfg.api_bind_addr,);
 
     server
         .start(rpc_module)

@@ -103,7 +103,7 @@ impl GenerateConfig for ServerConfig {
                 let config = ServerConfig {
                     identity: id,
                     hbbft_bind_addr: format!("127.0.0.1:{}", params.hbbft_base_port + id_u16),
-                    api_bind_addr: format!("127.0.0.1:{}", params.api_base_port + id_u16),
+                    api_bind_addr: format!("0.0.0.0:{}", params.api_base_port + id_u16),
                     peers: cfg_peers.clone(),
                     hbbft_sk: SerdeSecret(netinf.secret_key().clone()),
                     hbbft_sks: SerdeSecret(netinf.secret_key_share().unwrap().clone()),
