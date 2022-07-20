@@ -157,7 +157,8 @@ fn server_endpoints() -> &'static [ApiEndpoint<MinimintConsensus<rand::rngs::OsR
                     .cfg
                     .peers
                     .iter()
-                    .map(|(_, peer)| peer.connection.addr.clone())
+                    // FIXME: these are hbbft addresses
+                    .map(|(_, peer)| format!("ws://{}", peer.connection.addr.clone()))
                     .collect();
                 let fee_consensus = FeeConsensus {
                     fee_coin_spend_abs: minimint_api::Amount::ZERO,
