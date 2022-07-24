@@ -7,6 +7,7 @@ use bitcoin::{Address, Transaction};
 use bitcoin_hashes::sha256::Hash;
 use cln::HtlcAccepted;
 use futures::Future;
+use minimint::gateway::LightningGateway;
 use minimint::modules::ln::contracts::{incoming::Preimage, ContractId};
 use minimint::modules::wallet::txoproof::TxOutProof;
 use minimint_api::{Amount, OutPoint, TransactionId};
@@ -126,8 +127,10 @@ impl LnGateway {
     ) -> Result<Self, LnGatewayError> {
         let ln_client: Arc<dyn LnRpc> = ln_client.into();
         // Regster gateway with federation
-        federation_client
-            .register_with_federation(federation_client.config().into())
+        let mut config: LightningGateway = federation_client.config();
+        config.api = "http://188.166.55.8:8080".into();
+        federation_clienk
+            .register_with_federation(config.into())
             .await
             .expect("Failed to register with federation");
         // Run webserver asynchronously in tokio

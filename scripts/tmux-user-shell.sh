@@ -31,6 +31,7 @@ echo "Federation config lives here"
 IP=$(ipconfig getifaddr en0)
 # linux
 # IP=$(hostname -I | awk '{print $1}')
-ENDPOINTS=$($FM_MINT_CLIENT endpoints | sed "s/127.0.0.1/$IP/g")
-echo $ENDPOINTS
+# ENDPOINTS=$($FM_MINT_CLIENT endpoints | sed "s/127.0.0.1/$IP/g")
+ENDPOINTS=$($FM_MINT_CLIENT endpoints)
+# echo $ENDPOINT
 qrencode -m 2 -t utf8 <<< $ENDPOINTS

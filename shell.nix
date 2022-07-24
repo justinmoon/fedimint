@@ -14,6 +14,8 @@ let
   });
   bitcoind-patch-darwin = pkgs.bitcoind.overrideAttrs (oldAttrs: {
     doCheck = !(pkgs.stdenv.isDarwin && pkgs.stdenv.isAarch64);
+    # https://github.com/NixOS/nixpkgs/issues/179474
+    hardeningDisable = pkgs.lib.optionals (pkgs.stdenv.isAarch64 && pkgs.stdenv.isDarwin) [ "stackprotector" ];
   });
 in
 pkgs.mkShell {
