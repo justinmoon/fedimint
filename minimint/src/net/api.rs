@@ -9,7 +9,7 @@ use minimint_api::{
 };
 use minimint_core::outcome::TransactionStatus;
 use minimint_core::{
-    config::{ClientConfig, FeeConsensus},
+    config::ClientConfig,
     modules::{
         ln::config::LightningModuleClientConfig,
         mint::{config::MintClientConfig, Keys},
@@ -144,17 +144,9 @@ fn server_endpoints() -> &'static [ApiEndpoint<MinimintConsensus<rand::rngs::OsR
                     .cfg
                     .peers
                     .iter()
-                    // FIXME: these are hbbft addresses
-                    .map(|(_, peer)| format!("ws://{}", peer.connection.addr.clone()))
+                    .map(|(_, peer)| peer.connection.api_addr.clone())
                     .collect();
-                let fee_consensus = FeeConsensus {
-                    fee_coin_spend_abs: minimint_api::Amount::ZERO,
-                    fee_peg_in_abs: minimint_api::Amount::from_sat(1000),
-                    fee_coin_issuance_abs: minimint_api::Amount::ZERO,
-                    fee_peg_out_abs: minimint_api::Amount::from_sat(1000),
-                    fee_contract_input: minimint_api::Amount::ZERO,
-                    fee_contract_output: minimint_api::Amount::ZERO,
-                };
+                let fee_consensus = minimint.cfg.fee_consensus.clone();
                 let max_evil = hbbft::util::max_faulty(minimint.cfg.peers.len());
                 let mint = MintClientConfig {
                     tbs_pks: Keys::from_iter(minimint.mint.pub_key.clone().into_iter()),

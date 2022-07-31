@@ -102,7 +102,9 @@ pub struct NetworkConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectionConfig {
     /// The peer's network address and port (e.g. `10.42.0.10:4000`)
-    pub addr: String,
+    pub hbbft_addr: String,
+    /// The peer's websocket address (e.g. `ws://10.42.0.10:5000`)
+    pub api_addr: String,
 }
 
 /// Internal message type for [`ReconnectPeerConnections`], just public because it appears in the
@@ -494,7 +496,7 @@ where
 
     async fn try_reconnect(&self) -> Result<AnyFramedTransport<PeerMessage<M>>, anyhow::Error> {
         debug!("Trying to reconnect");
-        let addr = &self.cfg.addr;
+        let addr = &self.cfg.hbbft_addr;
         let (connected_peer, conn) = self.connect.connect_framed(addr.clone(), self.peer).await?;
 
         if connected_peer == self.peer {
@@ -612,7 +614,7 @@ mod tests {
             .enumerate()
             .map(|(idx, &peer)| {
                 let cfg = ConnectionConfig {
-                    addr: peer.to_string(),
+                    hbbft_addr: peer.to_string(),
                 };
                 (PeerId::from(idx as u16 + 1), cfg)
             })
