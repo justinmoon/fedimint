@@ -75,8 +75,8 @@ enum Command {
     /// Wait for incoming invoice to be paid
     WaitInvoice { invoice: lightning_invoice::Invoice },
 
-    /// Federation endpoints -- clients can scan QR of this
-    Endpoints,
+    /// Config enabling client to establish websocket connection to federation
+    Connect,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -105,7 +105,7 @@ async fn main() {
 
     let mut rng = rand::rngs::OsRng::new().unwrap();
 
-    let client = Client::new(cfg.clone(), Box::new(db), Default::default()).await;
+    let client = Client::new(cfg.clone(), Box::new(db), Default::default());
 
     match opts.command {
         Command::PegInAddress => {
@@ -204,7 +204,7 @@ async fn main() {
                 outpoint.txid
             );
         }
-        Command::Endpoints => {
+        Command::Connect => {
             let config = client.config();
             let max_evil = config.as_ref().max_evil;
             let members: Vec<(PeerId, String)> = config
@@ -218,14 +218,7 @@ async fn main() {
                     (peer_id, url)
                 })
                 .collect();
-            //     println!(
-            //         "{}",
-            //         serde_json::json!({ "max_evil": max_evil, "members": members })
-            //     );
-
-            // client.context.api
-
-            let cfg: WsFederationApiSer = WsFederationApiSer { members, max_evil };
+            let cfg = WsFederationApiSer { members, max_evil };
             println!("{}", serde_json::to_string(&cfg).unwrap());
         }
     }

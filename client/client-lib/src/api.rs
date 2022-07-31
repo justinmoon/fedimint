@@ -162,6 +162,8 @@ pub struct WsFederationApiSer {
     pub max_evil: usize,
 }
 
+// FIXME: From<ClientConfig> ???
+
 impl From<WsFederationApi> for WsFederationApiSer {
     fn from(api: WsFederationApi) -> Self {
         Self {
@@ -267,14 +269,14 @@ impl JsonRpcClient for WsClient {
 
 impl WsFederationApi<WsClient> {
     /// Creates a new API client
-    pub async fn new(max_evil: usize, members: Vec<(PeerId, String)>) -> Self {
-        Self::new_with_client(max_evil, members).await
+    pub fn new(max_evil: usize, members: Vec<(PeerId, String)>) -> Self {
+        Self::new_with_client(max_evil, members)
     }
 }
 
 impl<C> WsFederationApi<C> {
     /// Creates a new API client
-    pub async fn new_with_client(max_evil: usize, members: Vec<(PeerId, String)>) -> Self {
+    pub fn new_with_client(max_evil: usize, members: Vec<(PeerId, String)>) -> Self {
         WsFederationApi {
             members: members
                 .into_iter()

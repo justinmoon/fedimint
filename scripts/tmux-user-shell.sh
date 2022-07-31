@@ -27,11 +27,12 @@ mint_client --help
 echo
 echo "Federation config lives here"
 
+# FIXME: am i on macos or linux?
 # macos
 IP=$(ipconfig getifaddr en0)
 # linux
 # IP=$(hostname -I | awk '{print $1}')
 # ENDPOINTS=$($FM_MINT_CLIENT endpoints | sed "s/127.0.0.1/$IP/g")
-ENDPOINTS=$($FM_MINT_CLIENT endpoints)
+CONNECT=$($FM_MINT_CLIENT connect)
 # echo $ENDPOINT
-qrencode -m 2 -t utf8 <<< $ENDPOINTS
+qrencode -m 2 -t utf8 <<< $CONNECT
