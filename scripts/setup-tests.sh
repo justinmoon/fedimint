@@ -3,8 +3,9 @@
 set -u
 
 FM_FED_SIZE=${1:-4}
+FM_TMP_DIR=${2-"$(mktemp -d)"}
 
-source ./scripts/build.sh $FM_FED_SIZE
+source ./scripts/build.sh $FM_FED_SIZE $FM_TMP_DIR
 
 # Starts Bitcoin and 2 LN nodes, opening a channel between the LN nodes
 POLL_INTERVAL=1
