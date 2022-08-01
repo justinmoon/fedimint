@@ -5,8 +5,8 @@ echo "Run with 'source ./scripts/build.sh [fed_size] [dir]"
 
 # allow for overriding arguments
 export FM_FED_SIZE=${1:-4}
-export FM_TMP_DIR=${2-"$(mktemp -d)"}
-echo "Setting up env variables in $FM_TMP_DIR"
+export FM_DIR=${2-"$(mktemp -d)"}
+echo "Setting up env variables in $FM_DIR"
 
 # Builds the rust executables and sets environment variables
 SRC_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )/.." &> /dev/null && pwd )"
@@ -14,9 +14,9 @@ cd $SRC_DIR
 cargo build --release
 
 # Define temporary directories to not overwrite manually created config if run locally
-export FM_TEST_DIR=$FM_TMP_DIR
+export FM_TEST_DIR=$FM_DIR
 export FM_BIN_DIR="$SRC_DIR/target/release"
-export FM_PID_FILE="$FM_TMP_DIR/.pid"
+export FM_PID_FILE="$FM_DIR/.pid"
 export FM_LN1_DIR="$FM_TEST_DIR/ln1"
 export FM_LN2_DIR="$FM_TEST_DIR/ln2"
 export FM_BTC_DIR="$FM_TEST_DIR/bitcoin"
