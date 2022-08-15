@@ -24,6 +24,7 @@ minimint-core = { path = "../../minimint-core" }
 rocksdb = { git = "https://github.com/fedimint/rust-rocksdb", branch = "minimint" }
 anyhow = "1.0.58"
 bitcoin = { version = "0.28.1", features = [ "serde" ] }
+bitcoin_hashes = "0.10.0"
 sled = "0.34.6"
 reqwest = { version = "0.11.0", features = [ "json" ], default-features = false }
 tokio = { version = "1.19.2", features = ["full"] }
