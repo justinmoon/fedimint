@@ -1,4 +1,4 @@
-use axum::response::IntoResponse;
+use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::{Extension, Json, Router, Server};
 use bitcoin::secp256k1::rand;
@@ -9,11 +9,12 @@ use clientd::{
     WaitBlockHeightPayload,
 };
 use minimint_core::config::load_from_file;
-use mint_client::{Client, UserClientConfig};
+use mint_client::{Client, ClientError, UserClientConfig};
 use rand::rngs::OsRng;
 use serde_json::json;
 use std::path::PathBuf;
 use std::sync::Arc;
+use thiserror::Error;
 use tower::ServiceBuilder;
 use tower_http::trace::{DefaultMakeSpan, DefaultOnRequest, DefaultOnResponse, TraceLayer};
 use tracing::{info, Level};
@@ -103,18 +104,31 @@ async fn wait_block_height(
     Json(RpcResult::Success(json!("")))
 }
 
+impl IntoResponse for ClientdError {
+    fn into_response(self) -> Response {
+        (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            self.to_string(),
+        )
+            .into_response()
+    }
+}
+
 async fn peg_in(
     Extension(state): Extension<Arc<State>>,
     payload: Json<PegInPayload>,
-) -> impl IntoResponse {
+) -> Result<impl IntoResponse, ClientdError> {
     let client = &state.client;
     let mut rng = state.rng.clone();
     let txout_proof = payload.0.txout_proof;
     let transaction = payload.0.transaction;
-    let txid = client
-        .peg_in(txout_proof, transaction, &mut rng)
-        .await
-        .unwrap(); //TODO: handle unwrap()
+    let txid = client.peg_in(txout_proof, transaction, &mut rng).await?;
     info!("Started peg-in {}, result will be fetched", txid.to_hex());
-    Json(RpcResult::Success(json!(PegInOutResponse { txid })))
+    Ok(Json(RpcResult::Success(json!(PegInOutResponse { txid }))))
+}
+
+#[derive(Error, Debug)]
+pub enum ClientdError {
+    #[error("Client error: {0}")]
+    ClientError(#[from] ClientError),
 }

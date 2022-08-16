@@ -408,6 +408,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sled",
+ "thiserror",
  "tokio",
  "tower",
  "tower-http",

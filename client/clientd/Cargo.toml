@@ -36,4 +36,5 @@ clap = { version = "3.1.18", features = ["derive"] }
 axum = "0.5.13"
 tower = "0.4.13"
 tower-http = { version = "0.3.4", features = [ "trace" ] }
+thiserror = "1.0.23"
 rand = "0.6.5"
