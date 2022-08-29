@@ -43,6 +43,9 @@ pub mod net;
 /// Fedimint toplevel config
 pub mod config;
 
+/// Setup web app
+pub mod setup;
+
 /// Some abstractions to handle randomness
 mod rng;
 

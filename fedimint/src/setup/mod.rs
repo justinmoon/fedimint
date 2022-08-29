@@ -1,3 +1,4 @@
+use crate::config::ServerConfigParams;
 use askama::Template;
 use axum::extract::{Extension, Form};
 use axum::response::Redirect;
@@ -8,7 +9,7 @@ use serde::Deserialize;
 use std::sync::Arc;
 
 fn generate_config(num_peers: u64) -> ServerConfig {
-    let peers = (0..nodes).map(PeerId::from).collect::<Vec<_>>();
+    let peers = (0..num_peers).map(PeerId::from).collect::<Vec<_>>();
     let max_evil = hbbft::util::max_faulty(peers.len());
     println!(
         "Generating keys such that up to {} peers may fail/be evil",

@@ -1,0 +1,22 @@
+<!doctype html>
+<html>
+<head></head>
+<body>
+<h3>Add Peer</h3>
+<form action="/" method="post">
+    <label for="name">
+        Host:
+        <input type="text" name="host">
+    </label>
+    <label>
+        Public Key:
+        <input type="text" name="pubkey">
+    </label>
+    <input type="submit" value="Add Peer">
+</form>
+<h3>Peers</h3>
+{% for peer in peers %}
+    <li>{{ peer.pubkey }}@{{ peer.host }}</li>
+{% endfor %}
+</body>
+</html>

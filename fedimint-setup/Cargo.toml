@@ -19,3 +19,5 @@ tower = { version = "0.4", features = ["util"] }
 tracing = "0.1"
 tracing-subscriber = { version="0.3", features = ["env-filter"] }
 serde = { version = "1.0", features = ["derive"] }
+
+fedimint-api = { path = "../fedimint-api", features = ["rocksdb"] }
