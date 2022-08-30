@@ -4,7 +4,7 @@ pub mod incoming;
 pub mod outgoing;
 
 use crate::api::ApiError;
-use crate::ln::db::{OutgoingPaymentKey, OutgoingPaymentKeyPrefix};
+use crate::ln::db::{OutgoingPaymentKey, OutgoingPaymentKeyPrefix, PaymentKey, PaymentKeyPrefix};
 use crate::ln::incoming::IncomingContractAccount;
 use crate::ln::outgoing::{OutgoingContractAccount, OutgoingContractData};
 use crate::utils::ClientContext;
@@ -176,6 +176,21 @@ impl<'c> LnClient<'c> {
             .expect("Db error")
             .ok_or(LnClientError::NoConfirmedInvoice(contract_id))?;
         Ok(confirmed_invoice)
+    }
+
+    pub fn list_pending_invoices(&self) -> Vec<Invoice> {
+        self.context
+            .db
+            .find_by_prefix(&PaymentKeyPrefix)
+            .map(|res| res.expect("DB error").1)
+            .collect()
+    }
+
+    pub fn save_pending_invoice(&self, invoice: &Invoice) {
+        self.context
+            .db
+            .insert_entry(&PaymentKey(invoice.payment_hash().clone()), invoice)
+            .expect("Db error");
     }
 }
 
