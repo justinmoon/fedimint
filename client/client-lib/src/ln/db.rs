@@ -1,7 +1,7 @@
 use bitcoin_hashes::sha256;
-use lightning_invoice::Invoice;
 
 use crate::ln::outgoing::OutgoingContractData;
+use crate::Payment;
 use fedimint_api::db::DatabaseKeyPrefixConst;
 use fedimint_api::encoding::{Decodable, Encodable};
 use fedimint_core::modules::ln::contracts::ContractId;
@@ -104,7 +104,7 @@ pub struct PaymentKey(pub sha256::Hash);
 impl DatabaseKeyPrefixConst for PaymentKey {
     const DB_PREFIX: u8 = DB_PREFIX_PAYMENTS;
     type Key = Self;
-    type Value = Invoice;
+    type Value = Payment;
 }
 
 #[derive(Debug, Clone, Encodable, Decodable)]
@@ -114,5 +114,5 @@ impl DatabaseKeyPrefixConst for PaymentKeyPrefix {
     const DB_PREFIX: u8 = DB_PREFIX_PAYMENTS;
     type Key = PaymentKey;
 
-    type Value = Invoice;
+    type Value = Payment;
 }
