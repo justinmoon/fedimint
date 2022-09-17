@@ -140,6 +140,10 @@ impl PaymentParameters {
 }
 
 impl<T: AsRef<ClientConfig> + Clone> Client<T> {
+    pub fn db(&self) -> &Database {
+        &self.context.db
+    }
+
     pub fn ln_client(&self) -> LnClient {
         LnClient {
             config: &self.config.as_ref().ln,
