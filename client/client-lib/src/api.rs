@@ -8,7 +8,7 @@ use fedimint_core::modules::ln::{ContractAccount, LightningGateway};
 use fedimint_core::outcome::{TransactionStatus, TryIntoOutcome};
 use fedimint_core::transaction::Transaction;
 use fedimint_core::CoreError;
-use jsonrpsee_core::client::ClientT;
+use jsonrpsee_core::client::{CertificateStore, ClientT};
 use jsonrpsee_core::Error as JsonRpcError;
 use jsonrpsee_types::error::CallError as RpcCallError;
 use serde::{Deserialize, Serialize};
@@ -268,6 +268,7 @@ pub trait JsonRpcClient: ClientT + Sized {
 impl JsonRpcClient for WsClient {
     async fn connect(url: &Url) -> std::result::Result<Self, JsonRpcError> {
         WsClientBuilder::default()
+            .certificate_store(CertificateStore::WebPki)
             .build(url_to_string_with_default_port(url)) // Hack for default ports, see fn docs
             .await
     }
