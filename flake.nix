@@ -624,6 +624,7 @@
                 ExposedPorts = {
                   "${builtins.toString 17240}/tcp" = { };
                   "${builtins.toString 17340}/tcp" = { };
+                  "${builtins.toString 17440}/tcp" = { };
                 };
               };
             };

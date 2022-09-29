@@ -64,9 +64,7 @@ fn trusted_dealer_gen(
         .map(|peer| {
             // FIXME: regex
             let parts: Vec<&str> = peer.connection_string.split('@').collect();
-            let part = parts[1].to_string();
-            let parts: Vec<&str> = part.split(':').collect();
-            parts[0].to_string()
+            parts[1].to_string()
         })
         .collect();
 
@@ -84,17 +82,9 @@ fn trusted_dealer_gen(
             let id_u16: u16 = id.into();
             let peer = ServerPeer {
                 connection: ConnectionConfig {
-                    hbbft_addr: format!(
-                        "{}:{}",
-                        hostnames[id_u16 as usize].clone(),
-                        hbbft_port + id_u16
-                    ),
+                    hbbft_addr: format!("{}:{}", hostnames[id_u16 as usize].clone(), hbbft_port),
                     api_addr: {
-                        let s = format!(
-                            "ws://{}:{}",
-                            hostnames[id_u16 as usize].clone(),
-                            api_port + id_u16
-                        );
+                        let s = format!("ws://{}:{}", hostnames[id_u16 as usize].clone(), api_port);
                         Url::parse(&s).expect("Could not parse URL")
                     },
                 },
@@ -122,8 +112,8 @@ fn trusted_dealer_gen(
             let config = ServerConfig {
                 federation_name: params.federation_name.clone(),
                 identity: id,
-                hbbft_bind_addr: format!("{}:{}", hostnames[id_u16 as usize], hbbft_port + id_u16),
-                api_bind_addr: format!("{}:{}", hostnames[id_u16 as usize], api_port + id_u16),
+                hbbft_bind_addr: format!("{}:{}", hostnames[id_u16 as usize], hbbft_port),
+                api_bind_addr: format!("{}:{}", hostnames[id_u16 as usize], api_port),
                 tls_cert: tls_keys[&id].0.clone(),
                 tls_key: tls_keys[&id].1.clone(),
                 peers: cfg_peers.clone(),
@@ -150,11 +140,7 @@ fn trusted_dealer_gen(
             .iter()
             .map(|&peer| {
                 let index = u16::from(peer);
-                let s = format!(
-                    "ws://{}:{}",
-                    hostnames[index as usize].clone(),
-                    api_port + index
-                );
+                let s = format!("ws://{}:{}", hostnames[index as usize].clone(), api_port);
                 let url = Url::parse(&s).expect("Could not parse URL");
                 Node {
                     url,

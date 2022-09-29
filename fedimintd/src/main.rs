@@ -15,7 +15,8 @@ use tracing_subscriber::Layer;
 pub struct ServerOpts {
     pub cfg_path: PathBuf,
     pub db_path: PathBuf,
-    pub setup_port: Option<u16>,
+    #[arg(long = "run-setup")]
+    pub setup_port: bool,
     #[cfg(feature = "telemetry")]
     #[clap(long)]
     pub with_telemetry: bool,
@@ -59,13 +60,9 @@ async fn main() -> anyhow::Result<()> {
 
     let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
 
-    if opts.setup_port.is_some() {
+    if opts.setup_port {
         // Spawn setup UI, () sent over receive when it's finished
-        spawn(run_ui_setup(
-            opts.cfg_path.clone(),
-            opts.setup_port.unwrap(),
-            sender,
-        ));
+        spawn(run_ui_setup(opts.cfg_path.clone(), sender));
         receiver
             .recv()
             .await

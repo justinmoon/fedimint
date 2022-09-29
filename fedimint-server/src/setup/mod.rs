@@ -236,7 +236,8 @@ struct State {
 }
 type MutableState = Arc<RwLock<State>>;
 
-pub async fn run_ui_setup(cfg_path: PathBuf, port: u16, sender: Sender<()>) {
+pub async fn run_ui_setup(cfg_path: PathBuf, sender: Sender<()>) {
+    let port = 17440;
     let mut rng = OsRng::new().unwrap();
     let secp = bitcoin::secp256k1::Secp256k1::new();
     let (_, pubkey) = secp.generate_keypair(&mut rng);
