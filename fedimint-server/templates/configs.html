@@ -4,7 +4,7 @@
 
 {% block content %}
 <div class="container text-center mt-5">
-  <h1>Your Federation is Running!</h1>
+  <h1>The {{federation_name}} Federation is Running!</h1>
   <h4>Send these configs to your other federation members to help them connected.</h4>
   <h3>Client config</h3>
   <div class="input-group mb-3">
@@ -16,6 +16,7 @@
 
   <h3>Server configs</h3>
   {% for (guardian, server_config) in server_configs %}
+  {% if guardian.name != "You" %}
   <div class="input-group mb-3">
     <div class="input-group-prepend"><span class="input-group-text">{{guardian.name}}</span></div>
     <input id="server-config-{{guardian.name}}" type="textarea" class="form-control" value="{{ server_config }}"
@@ -25,6 +26,7 @@
         id="copy-button-server-config-{{guardian.name}}">Copy</button>
     </div>
   </div>
+  {% endif %}
   {% endfor %}
   <p>Scan this QR to connect to your federation from mobile.</p>
   <br>

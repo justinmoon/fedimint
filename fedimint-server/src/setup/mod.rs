@@ -1,6 +1,7 @@
 mod configgen;
+
 use std::net::SocketAddr;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, RwLock, RwLockWriteGuard};
 
 use askama::Template;
@@ -40,17 +41,24 @@ pub struct Guardian {
 #[derive(Template)]
 #[template(path = "home.html")]
 struct HomeTemplate {
+    federation_name: String,
     running: bool,
-    can_run: bool,
 }
 
 async fn home(Extension(state): Extension<MutableState>) -> HomeTemplate {
     let state = state.read().unwrap();
-    let can_run = Path::new(&state.cfg_path.clone()).is_file() && !state.running;
     HomeTemplate {
+        federation_name: state.federation_name.clone(),
         running: state.running,
-        can_run,
     }
+}
+
+#[derive(Template)]
+#[template(path = "choose.html")]
+struct ChooseTemplate {}
+
+async fn choose(Extension(_state): Extension<MutableState>) -> ChooseTemplate {
+    ChooseTemplate {}
 }
 
 #[derive(Template)]
@@ -60,8 +68,9 @@ struct DealerTemplate {
 }
 
 async fn dealer(Extension(state): Extension<MutableState>) -> DealerTemplate {
+    let state = state.read().unwrap();
     DealerTemplate {
-        guardians: state.read().unwrap().guardians.clone(),
+        guardians: state.guardians.clone(),
     }
 }
 
@@ -76,19 +85,55 @@ async fn add_guardian(
     Ok(Redirect::to("/dealer".parse().unwrap()))
 }
 
-async fn deal(Extension(state): Extension<MutableState>) -> Result<Redirect, (StatusCode, String)> {
+#[derive(Deserialize, Debug)]
+#[allow(dead_code)]
+struct FedName {
+    federation_name: String,
+}
+
+async fn deal(
+    Extension(state): Extension<MutableState>,
+    Form(form): Form<FedName>,
+) -> Result<Redirect, (StatusCode, String)> {
     let mut state = state.write().unwrap();
-    let (server_configs, client_config) = configgen(state.guardians.clone());
+    state.federation_name = form.federation_name;
+    let (server_configs, client_config) =
+        configgen(state.federation_name.clone(), state.guardians.clone());
     state.server_configs = Some(server_configs.clone());
     state.client_config = Some(client_config.clone());
 
     tracing::info!("Generated configs");
 
-    // TODO: print these configs to the screen ...
     save_configs(&server_configs[0].1, &client_config, &state.cfg_path);
     run_fedimint(&mut state);
 
     Ok(Redirect::to("/configs".parse().unwrap()))
+}
+
+#[derive(Template)]
+#[template(path = "url_connection.html")]
+struct UrlConnection {}
+
+async fn url_connection(Extension(_state): Extension<MutableState>) -> UrlConnection {
+    UrlConnection {}
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[allow(dead_code)]
+pub struct UrlForm {
+    ipaddr: String,
+}
+
+async fn set_url_connection(
+    Extension(state): Extension<MutableState>,
+    Form(form): Form<UrlForm>,
+) -> Result<Redirect, (StatusCode, String)> {
+    let mut state = state.write().unwrap();
+
+    // update state
+    state.connection_string = state.connection_string.clone() + "@" + &form.ipaddr;
+    state.guardians[0].connection_string = state.connection_string.clone();
+    Ok(Redirect::to("/choose".parse().unwrap()))
 }
 
 #[derive(Template)]
@@ -121,6 +166,7 @@ async fn receive_configs(
 
     // update state
     state.client_config = Some(client_config);
+    state.federation_name = server_config.federation_name.clone();
 
     // run fedimint
     run_fedimint(&mut state);
@@ -134,7 +180,6 @@ fn save_configs(server_config: &ServerConfig, client_config: &ClientConfig, cfg_
     std::fs::create_dir_all(&parent).expect("Failed to create config directory");
 
     // Save the configs
-    tracing::info!("{:?}", cfg_path);
     let cfg_file = std::fs::File::create(&cfg_path).expect("Could not create cfg file");
     serde_json::to_writer_pretty(cfg_file, &server_config).unwrap();
     let client_cfg_path = parent.join("client.json");
@@ -146,6 +191,7 @@ fn save_configs(server_config: &ServerConfig, client_config: &ClientConfig, cfg_
 #[derive(Template)]
 #[template(path = "configs.html")]
 struct DisplayConfigsTemplate {
+    federation_name: String,
     server_configs: Vec<(Guardian, String)>,
     client_config: String,
 }
@@ -160,6 +206,7 @@ async fn display_configs(Extension(state): Extension<MutableState>) -> DisplayCo
         .map(|(guardian, cfg)| (guardian, serde_json::to_string(&cfg).unwrap()))
         .collect();
     DisplayConfigsTemplate {
+        federation_name: state.federation_name.clone(),
         server_configs,
         client_config: serde_json::to_string(&state.client_config.as_ref().unwrap()).unwrap(),
     }
@@ -169,8 +216,6 @@ async fn qr(Extension(state): Extension<MutableState>) -> impl axum::response::I
     let client_config = state.read().unwrap().client_config.clone().unwrap();
     let connect_info = WsFederationConnect::from(&client_config);
     let string = serde_json::to_string(&connect_info).unwrap();
-    // this was a hack to do a remote demo ... leaving just in case I need to do another!
-    // .replace("127.0.0.1", "188.166.55.8");
     let png_bytes: Vec<u8> = qrcode_generator::to_png_to_vec(string, QrCodeEcc::Low, 1024).unwrap();
     (
         axum::response::Headers([(axum::http::header::CONTENT_TYPE, "image/png")]),
@@ -178,11 +223,10 @@ async fn qr(Extension(state): Extension<MutableState>) -> impl axum::response::I
     )
 }
 
-// TODO: write cfg_path and db_path into state so we don't re-compute them
 #[derive(Debug)]
 struct State {
+    federation_name: String,
     guardians: Vec<Guardian>,
-    // TODO: map name to peer id
     running: bool,
     cfg_path: PathBuf,
     connection_string: String,
@@ -192,18 +236,21 @@ struct State {
 }
 type MutableState = Arc<RwLock<State>>;
 
-pub async fn run_setup(cfg_path: PathBuf, port: u16, sender: Sender<()>) {
+pub async fn run_ui_setup(cfg_path: PathBuf, port: u16, sender: Sender<()>) {
     let mut rng = OsRng::new().unwrap();
     let secp = bitcoin::secp256k1::Secp256k1::new();
     let (_, pubkey) = secp.generate_keypair(&mut rng);
-    let our_ip = "127.0.0.1"; // TODO: get our actual IP ... or pass in as argument???
-    let connection_string = format!("{}@{}:{}", pubkey, our_ip, port);
+    let connection_string = format!("{}", pubkey);
     let guardians = vec![Guardian {
         connection_string: connection_string.clone(),
         name: "You".into(),
     }];
 
+    // Default federation name
+    let federation_name = "Cypherpunk".into();
+
     let state = Arc::new(RwLock::new(State {
+        federation_name,
         guardians,
         running: false,
         cfg_path,
@@ -215,6 +262,11 @@ pub async fn run_setup(cfg_path: PathBuf, port: u16, sender: Sender<()>) {
 
     let app = Router::new()
         .route("/", get(home))
+        .route(
+            "/url_connection",
+            get(url_connection).post(set_url_connection),
+        )
+        .route("/choose", get(choose))
         .route("/player", get(player).post(receive_configs))
         .route("/dealer", get(dealer).post(add_guardian))
         .route("/configs", get(display_configs))

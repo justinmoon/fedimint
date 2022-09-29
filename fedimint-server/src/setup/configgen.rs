@@ -15,31 +15,26 @@ use rand::rngs::OsRng;
 use threshold_crypto::serde_impl::SerdeSecret;
 use url::Url;
 
-pub fn configgen(guardians: Vec<Guardian>) -> (Vec<(Guardian, ServerConfig)>, ClientConfig) {
+pub fn configgen(
+    federation_name: String,
+    guardians: Vec<Guardian>,
+) -> (Vec<(Guardian, ServerConfig)>, ClientConfig) {
     let amount_tiers = vec![Amount::from_sat(1), Amount::from_sat(10)];
-
     let mut rng = OsRng::new().unwrap();
-
     let num_peers = guardians.len() as u16;
     let peers = (0..num_peers).map(PeerId::from).collect::<Vec<_>>();
-    let max_evil = hbbft::util::max_faulty(peers.len());
-    println!(
-        "Generating keys such that up to {} peers may fail/be evil",
-        max_evil
-    );
     let params = SetupConfigParams {
+        federation_name,
         guardians: guardians.clone(),
         amount_tiers,
     };
-
     let (config_map, client_config) = trusted_dealer_gen(&peers, &params, &mut rng);
-
     let server_configs = guardians
         .into_iter()
         .enumerate()
         .map(|(index, guardian)| {
             let peer_id = PeerId::from(index as u16);
-            let server_config = config_map.get(&peer_id).unwrap().clone();
+            let server_config = config_map.get(&peer_id).expect("Peer not found").clone();
             (guardian, server_config)
         })
         .collect();
@@ -47,6 +42,7 @@ pub fn configgen(guardians: Vec<Guardian>) -> (Vec<(Guardian, ServerConfig)>, Cl
 }
 #[derive(Debug)]
 pub struct SetupConfigParams {
+    pub federation_name: String,
     pub guardians: Vec<Guardian>,
     pub amount_tiers: Vec<fedimint_api::Amount>,
 }
@@ -56,24 +52,21 @@ fn trusted_dealer_gen(
     params: &SetupConfigParams,
     mut rng: impl RngCore + CryptoRng,
 ) -> (BTreeMap<PeerId, ServerConfig>, ClientConfig) {
-    let hbbft_port = 18240;
-    let api_port = 18340;
+    let hbbft_port = 17240;
+    let api_port = 17340;
     let netinfo = hbbft::NetworkInfo::generate_map(peers.to_vec(), &mut Rand07Compat(&mut rng))
         .expect("Could not generate HBBFT netinfo");
     let epochinfo = hbbft::NetworkInfo::generate_map(peers.to_vec(), &mut Rand07Compat(&mut rng))
-        .expect("Could not generate HBBFT netinfo");
-
-    let nodes: Vec<Node> = params
+        .expect("Could not generate HBBFT epochinfo");
+    let hostnames: Vec<String> = params
         .guardians
         .iter()
         .map(|peer| {
+            // FIXME: regex
             let parts: Vec<&str> = peer.connection_string.split('@').collect();
             let part = parts[1].to_string();
             let parts: Vec<&str> = part.split(':').collect();
-            Node {
-                name: peer.name.clone(),
-                url: Url::parse(parts[0]).unwrap(),
-            }
+            parts[0].to_string()
         })
         .collect();
 
@@ -93,13 +86,13 @@ fn trusted_dealer_gen(
                 connection: ConnectionConfig {
                     hbbft_addr: format!(
                         "{}:{}",
-                        nodes[id_u16 as usize].url.clone(),
+                        hostnames[id_u16 as usize].clone(),
                         hbbft_port + id_u16
                     ),
                     api_addr: {
                         let s = format!(
                             "ws://{}:{}",
-                            nodes[id_u16 as usize].url.clone(),
+                            hostnames[id_u16 as usize].clone(),
                             api_port + id_u16
                         );
                         Url::parse(&s).expect("Could not parse URL")
@@ -123,16 +116,23 @@ fn trusted_dealer_gen(
         .iter()
         .map(|(&id, netinf)| {
             let id_u16: u16 = id.into();
-            let epoch_keys = epochinfo.get(&id).unwrap();
+            let epoch_keys = epochinfo
+                .get(&id)
+                .expect("Could not get keys from epoch info");
             let config = ServerConfig {
-                federation_name: "test".to_string(),
+                federation_name: params.federation_name.clone(),
                 identity: id,
-                hbbft_bind_addr: format!("{}:{}", nodes[id_u16 as usize].url.clone(), hbbft_port),
-                api_bind_addr: format!("{}:{}", nodes[id_u16 as usize].url.clone(), api_port),
+                hbbft_bind_addr: format!("{}:{}", hostnames[id_u16 as usize], hbbft_port + id_u16),
+                api_bind_addr: format!("{}:{}", hostnames[id_u16 as usize], api_port + id_u16),
                 tls_cert: tls_keys[&id].0.clone(),
                 tls_key: tls_keys[&id].1.clone(),
                 peers: cfg_peers.clone(),
-                hbbft_sks: SerdeSecret(netinf.secret_key_share().unwrap().clone()),
+                hbbft_sks: SerdeSecret(
+                    netinf
+                        .secret_key_share()
+                        .expect("Could not find secret share")
+                        .clone(),
+                ),
                 hbbft_pk_set: netinf.public_key_set().clone(),
                 epoch_sks: SerdeSecret(epoch_keys.secret_key_share().unwrap().clone()),
                 epoch_pk_set: epoch_keys.public_key_set().clone(),
@@ -145,8 +145,23 @@ fn trusted_dealer_gen(
         .collect();
 
     let client_config = ClientConfig {
-        federation_name: "test".to_string(),
-        nodes,
+        federation_name: params.federation_name.clone(),
+        nodes: peers
+            .iter()
+            .map(|&peer| {
+                let index = u16::from(peer);
+                let s = format!(
+                    "ws://{}:{}",
+                    hostnames[index as usize].clone(),
+                    api_port + index
+                );
+                let url = Url::parse(&s).expect("Could not parse URL");
+                Node {
+                    url,
+                    name: params.guardians[index as usize].name.clone(),
+                }
+            })
+            .collect(),
         mint: mint_client_cfg,
         wallet: wallet_client_cfg,
         ln: ln_client_cfg,

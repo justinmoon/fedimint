@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
 
+export FM_FED_SIZE=${1:-4}
 # clear out federation startup configs folder
-rm -rf $PWD/../setup
+rm -rf $PWD/fed-setup
 
-# start bitcoind in the background
+# start bitcoind on regtest in the background
 bitcoind -regtest -daemon -fallbackfee=0.0004 -txindex -server -rpcuser=bitcoin -rpcpassword=bitcoin
 
 # start 5 guardians, kill processes on their ports if they are already running
 
-for ((ID = 0; ID < 5; ID++)); do
-  npx kill-port $((10000 + $ID))
-  cargo run --bin fedimintd $PWD/../setup/mint-$ID.json $PWD/../setup/mint-$ID.db $((10000 + $ID)) &
+for ((ID = 0; ID < $FM_FED_SIZE; ID++)); do
+  lsof -ti tcp:$((10000 + $ID)) | xargs kill
+  cargo run --bin fedimintd $PWD/fed-setup/mint-$ID.json $PWD/fed-setup/mint-$ID.db $((10000 + $ID)) &
 done
 
 function kill_fedimint_processes {
