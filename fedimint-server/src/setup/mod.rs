@@ -166,7 +166,7 @@ async fn receive_configs(
 
     // update state
     state.client_config = Some(client_config);
-    state.federation_name = server_config.federation_name.clone();
+    state.federation_name = server_config.federation_name;
 
     // run fedimint
     run_fedimint(&mut state);
