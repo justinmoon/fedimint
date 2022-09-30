@@ -50,12 +50,12 @@ impl Default for FeeConsensus {
 }
 
 impl GenerateConfig for WalletConfig {
-    type Params = ();
+    type Params = String; // bitcoin rpc hostname
     type ClientConfig = WalletClientConfig;
 
     fn trusted_dealer_gen(
         peers: &[PeerId],
-        _params: &Self::Params,
+        params: &Self::Params,
         mut rng: impl RngCore + CryptoRng,
     ) -> (BTreeMap<PeerId, Self>, Self::ClientConfig) {
         let secp = secp256k1::Secp256k1::new();
@@ -90,7 +90,7 @@ impl GenerateConfig for WalletConfig {
                     finality_delay: FINALITY_DELAY,
                     default_fee: Feerate { sats_per_kvb: 1000 },
                     btc_rpc: BitcoindRpcCfg {
-                        btc_rpc_address: "127.0.0.1:18443".to_string(),
+                        btc_rpc_address: params.clone(),
                         btc_rpc_user: "bitcoin".to_string(),
                         btc_rpc_pass: "bitcoin".to_string(),
                     },

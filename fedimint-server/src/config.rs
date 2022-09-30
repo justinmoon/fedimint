@@ -102,7 +102,7 @@ impl GenerateConfig for ServerConfig {
             .collect::<BTreeMap<_, _>>();
 
         let (wallet_server_cfg, wallet_client_cfg) =
-            WalletConfig::trusted_dealer_gen(peers, &(), &mut rng);
+            WalletConfig::trusted_dealer_gen(peers, &"127.0.0.1:18443".to_string(), &mut rng);
         let (mint_server_cfg, mint_client_cfg) =
             MintConfig::trusted_dealer_gen(peers, params.amount_tiers.as_ref(), &mut rng);
         let (ln_server_cfg, ln_client_cfg) =
