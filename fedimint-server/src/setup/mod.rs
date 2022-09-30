@@ -43,13 +43,23 @@ pub struct Guardian {
 struct HomeTemplate {
     federation_name: String,
     running: bool,
+    federation_connection_string: String,
 }
 
 async fn home(Extension(state): Extension<MutableState>) -> HomeTemplate {
     let state = state.read().unwrap();
+    let federation_connection_string = match state.client_config.clone() {
+        Some(client_config) => {
+            let connect_info = WsFederationConnect::from(&client_config);
+            serde_json::to_string(&connect_info).unwrap()
+        }
+        None => "".into(),
+    };
+
     HomeTemplate {
         federation_name: state.federation_name.clone(),
         running: state.running,
+        federation_connection_string,
     }
 }
 
@@ -199,6 +209,7 @@ struct DisplayConfigsTemplate {
     federation_name: String,
     server_configs: Vec<(Guardian, String)>,
     client_config: String,
+    federation_connection_string: String,
 }
 
 async fn display_configs(Extension(state): Extension<MutableState>) -> DisplayConfigsTemplate {
@@ -210,10 +221,18 @@ async fn display_configs(Extension(state): Extension<MutableState>) -> DisplayCo
         .into_iter()
         .map(|(guardian, cfg)| (guardian, serde_json::to_string(&cfg).unwrap()))
         .collect();
+    let federation_connection_string = match state.client_config.clone() {
+        Some(client_config) => {
+            let connect_info = WsFederationConnect::from(&client_config);
+            serde_json::to_string(&connect_info).unwrap()
+        }
+        None => "".into(),
+    };
     DisplayConfigsTemplate {
         federation_name: state.federation_name.clone(),
         server_configs,
         client_config: serde_json::to_string(&state.client_config.as_ref().unwrap()).unwrap(),
+        federation_connection_string,
     }
 }
 
