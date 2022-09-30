@@ -18,6 +18,7 @@ use url::Url;
 pub fn configgen(
     federation_name: String,
     guardians: Vec<Guardian>,
+    btc_rpc: String,
 ) -> (Vec<(Guardian, ServerConfig)>, ClientConfig) {
     let amount_tiers = vec![Amount::from_sat(1), Amount::from_sat(10)];
     let mut rng = OsRng::new().unwrap();
@@ -27,6 +28,7 @@ pub fn configgen(
         federation_name,
         guardians: guardians.clone(),
         amount_tiers,
+        btc_rpc,
     };
     let (config_map, client_config) = trusted_dealer_gen(&peers, &params, &mut rng);
     let server_configs = guardians
@@ -45,6 +47,7 @@ pub struct SetupConfigParams {
     pub federation_name: String,
     pub guardians: Vec<Guardian>,
     pub amount_tiers: Vec<fedimint_api::Amount>,
+    pub btc_rpc: String,
 }
 
 fn trusted_dealer_gen(
@@ -96,7 +99,7 @@ fn trusted_dealer_gen(
         .collect::<BTreeMap<_, _>>();
 
     let (wallet_server_cfg, wallet_client_cfg) =
-        WalletConfig::trusted_dealer_gen(peers, &(), &mut rng);
+        WalletConfig::trusted_dealer_gen(peers, &params.btc_rpc, &mut rng);
     let (mint_server_cfg, mint_client_cfg) =
         MintConfig::trusted_dealer_gen(peers, params.amount_tiers.as_ref(), &mut rng);
     let (ln_server_cfg, ln_client_cfg) =

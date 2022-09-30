@@ -97,8 +97,11 @@ async fn deal(
 ) -> Result<Redirect, (StatusCode, String)> {
     let mut state = state.write().unwrap();
     state.federation_name = form.federation_name;
-    let (server_configs, client_config) =
-        configgen(state.federation_name.clone(), state.guardians.clone());
+    let (server_configs, client_config) = configgen(
+        state.federation_name.clone(),
+        state.guardians.clone(),
+        state.btc_rpc.clone().unwrap(),
+    );
     state.server_configs = Some(server_configs.clone());
     state.client_config = Some(client_config.clone());
 
@@ -122,6 +125,7 @@ async fn url_connection(Extension(_state): Extension<MutableState>) -> UrlConnec
 #[allow(dead_code)]
 pub struct UrlForm {
     ipaddr: String,
+    btc_rpc: String,
 }
 
 async fn set_url_connection(
@@ -132,6 +136,7 @@ async fn set_url_connection(
 
     // update state
     state.connection_string = state.connection_string.clone() + "@" + &form.ipaddr;
+    state.btc_rpc = Some(form.btc_rpc);
     state.guardians[0].connection_string = state.connection_string.clone();
     Ok(Redirect::to("/choose".parse().unwrap()))
 }
@@ -233,6 +238,7 @@ struct State {
     sender: Sender<()>,
     server_configs: Option<Vec<(Guardian, ServerConfig)>>,
     client_config: Option<ClientConfig>,
+    btc_rpc: Option<String>,
 }
 type MutableState = Arc<RwLock<State>>;
 
@@ -259,6 +265,7 @@ pub async fn run_ui_setup(cfg_path: PathBuf, sender: Sender<()>) {
         sender,
         server_configs: None,
         client_config: None,
+        btc_rpc: None,
     }));
 
     let app = Router::new()
