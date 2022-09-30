@@ -150,10 +150,10 @@ jobs:
           nix build -L .#container.fedimintd
           echo "fedimintd_container_tag=$(docker load < result | awk '{ print $3 }')" >> $GITHUB_ENV
 
-      - name: Build ln-gateway-clightning container
-        run: |
-          nix build -L .#container.ln-gateway-clightning
-          echo "ln_gateway_clightning_container_tag=$(docker load < result | awk '{ print $3 }')" >> $GITHUB_ENV
+      # - name: Build ln-gateway-clightning container
+      #   run: |
+      #     nix build -L .#container.ln-gateway-clightning
+      #     echo "ln_gateway_clightning_container_tag=$(docker load < result | awk '{ print $3 }')" >> $GITHUB_ENV
 
       - name: Build mint-client-cli container
         run: |
