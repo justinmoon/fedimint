@@ -115,15 +115,14 @@ fn trusted_dealer_gen(
     let server_config = netinfo
         .iter()
         .map(|(&id, netinf)| {
-            let id_u16: u16 = id.into();
             let epoch_keys = epochinfo
                 .get(&id)
                 .expect("Could not get keys from epoch info");
             let config = ServerConfig {
                 federation_name: params.federation_name.clone(),
                 identity: id,
-                hbbft_bind_addr: format!("{}:{}", hostnames[id_u16 as usize], hbbft_port),
-                api_bind_addr: format!("{}:{}", hostnames[id_u16 as usize], api_port),
+                hbbft_bind_addr: format!("0.0.0.0:{}", hbbft_port),
+                api_bind_addr: format!("0.0.0.0:{}", api_port),
                 tls_cert: tls_keys[&id].0.clone(),
                 tls_key: tls_keys[&id].1.clone(),
                 peers: cfg_peers.clone(),
