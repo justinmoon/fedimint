@@ -659,7 +659,7 @@
                 contents = [ ln-gateway clightning-dev pkgs.bash pkgs.coreutils ];
                 config = {
                   Cmd = [
-                    "${ln-gateway}/bin/ln-gateway"
+                    "${ln-gateway}/bin/ln_gateway"
                   ];
                   ExposedPorts = {
                     "${builtins.toString 9735}/tcp" = { };
