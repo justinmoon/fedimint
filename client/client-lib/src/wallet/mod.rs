@@ -268,7 +268,7 @@ mod tests {
                             .unwrap()
                     }
                 },
-                &(),
+                &("foo".into(), "bar".into(), "baz".into()),
             )
             .await,
         ));
