@@ -98,8 +98,15 @@ fn trusted_dealer_gen(
         })
         .collect::<BTreeMap<_, _>>();
 
+    let parts: Vec<&str> = params.btc_rpc.split('@').collect();
+    let user_pass = parts[0].to_string();
+    let host_port = parts[1].to_string();
+    let parts: Vec<&str> = user_pass.split(':').collect();
+    let user = parts[0].to_string();
+    let pass = parts[1].to_string();
+
     let (wallet_server_cfg, wallet_client_cfg) =
-        WalletConfig::trusted_dealer_gen(peers, &params.btc_rpc, &mut rng);
+        WalletConfig::trusted_dealer_gen(peers, &(host_port, user, pass), &mut rng);
     let (mint_server_cfg, mint_client_cfg) =
         MintConfig::trusted_dealer_gen(peers, params.amount_tiers.as_ref(), &mut rng);
     let (ln_server_cfg, ln_client_cfg) =

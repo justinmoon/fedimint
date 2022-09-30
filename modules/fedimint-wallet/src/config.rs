@@ -50,7 +50,7 @@ impl Default for FeeConsensus {
 }
 
 impl GenerateConfig for WalletConfig {
-    type Params = String; // bitcoin rpc hostname
+    type Params = (String, String, String); // rpc hostname, username, password
     type ClientConfig = WalletClientConfig;
 
     fn trusted_dealer_gen(
@@ -90,9 +90,9 @@ impl GenerateConfig for WalletConfig {
                     finality_delay: FINALITY_DELAY,
                     default_fee: Feerate { sats_per_kvb: 1000 },
                     btc_rpc: BitcoindRpcCfg {
-                        btc_rpc_address: params.clone(),
-                        btc_rpc_user: "bitcoin".to_string(),
-                        btc_rpc_pass: "bitcoin".to_string(),
+                        btc_rpc_address: params.0.clone(),
+                        btc_rpc_user: params.1.clone(),
+                        btc_rpc_pass: params.2.clone(),
                     },
                     fee_consensus: FeeConsensus::default(),
                 };

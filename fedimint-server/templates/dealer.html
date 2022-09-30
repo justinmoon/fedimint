@@ -20,13 +20,12 @@
                 </label>
                 <input type="text" class="form-control" name="federation_name" placeholder="Cypherpunks" required />
             </div>
-            <div class="form-group">
+            <div class="form-group mt-3">
                 <label for="btc_rpc">
                     <h3>BTC RPC IPAddr:Port</h3>
                 </label>
                 <input class="form-control" type="text" name="btc_rpc" required
-                    placeholder="username:password@123.567.789.0:8332"
-                    pattern="^0[2,3][0-9,a-f]{64}@(?:[0-9]{1,3}\.){3}[0-9]{1,3}:\d{4,5}$" />
+                    placeholder="username:password@1.2.3.4:8332" />
             </div>
             <button type="submit" class="btn btn-primary my-3">Start Your Federation</button>
         </form>

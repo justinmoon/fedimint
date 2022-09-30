@@ -89,6 +89,7 @@ async fn add_guardian(
 #[allow(dead_code)]
 struct FedName {
     federation_name: String,
+    btc_rpc: String,
 }
 
 async fn deal(
@@ -97,6 +98,7 @@ async fn deal(
 ) -> Result<Redirect, (StatusCode, String)> {
     let mut state = state.write().unwrap();
     state.federation_name = form.federation_name;
+    state.btc_rpc = Some(form.btc_rpc);
     let (server_configs, client_config) = configgen(
         state.federation_name.clone(),
         state.guardians.clone(),
@@ -125,7 +127,6 @@ async fn url_connection(Extension(_state): Extension<MutableState>) -> UrlConnec
 #[allow(dead_code)]
 pub struct UrlForm {
     ipaddr: String,
-    btc_rpc: String,
 }
 
 async fn set_url_connection(
@@ -136,7 +137,6 @@ async fn set_url_connection(
 
     // update state
     state.connection_string = state.connection_string.clone() + "@" + &form.ipaddr;
-    state.btc_rpc = Some(form.btc_rpc);
     state.guardians[0].connection_string = state.connection_string.clone();
     Ok(Redirect::to("/choose".parse().unwrap()))
 }
