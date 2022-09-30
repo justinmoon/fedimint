@@ -25,7 +25,8 @@
                     <h3>BTC RPC IPAddr:Port</h3>
                 </label>
                 <input class="form-control" type="text" name="btc_rpc" required
-                    placeholder="username:password@1.2.3.4:8332" />
+                    placeholder="username:password@1.2.3.4:8332"
+                    pattern=".*:.*@.*:\d{4,5}$"/>
             </div>
             <button type="submit" class="btn btn-primary my-3">Start Your Federation</button>
         </form>
