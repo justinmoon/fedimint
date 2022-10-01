@@ -60,8 +60,8 @@ pub enum GatewayRequest {
 
 #[derive(Debug)]
 pub struct GatewayRequestInner<R: GatewayRequestTrait> {
-    request: R,
-    sender: oneshot::Sender<Result<R::Response>>,
+    pub request: R,
+    pub sender: oneshot::Sender<Result<R::Response>>,
 }
 
 pub trait GatewayRequestTrait {

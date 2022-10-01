@@ -8,7 +8,11 @@ use bitcoin::{Amount, KeyPair};
 use fixtures::{fixtures, rng, sats, secp, sha256};
 use futures::executor::block_on;
 use futures::future::{join_all, Either};
+use ln_gateway::cln::{Htlc, HtlcAccepted, Onion};
+use ln_gateway::{GatewayRequest, GatewayRequestInner, LnGatewayError};
+use mint_client::ln::incoming::ConfirmedInvoice;
 use threshold_crypto::{SecretKey, SecretKeyShare};
+use tokio::sync::oneshot;
 use tokio::time::timeout;
 use tracing::debug;
 
@@ -580,6 +584,107 @@ async fn receive_lightning_payment_valid_preimage() {
         .await;
     user.assert_total_coins(preimage_price).await;
     assert_eq!(fed.max_balance_sheet(), 0);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_gw() {
+    let starting_balance = sats(2000);
+    let preimage_price = sats(100);
+    let (fed, user, bitcoin, gateway, _) = fixtures(2, &[sats(1000), sats(100)]).await;
+    fed.mine_and_mint(&gateway.user, &*bitcoin, starting_balance)
+        .await;
+
+    let mut invoices = vec![];
+    for _ in 0..100 {
+        let invoice = tokio::join!(
+            user.client
+                .generate_invoice(preimage_price, "".into(), rng()),
+            fed.await_consensus_epochs(1),
+        )
+        .0
+        .unwrap();
+        invoices.push(invoice);
+    }
+
+    for invoice in invoices {
+        let gw_sender = gateway.sender.clone();
+        tokio::spawn(async move {
+            let (sender, receiver) = oneshot::channel::<Result<(), LnGatewayError>>();
+            let msg = GatewayRequest::PayInvoice(GatewayRequestInner {
+                request: invoice.contract_id(),
+                sender,
+            });
+            gw_sender
+                .send(msg)
+                .await
+                .expect("failed to send over channel");
+            receiver
+                .await
+                .expect("couldn't receive")
+                .expect("test failed");
+        });
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_gw_incoming() {
+    let starting_balance = sats(2000);
+    let preimage_price = sats(100);
+    let (fed, user, bitcoin, gateway, _) = fixtures(2, &[sats(1000), sats(100)]).await;
+    fed.mine_and_mint(&gateway.user, &*bitcoin, starting_balance)
+        .await;
+
+    let mut invoices = vec![];
+    for _ in 0..100 {
+        let invoice = tokio::join!(
+            user.client
+                .generate_invoice(preimage_price, "".into(), rng()),
+            fed.await_consensus_epochs(1),
+        )
+        .0
+        .unwrap();
+        invoices.push(invoice);
+    }
+
+    // for invoice in invoices {
+    let receivers = invoices.into_iter().map(|invoice| {
+        let (sender, receiver) = oneshot::channel::<Result<Preimage, LnGatewayError>>();
+        let gw_sender = gateway.sender.clone();
+        // let sender = channels[]
+        tokio::spawn(async move {
+            let msg = GatewayRequest::HtlcAccepted(GatewayRequestInner {
+                sender,
+                request: HtlcAccepted {
+                    htlc: Htlc {
+                        amount: preimage_price,
+                        cltv_expiry: 0,
+                        cltv_expiry_relative: 0,
+                        payment_hash: *invoice.invoice.payment_hash(),
+                    },
+                    onion: Onion {
+                        payload: "".into(),
+                        type_: "".into(),
+                        short_channel_id: "".into(),
+                        forward_amount: fedimint_api::Amount::from_sat(1),
+                        outgoing_cltv_value: 0 as u32,
+                        shared_secret: sha256(&[1, 2, 3]),
+                        next_onion: "".into(),
+                    },
+                },
+            });
+            gw_sender
+                .send(msg)
+                .await
+                .expect("failed to send over channel");
+        });
+        receiver
+    });
+    for receiver in receivers {
+        receiver
+            .await
+            .expect("couldn't receive")
+            .expect("test failed");
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -34,6 +34,7 @@ use rand::rngs::OsRng;
 
 use tokio::sync::Mutex;
 
+use tokio::sync::mpsc;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 use url::Url;
@@ -237,6 +238,7 @@ pub struct GatewayTest {
     pub keys: LightningGateway,
     pub user: UserTest,
     pub client: Arc<GatewayClient>,
+    pub sender: mpsc::Sender<GatewayRequest>,
 }
 
 impl GatewayTest {
@@ -282,7 +284,13 @@ impl GatewayTest {
         let (sender, receiver) = tokio::sync::mpsc::channel::<GatewayRequest>(100);
         let adapter = Arc::new(ln_client_adapter);
         let ln_client = Arc::clone(&adapter);
-        let gateway = LnGateway::new(client.clone(), ln_client, sender, receiver, bind_addr);
+        let gateway = LnGateway::new(
+            client.clone(),
+            ln_client,
+            sender.clone(),
+            receiver,
+            bind_addr,
+        );
         // Normally, this client registration with the federation is automated as part of running the gateway
         // In test cases, we want to register without running a gateway
         client
@@ -293,6 +301,7 @@ impl GatewayTest {
         GatewayTest {
             server: gateway,
             adapter,
+            sender,
             keys,
             user,
             client,
