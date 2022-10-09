@@ -59,6 +59,9 @@ fn item_message(item: &ConsensusItem) -> String {
                     Input::LN(t) => {
                         format!("LN Contract {} with id {}", t.amount, t.contract_id)
                     }
+                    Input::Tabconf(()) => {
+                        format!("TABConf foo")
+                    }
                 };
                 write!(tx_debug, "\n    Input: {}", input_debug).unwrap();
             }
@@ -88,6 +91,9 @@ fn item_message(item: &ConsensusItem) -> String {
                             format!("LN Outgoing Contract for {} hash {}", amount, a.hash)
                         }
                     },
+                    Output::Tabconf(()) => {
+                        format!("TABConf foo")
+                    }
                 };
                 write!(tx_debug, "\n    Output: {}", output_debug).unwrap();
             }

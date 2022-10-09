@@ -17,6 +17,7 @@ use fedimint_api::{Amount, FederationModule, OutPoint, PeerId, TransactionId};
 use fedimint_core::epoch::*;
 use fedimint_core::modules::ln::{LightningModule, LightningModuleError};
 use fedimint_core::modules::mint::{Mint, MintError};
+use fedimint_core::modules::tabconf::TabconfModule;
 use fedimint_core::modules::wallet::{Wallet, WalletError};
 use fedimint_core::outcome::TransactionStatus;
 use fedimint_core_api::server::ServerModule;
@@ -82,6 +83,7 @@ pub struct FedimintConsensus {
     pub mint: Mint, // TODO: generate consensus code using Macro, making modules replaceable for testing and easy adaptability
     pub wallet: Wallet,
     pub ln: LightningModule,
+    pub tabconf: TabconfModule,
 
     modules: BTreeMap<ModuleKey, ServerModule>,
     /// KV Database into which all state is persisted to recover from in case of a crash
@@ -116,6 +118,7 @@ impl FedimintConsensus {
         mint: Mint,
         wallet: Wallet,
         ln: LightningModule,
+        tabconf: TabconfModule,
         db: Database,
     ) -> Self {
         Self {
@@ -124,6 +127,7 @@ impl FedimintConsensus {
             mint,
             wallet,
             ln,
+            tabconf,
             modules: BTreeMap::default(),
             db,
             transaction_notify: Arc::new(Notify::new()),
@@ -176,6 +180,14 @@ impl FedimintConsensus {
                         .validate_input(&self.build_interconnect(), &cache, input)
                         .map_err(TransactionSubmissionError::ContractInputError)?
                 }
+                Input::Tabconf(input) => {
+                    let cache = self
+                        .tabconf
+                        .build_verification_cache(std::iter::once(input));
+                    self.tabconf
+                        .validate_input(&self.build_interconnect(), &cache, input)
+                        .map_err(TransactionSubmissionError::TabconfError)?
+                }
             };
             pub_keys.push(meta.puk_keys);
             funding_verifier.add_input(meta.amount);
@@ -196,6 +208,10 @@ impl FedimintConsensus {
                     .ln
                     .validate_output(output)
                     .map_err(TransactionSubmissionError::ContractOutputError)?,
+                Output::Tabconf(output) => self
+                    .tabconf
+                    .validate_output(output)
+                    .map_err(TransactionSubmissionError::TabconfError)?,
             };
             funding_verifier.add_output(amount);
         }
@@ -497,6 +513,15 @@ impl FedimintConsensus {
                         &caches.ln,
                     )
                     .map_err(TransactionSubmissionError::ContractInputError)?,
+                Input::Tabconf(input) => self
+                    .tabconf
+                    .apply_input(
+                        &self.build_interconnect(),
+                        batch.subtransaction(),
+                        input,
+                        &caches.ln,
+                    )
+                    .map_err(TransactionSubmissionError::TabconfError)?,
             };
             pub_keys.push(meta.puk_keys);
             funding_verifier.add_input(meta.amount);
@@ -521,6 +546,10 @@ impl FedimintConsensus {
                     .ln
                     .apply_output(batch.subtransaction(), &output, out_point)
                     .map_err(TransactionSubmissionError::ContractOutputError)?,
+                Output::Tabconf(output) => self
+                    .tabconf
+                    .apply_output(batch.subtransaction(), &output, out_point)
+                    .map_err(TransactionSubmissionError::TabconfError)?,
             };
             funding_verifier.add_output(amount);
         }
@@ -573,6 +602,13 @@ impl FedimintConsensus {
                                 .expect("the transaction was processed, so should be known");
                             OutputOutcome::LN(outcome)
                         }
+                        Output::Tabconf(_) => {
+                            let outcome = self
+                                .tabconf
+                                .output_status(outpoint)
+                                .expect("the transaction was processed, so should be known");
+                            OutputOutcome::Tabconf(outcome)
+                        }
                     }
                 })
                 .collect();
@@ -604,8 +640,7 @@ impl FedimintConsensus {
             .flat_map(|tx| tx.inputs.iter())
             .filter_map(|input| match input {
                 Input::Mint(input) => Some(input),
-                Input::Wallet(_) => None,
-                Input::LN(_) => None,
+                _ => None,
             });
         let mint_cache = self.mint.build_verification_cache(mint_input_iter);
 
@@ -613,18 +648,16 @@ impl FedimintConsensus {
             .clone()
             .flat_map(|tx| tx.inputs.iter())
             .filter_map(|input| match input {
-                Input::Mint(_) => None,
                 Input::Wallet(input) => Some(input),
-                Input::LN(_) => None,
+                _ => None,
             });
         let wallet_cache = self.wallet.build_verification_cache(wallet_input_iter);
 
         let ln_input_iter = transactions
             .flat_map(|tx| tx.inputs.iter())
             .filter_map(|input| match input {
-                Input::Mint(_) => None,
-                Input::Wallet(_) => None,
                 Input::LN(input) => Some(input),
+                _ => None,
             });
         let ln_cache = self.ln.build_verification_cache(ln_input_iter);
 
@@ -724,4 +757,6 @@ pub enum TransactionSubmissionError {
     ContractOutputError(LightningModuleError),
     #[error("Transaction conflict error")]
     TransactionConflictError,
+    #[error("Tabconf module error")]
+    TabconfError(anyhow::Error),
 }

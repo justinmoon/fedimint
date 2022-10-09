@@ -32,6 +32,7 @@ pub enum Input {
     Mint(<fedimint_mint::Mint as FederationModule>::TxInput),
     Wallet(<fedimint_wallet::Wallet as FederationModule>::TxInput),
     LN(<fedimint_ln::LightningModule as FederationModule>::TxInput),
+    Tabconf(<fedimint_tabconf::TabconfModule as FederationModule>::TxInput),
 }
 
 // TODO: check if clippy is right
@@ -41,6 +42,7 @@ pub enum Output {
     Mint(<fedimint_mint::Mint as FederationModule>::TxOutput),
     Wallet(<fedimint_wallet::Wallet as FederationModule>::TxOutput),
     LN(<fedimint_ln::LightningModule as FederationModule>::TxOutput),
+    Tabconf(<fedimint_tabconf::TabconfModule as FederationModule>::TxOutput),
 }
 
 impl Transaction {

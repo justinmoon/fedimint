@@ -77,6 +77,9 @@ where
                         return Err(tx.clone());
                     }
                 }
+                Input::Tabconf(()) => {
+                    // No conflicts possible yet
+                }
             }
         }
         for output in &tx.outputs {

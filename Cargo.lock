@@ -856,6 +856,7 @@ dependencies = [
  "fedimint-derive",
  "fedimint-ln",
  "fedimint-mint",
+ "fedimint-tabconf",
  "fedimint-wallet",
  "futures",
  "hex",
@@ -1037,6 +1038,7 @@ dependencies = [
  "fedimint-core",
  "fedimint-core-api",
  "fedimint-derive",
+ "fedimint-tabconf",
  "fedimint-wallet",
  "futures",
  "hbbft",
@@ -1075,6 +1077,21 @@ dependencies = [
  "fedimint-api",
  "sled",
  "tempfile",
+ "test-log",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "fedimint-tabconf"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "fedimint-api",
+ "fedimint-derive",
+ "rand",
+ "serde",
  "test-log",
  "tracing",
  "tracing-subscriber",

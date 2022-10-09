@@ -4,6 +4,7 @@ use fedimint_ln::contracts::{AccountContractOutcome, ContractOutcome, OutgoingCo
 use fedimint_ln::contracts::{DecryptedPreimage, Preimage};
 use fedimint_ln::LightningModule;
 use fedimint_mint::SigResponse;
+use fedimint_tabconf::TabconfModule;
 use fedimint_wallet::{PegOutOutcome, Wallet};
 use serde::{Deserialize, Serialize};
 
@@ -27,6 +28,7 @@ pub enum OutputOutcome {
     Mint(Option<SigResponse>),
     Wallet(<Wallet as FederationModule>::TxOutputOutcome),
     LN(<LightningModule as FederationModule>::TxOutputOutcome),
+    Tabconf(<TabconfModule as FederationModule>::TxOutputOutcome),
 }
 
 pub trait Final {
@@ -58,6 +60,7 @@ impl Final for OutputOutcome {
                     ContractOutcome::Outgoing(_) => true,
                 }
             }
+            OutputOutcome::Tabconf(()) => true,
         }
     }
 }
@@ -77,6 +80,7 @@ impl TryIntoOutcome for Option<SigResponse> {
             OutputOutcome::Mint(outcome) => Ok(outcome),
             OutputOutcome::Wallet(_) => Err(CoreError::MismatchingVariant("mint", "wallet")),
             OutputOutcome::LN(_) => Err(CoreError::MismatchingVariant("mint", "ln")),
+            OutputOutcome::Tabconf(_) => Err(CoreError::MismatchingVariant("mint", "tabconf")),
         }
     }
 }
@@ -87,6 +91,7 @@ impl TryIntoOutcome for PegOutOutcome {
             OutputOutcome::Mint(_) => Err(CoreError::MismatchingVariant("wallet", "mint")),
             OutputOutcome::Wallet(outcome) => Ok(outcome),
             OutputOutcome::LN(_) => Err(CoreError::MismatchingVariant("wallet", "ln")),
+            OutputOutcome::Tabconf(_) => Err(CoreError::MismatchingVariant("wallet", "tabconf")),
         }
     }
 }
@@ -97,6 +102,7 @@ impl TryIntoOutcome for fedimint_ln::OutputOutcome {
             OutputOutcome::Mint(_) => Err(CoreError::MismatchingVariant("ln", "mint")),
             OutputOutcome::Wallet(_) => Err(CoreError::MismatchingVariant("ln", "wallet")),
             OutputOutcome::LN(outcome) => Ok(outcome),
+            OutputOutcome::Tabconf(_) => Err(CoreError::MismatchingVariant("ln", "tabconf")),
         }
     }
 }

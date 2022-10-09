@@ -34,6 +34,7 @@ use fedimint_server::config::{ClientConfig, ServerConfig};
 use fedimint_server::consensus::FedimintConsensus;
 use fedimint_server::consensus::{ConsensusOutcome, ConsensusProposal};
 use fedimint_server::epoch::ConsensusItem;
+use fedimint_server::modules::tabconf::TabconfModule;
 use fedimint_server::net::connect::mock::MockNetwork;
 use fedimint_server::net::connect::{Connector, TlsTcpConnector};
 use fedimint_server::net::peers::PeerConnector;
@@ -770,7 +771,10 @@ impl FederationTest {
 
             let ln = LightningModule::new(cfg.ln.clone(), db.clone());
 
-            let consensus = FedimintConsensus::new(cfg.clone(), mint, wallet, ln, db.clone());
+            let tabconf = TabconfModule;
+
+            let consensus =
+                FedimintConsensus::new(cfg.clone(), mint, wallet, ln, tabconf, db.clone());
             let fedimint = FedimintServer::new_with(cfg.clone(), consensus, connect_gen(cfg)).await;
 
             spawn(fedimint_server::net::api::run_server(
