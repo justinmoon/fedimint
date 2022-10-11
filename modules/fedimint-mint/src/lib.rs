@@ -112,14 +112,19 @@ impl FederationModule for Mint {
     type ConsensusItem = PartiallySignedRequest;
     type VerificationCache = VerificationCache;
 
-    async fn await_consensus_proposal<'a>(&'a self, rng: impl RngCore + CryptoRng + 'a) {
-        if self.consensus_proposal(rng).await.is_empty() {
+    async fn await_consensus_proposal<'a>(
+        &'a self,
+        interconnect: &dyn ModuleInterconect,
+        rng: impl RngCore + CryptoRng + 'a,
+    ) {
+        if self.consensus_proposal(interconnect, rng).await.is_empty() {
             std::future::pending().await
         }
     }
 
     async fn consensus_proposal<'a>(
         &'a self,
+        _interconnect: &dyn ModuleInterconect,
         _rng: impl RngCore + CryptoRng + 'a,
     ) -> Vec<Self::ConsensusItem> {
         self.db

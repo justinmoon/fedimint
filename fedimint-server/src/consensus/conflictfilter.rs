@@ -31,6 +31,7 @@ where
     coin_set: HashSet<TieredMulti<Note>>,
     peg_in_set: HashSet<PegInProof>,
     contract_set: HashSet<ContractId>,
+    bet_redemptions: HashSet<u64>,
     pegged_out: bool,
 }
 
@@ -48,6 +49,7 @@ where
             coin_set: Default::default(),
             peg_in_set: Default::default(),
             contract_set: Default::default(),
+            bet_redemptions: Default::default(),
             pegged_out: false,
         }
     }
@@ -77,8 +79,10 @@ where
                         return Err(tx.clone());
                     }
                 }
-                Input::Tabconf(()) => {
-                    // No conflicts possible yet
+                Input::Tabconf(input) => {
+                    if !self.bet_redemptions.insert(input.resolve_consensus_height) {
+                        return Err(tx.clone());
+                    }
                 }
             }
         }

@@ -9,6 +9,7 @@ pub use fedimint_core::config::*;
 use fedimint_core::modules::ln::config::LightningModuleConfig;
 use fedimint_core::modules::mint::config::MintConfig;
 use fedimint_core::modules::wallet::config::WalletConfig;
+use fedimint_tabconf::TabconfConfig;
 use hbbft::crypto::serde_impl::SerdeSecret;
 use rand::{CryptoRng, RngCore};
 use serde::de::DeserializeOwned;
@@ -49,6 +50,7 @@ pub struct ServerConfig {
     pub wallet: WalletConfig,
     pub mint: MintConfig,
     pub ln: LightningModuleConfig,
+    pub tabconf: TabconfConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -75,6 +77,7 @@ pub struct ServerConfigParams {
     pub amount_tiers: Vec<Amount>,
     pub federation_name: String,
     pub bitcoind_rpc: String,
+    pub tabconf_bet_size: Amount,
 }
 
 #[async_trait(?Send)]
@@ -108,6 +111,8 @@ impl GenerateConfig for ServerConfig {
             MintConfig::trusted_dealer_gen(peers, &peer0.amount_tiers, &mut rng);
         let (ln_server_cfg, ln_client_cfg) =
             LightningModuleConfig::trusted_dealer_gen(peers, &(), &mut rng);
+        let (tabconf_server_cfg, tabconf_client_cfg) =
+            TabconfConfig::trusted_dealer_gen(peers, &peer0.tabconf_bet_size, &mut rng);
 
         let server_config = netinfo
             .iter()
@@ -128,6 +133,7 @@ impl GenerateConfig for ServerConfig {
                     wallet: wallet_server_cfg[&id].clone(),
                     mint: mint_server_cfg[&id].clone(),
                     ln: ln_server_cfg[&id].clone(),
+                    tabconf: tabconf_server_cfg[&id].clone(),
                 };
                 (id, config)
             })
@@ -144,6 +150,7 @@ impl GenerateConfig for ServerConfig {
             mint: mint_client_cfg,
             wallet: wallet_client_cfg,
             ln: ln_client_cfg,
+            tabconf: tabconf_client_cfg,
         };
 
         (server_config, client_config)
@@ -164,6 +171,7 @@ impl GenerateConfig for ServerConfig {
             mint: self.mint.to_client_config(),
             wallet: self.wallet.to_client_config(),
             ln: self.ln.to_client_config(),
+            tabconf: self.tabconf,
         }
     }
 
@@ -238,6 +246,10 @@ impl GenerateConfig for ServerConfig {
         let (mint_server_cfg, mint_client_cfg) =
             MintConfig::distributed_gen(&mut mint, our_id, peers, param, &mut rng).await?;
 
+        let tabconf_cfg = TabconfConfig {
+            bet_size: Amount::from_sat(42),
+        };
+
         let server = ServerConfig {
             federation_name: params.federation_name.clone(),
             identity: *our_id,
@@ -253,6 +265,7 @@ impl GenerateConfig for ServerConfig {
             wallet: wallet_server_cfg,
             mint: mint_server_cfg,
             ln: ln_server_cfg,
+            tabconf: tabconf_cfg,
         };
 
         let client = ClientConfig {
@@ -261,6 +274,7 @@ impl GenerateConfig for ServerConfig {
             mint: mint_client_cfg,
             wallet: wallet_client_cfg,
             ln: ln_client_cfg,
+            tabconf: tabconf_cfg,
         };
 
         Ok((server, client))
@@ -371,6 +385,7 @@ impl ServerConfigParams {
             amount_tiers,
             federation_name,
             bitcoind_rpc,
+            tabconf_bet_size: Amount::from_sat(42),
         }
     }
 

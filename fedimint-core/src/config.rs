@@ -2,6 +2,7 @@ use std::path::Path;
 
 use fedimint_ln::config::LightningModuleClientConfig;
 use fedimint_mint::config::MintClientConfig;
+use fedimint_tabconf::TabconfConfig;
 use fedimint_wallet::config::WalletClientConfig;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -20,6 +21,7 @@ pub struct ClientConfig {
     pub mint: MintClientConfig,
     pub wallet: WalletClientConfig,
     pub ln: LightningModuleClientConfig,
+    pub tabconf: TabconfConfig,
 }
 
 pub fn load_from_file<T: DeserializeOwned>(path: &Path) -> T {

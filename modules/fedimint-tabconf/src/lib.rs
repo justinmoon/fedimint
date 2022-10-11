@@ -1,27 +1,106 @@
+mod db;
+
+use crate::db::{BetResolutionKey, BetResolutionKeyPrefix, ResolvedBet, UserBetKey};
 use anyhow::anyhow;
 use async_trait::async_trait;
+use fedimint_api::config::GenerateConfig;
 use fedimint_api::db::batch::BatchTx;
-use fedimint_api::db::DatabaseTransaction;
+use fedimint_api::db::{Database, DatabaseTransaction};
+use fedimint_api::encoding::{Decodable, Encodable};
+use fedimint_api::module::__reexports::serde_json;
 use fedimint_api::module::audit::Audit;
 use fedimint_api::module::interconnect::ModuleInterconect;
-use fedimint_api::module::{ApiEndpoint, FederationModule, TransactionItemAmount};
-use fedimint_api::{InputMeta, OutPoint, PeerId};
+use fedimint_api::module::{
+    api_endpoint, ApiEndpoint, ApiError, FederationModule, TransactionItemAmount,
+};
+use fedimint_api::net::peers::AnyPeerConnections;
+use fedimint_api::{Amount, InputMeta, OutPoint, PeerId};
 use rand::{CryptoRng, RngCore};
-use std::collections::HashSet;
+use secp256k1::XOnlyPublicKey;
+use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, HashSet};
 
-pub struct TabconfModule;
+pub struct TabconfModule {
+    db: Database,
+    cfg: TabconfConfig,
+}
+
+#[derive(Debug, Clone, Copy, Encodable, Decodable, Serialize, Deserialize, Eq, PartialEq, Hash)]
+pub struct TabconfConfig {
+    pub bet_size: Amount,
+}
+
+#[derive(Debug, Clone, Encodable, Decodable, Serialize, Deserialize, Eq, PartialEq, Hash)]
+pub struct PlaceBet {
+    pub resolve_consensus_height: u64,
+    pub predicted_moscow_time: u64,
+    pub pub_key: XOnlyPublicKey,
+}
+
+#[derive(Debug, Clone, Encodable, Decodable, Serialize, Deserialize, Eq, PartialEq, Hash)]
+pub struct RedeemPrize {
+    pub resolve_consensus_height: u64,
+    pub amount: Amount,
+}
+
+#[derive(Debug, Clone, Copy, Encodable, Decodable, Serialize, Deserialize, Eq, PartialEq, Hash)]
+pub struct BetResolutionProposal {
+    moscow_time: u64,
+}
+
+impl TabconfModule {
+    pub fn new(cfg: TabconfConfig, db: Database) -> Self {
+        TabconfModule { db, cfg }
+    }
+
+    fn last_resolved_bet_height(&self) -> u64 {
+        self.db
+            .find_by_prefix(&BetResolutionKeyPrefix)
+            .map(|res| res.expect("DB error").0.resolve_consensus_height)
+            .max()
+            .unwrap_or(0)
+    }
+
+    async fn should_resolve(&self, interconnect: &dyn ModuleInterconect) -> bool {
+        let consensus_block_height = block_height(interconnect).await as u64;
+        let last_resolved_consensus_block_height = self.last_resolved_bet_height();
+
+        if last_resolved_consensus_block_height == consensus_block_height {
+            return false;
+        }
+
+        //let we_proposed = self.db.get_value(&Re)
+        unimplemented!()
+    }
+
+    fn propose_resolution(&self) -> BetResolutionProposal {
+        unimplemented!()
+    }
+
+    fn get_bet_resolution(&self, consensus_height: u64) -> Option<ResolvedBet> {
+        self.db
+            .get_value(&BetResolutionKey {
+                resolve_consensus_height: consensus_height,
+            })
+            .expect("DB error")
+    }
+}
 
 #[async_trait(?Send)]
 impl FederationModule for TabconfModule {
     type Error = anyhow::Error;
-    type TxInput = ();
-    type TxOutput = ();
+    type TxInput = RedeemPrize;
+    type TxOutput = PlaceBet;
     type TxOutputOutcome = ();
-    type ConsensusItem = ();
+    type ConsensusItem = BetResolutionProposal;
     type VerificationCache = ();
 
     /// Blocks until a new `consensus_proposal` is available.
-    async fn await_consensus_proposal<'a>(&'a self, _rng: impl RngCore + CryptoRng + 'a) {
+    async fn await_consensus_proposal<'a>(
+        &'a self,
+        _interconnect: &dyn ModuleInterconect,
+        _rng: impl RngCore + CryptoRng + 'a,
+    ) {
         // Wait forever since there is no functionality yet that should trigger a new epoch
         std::future::pending().await
     }
@@ -29,8 +108,17 @@ impl FederationModule for TabconfModule {
     /// This module's contribution to the next consensus proposal
     async fn consensus_proposal<'a>(
         &'a self,
+        interconnect: &dyn ModuleInterconect,
         _rng: impl RngCore + CryptoRng + 'a,
     ) -> Vec<Self::ConsensusItem> {
+        // let consensus_block_height = block_height(interconnect).await as u64;
+        // let last_resolved_consensus_block_height = self.last_resolved_bet_height();
+        //
+        // if last_resolved_consensus_block_height != consensus_block_height {
+        //     vec![self.propose_resolution()]
+        // } else {
+        //     vec![]
+        // }
         vec![]
     }
 
@@ -64,10 +152,35 @@ impl FederationModule for TabconfModule {
         &self,
         _interconnect: &dyn ModuleInterconect,
         _verification_cache: &Self::VerificationCache,
-        _input: &'a Self::TxInput,
+        input: &'a Self::TxInput,
     ) -> Result<InputMeta<'a>, Self::Error> {
-        // We haven't defined inputs/outputs yet, so let's just error
-        Err(anyhow!("Not implemented yet!"))
+        let resolved_bet = self
+            .db
+            .get_value(&BetResolutionKey {
+                resolve_consensus_height: input.resolve_consensus_height,
+            })
+            .expect("DB error")
+            .ok_or(anyhow!("Bet not resolved yet or doesn't exist!"))?;
+
+        if resolved_bet.paid_out {
+            return Err(anyhow!("Prize has already been claimed"));
+        }
+
+        if resolved_bet.prize != input.amount {
+            return Err(anyhow!(
+                "Prize is {}, tried to claim {}",
+                resolved_bet.prize,
+                input.amount
+            ));
+        }
+
+        Ok(InputMeta {
+            amount: TransactionItemAmount {
+                amount: input.amount,
+                fee: Amount::ZERO,
+            },
+            puk_keys: Box::new(std::iter::once(resolved_bet.winner)),
+        })
     }
 
     /// Try to spend a transaction input. On success all necessary updates will be part of the
@@ -80,12 +193,26 @@ impl FederationModule for TabconfModule {
     fn apply_input<'a, 'b>(
         &'a self,
         interconnect: &'a dyn ModuleInterconect,
-        _batch: BatchTx<'a>,
+        mut batch: BatchTx<'a>,
         input: &'b Self::TxInput,
         verification_cache: &Self::VerificationCache,
     ) -> Result<InputMeta<'b>, Self::Error> {
         // We always want to verify inputs, but apart from that there's nothing to do yet
-        self.validate_input(interconnect, verification_cache, input)
+        let meta = self.validate_input(interconnect, verification_cache, input)?;
+
+        let bet_key = BetResolutionKey {
+            resolve_consensus_height: input.resolve_consensus_height,
+        };
+        let mut resolved_bet = self
+            .db
+            .get_value(&bet_key)
+            .expect("DB error")
+            .ok_or(anyhow!("Bet not resolved yet or doesn't exist!"))?;
+        resolved_bet.paid_out = true;
+        batch.append_insert(bet_key, resolved_bet);
+
+        batch.commit();
+        Ok(meta)
     }
 
     /// Validate a transaction output before submitting it to the unconfirmed transaction pool. This
@@ -94,10 +221,28 @@ impl FederationModule for TabconfModule {
     /// and merely generate a warning.
     fn validate_output(
         &self,
-        _output: &Self::TxOutput,
+        output: &Self::TxOutput,
     ) -> Result<TransactionItemAmount, Self::Error> {
-        // We haven't defined inputs/outputs yet, so let's just error
-        Err(anyhow!("Not implemented yet!"))
+        if self
+            .db
+            .get_value(&UserBetKey {
+                resolve_consensus_height: output.resolve_consensus_height,
+                moscow_time: output.predicted_moscow_time,
+            })
+            .expect("DB error")
+            .is_some()
+        {
+            return Err(anyhow!(
+                "A bet already exists at this price, please choose another one"
+            ));
+        }
+
+        // TODO: make sure block height is in the future
+
+        Ok(TransactionItemAmount {
+            amount: self.cfg.bet_size,
+            fee: Amount::ZERO,
+        })
     }
 
     /// Try to create an output (e.g. issue coins, peg-out BTC, …). On success all necessary updates
@@ -112,12 +257,23 @@ impl FederationModule for TabconfModule {
     /// processed.
     fn apply_output<'a>(
         &'a self,
-        _batch: BatchTx<'a>,
+        mut batch: BatchTx<'a>,
         output: &'a Self::TxOutput,
         _out_point: OutPoint,
     ) -> Result<TransactionItemAmount, Self::Error> {
         // We always want to verify outputs, but apart from that there's nothing to do yet
-        self.validate_output(output)
+        let amount = self.validate_output(output)?;
+
+        batch.append_insert(
+            UserBetKey {
+                resolve_consensus_height: output.resolve_consensus_height,
+                moscow_time: output.predicted_moscow_time,
+            },
+            output.pub_key,
+        );
+
+        batch.commit();
+        Ok(amount)
     }
 
     /// This function is called once all transactions have been processed and changes were written
@@ -163,6 +319,128 @@ impl FederationModule for TabconfModule {
     /// to users as well as to other modules. They thus should be deterministic, only dependant on
     /// their input and the current epoch.
     fn api_endpoints(&self) -> &'static [ApiEndpoint<Self>] {
-        &[]
+        &[api_endpoint! {
+            "/bet",
+            async |module: &TabconfModule, consensus_height: u64| -> ResolvedBet {
+                module.get_bet_resolution(consensus_height).ok_or_else(|| ApiError {
+                    code: 404,
+                    message: "Bet not resolved or unknown".to_string()
+                })
+            }
+        }]
+    }
+}
+
+#[async_trait(?Send)]
+impl GenerateConfig for TabconfConfig {
+    type Params = Amount;
+    type ClientConfig = Self;
+    type ConfigMessage = ();
+    type ConfigError = ();
+
+    fn trusted_dealer_gen(
+        peers: &[PeerId],
+        params: &Self::Params,
+        _rng: impl RngCore + CryptoRng,
+    ) -> (BTreeMap<PeerId, Self>, Self::ClientConfig) {
+        let cfg = TabconfConfig { bet_size: *params };
+        (peers.iter().map(|&peer| (peer, cfg)).collect(), cfg)
+    }
+
+    fn to_client_config(&self) -> Self::ClientConfig {
+        self.clone()
+    }
+
+    fn validate_config(&self, _identity: &PeerId) {}
+
+    async fn distributed_gen(
+        _connections: &mut AnyPeerConnections<Self::ConfigMessage>,
+        _our_id: &PeerId,
+        _peers: &[PeerId],
+        params: &Self::Params,
+        _rng: impl RngCore + CryptoRng,
+    ) -> Result<(Self, Self::ClientConfig), Self::ConfigError> {
+        let cfg = TabconfConfig { bet_size: *params };
+        Ok((cfg, cfg))
+    }
+}
+
+async fn block_height(interconnect: &dyn ModuleInterconect) -> u32 {
+    // This is a future because we are normally reading from a network socket. But for internal
+    // calls the data is available instantly in one go, so we can just block on it.
+    let body = interconnect
+        .call("wallet", "/block_height".to_owned(), Default::default())
+        .await
+        .expect("Wallet module not present or malfunctioning!");
+
+    serde_json::from_value(body).expect("Malformed block height response from wallet module!")
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::db::ResolvedBet;
+    use crate::{BetResolutionKey, RedeemPrize, TabconfConfig, TabconfModule};
+    use fedimint_api::module::testing::FakeFed;
+    use fedimint_api::Amount;
+    use rand::thread_rng;
+    use secp256k1::KeyPair;
+
+    #[tokio::test]
+    async fn test_claim_prize() {
+        let mut fed = FakeFed::<TabconfModule, TabconfConfig>::new(
+            1,
+            |cfg, db| async move { TabconfModule { db, cfg } },
+            &Amount::from_sat(42),
+        )
+        .await;
+
+        let ctx = secp256k1::Secp256k1::new();
+        let sk = KeyPair::new(&ctx, &mut thread_rng());
+
+        fed.patch_dbs(|db| {
+            db.insert_entry(
+                &BetResolutionKey {
+                    resolve_consensus_height: 100,
+                },
+                &ResolvedBet {
+                    winner: sk.x_only_public_key().0,
+                    user_moscow_time: 5000,
+                    consensus_moscow_time: 4000,
+                    prize: Amount::from_sat(420),
+                    paid_out: false,
+                },
+            )
+            .unwrap();
+        });
+
+        // Fail on unknown bet
+        assert!(fed
+            .verify_input_hack(&RedeemPrize {
+                resolve_consensus_height: 101,
+                amount: Amount::from_sat(420),
+            })
+            .is_err());
+
+        // Fail on wrong amount
+        assert!(fed
+            .verify_input_hack(&RedeemPrize {
+                resolve_consensus_height: 100,
+                amount: Amount::from_sat(421),
+            })
+            .is_err());
+
+        let good_output = RedeemPrize {
+            resolve_consensus_height: 100,
+            amount: Amount::from_sat(420),
+        };
+        let input = fed.verify_input_hack(&good_output).unwrap();
+
+        assert_eq!(input.amount.amount, Amount::from_sat(420));
+        assert_eq!(input.amount.fee, Amount::ZERO);
+        assert_eq!(input.keys, vec![sk.x_only_public_key().0]);
+
+        fed.consensus_round(&[good_output.clone()], &[]).await;
+
+        assert!(fed.verify_input_hack(&good_output).is_err());
     }
 }

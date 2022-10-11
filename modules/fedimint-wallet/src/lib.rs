@@ -177,11 +177,15 @@ impl FederationModule for Wallet {
     type ConsensusItem = WalletConsensusItem;
     type VerificationCache = ();
 
-    async fn await_consensus_proposal<'a>(&'a self, rng: impl RngCore + CryptoRng + 'a) {
+    async fn await_consensus_proposal<'a>(
+        &'a self,
+        interconnect: &dyn ModuleInterconect,
+        rng: impl RngCore + CryptoRng + 'a,
+    ) {
         let mut our_target_height = self.target_height().await;
         let last_consensus_height = self.consensus_height().unwrap_or(0);
 
-        if self.consensus_proposal(rng).await.len() == 1 {
+        if self.consensus_proposal(interconnect, rng).await.len() == 1 {
             while our_target_height <= last_consensus_height {
                 our_target_height = self.target_height().await;
                 sleep(Duration::from_millis(1000)).await;
@@ -191,6 +195,7 @@ impl FederationModule for Wallet {
 
     async fn consensus_proposal<'a>(
         &'a self,
+        _interconnect: &dyn ModuleInterconect,
         mut rng: impl RngCore + CryptoRng + 'a,
     ) -> Vec<Self::ConsensusItem> {
         // TODO: implement retry logic in case bitcoind is temporarily unreachable

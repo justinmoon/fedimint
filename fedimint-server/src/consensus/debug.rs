@@ -59,8 +59,11 @@ fn item_message(item: &ConsensusItem) -> String {
                     Input::LN(t) => {
                         format!("LN Contract {} with id {}", t.amount, t.contract_id)
                     }
-                    Input::Tabconf(()) => {
-                        format!("TABConf foo")
+                    Input::Tabconf(t) => {
+                        format!(
+                            "TABConf bet redemption of {} from consensus block height {}",
+                            t.amount, t.resolve_consensus_height
+                        )
                     }
                 };
                 write!(tx_debug, "\n    Input: {}", input_debug).unwrap();
@@ -91,8 +94,12 @@ fn item_message(item: &ConsensusItem) -> String {
                             format!("LN Outgoing Contract for {} hash {}", amount, a.hash)
                         }
                     },
-                    Output::Tabconf(()) => {
-                        format!("TABConf foo")
+                    Output::Tabconf(t) => {
+                        format!(
+                            "TABConf bet placement for consensus block height {} and moscow time {}",
+                            t.resolve_consensus_height,
+                            t.predicted_moscow_time
+                        )
                     }
                 };
                 write!(tx_debug, "\n    Output: {}", output_debug).unwrap();

@@ -92,7 +92,7 @@ async fn main() -> anyhow::Result<()> {
 
     let ln = LightningModule::new(cfg.ln.clone(), db.clone());
 
-    let tabconf = TabconfModule;
+    let tabconf = TabconfModule::new(cfg.tabconf.clone(), db.clone());
 
     let mut consensus = FedimintConsensus::new(cfg.clone(), mint, wallet, ln, tabconf, db);
 

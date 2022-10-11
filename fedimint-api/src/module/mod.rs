@@ -154,11 +154,16 @@ pub trait FederationModule: Sized {
     type VerificationCache;
 
     /// Blocks until a new `consensus_proposal` is available.
-    async fn await_consensus_proposal<'a>(&'a self, rng: impl RngCore + CryptoRng + 'a);
+    async fn await_consensus_proposal<'a>(
+        &'a self,
+        interconnect: &dyn ModuleInterconect,
+        rng: impl RngCore + CryptoRng + 'a,
+    );
 
     /// This module's contribution to the next consensus proposal
     async fn consensus_proposal<'a>(
         &'a self,
+        interconnect: &dyn ModuleInterconect,
         rng: impl RngCore + CryptoRng + 'a,
     ) -> Vec<Self::ConsensusItem>;
 

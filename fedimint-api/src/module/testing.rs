@@ -31,7 +31,7 @@ impl<M, CC> FakeFed<M, CC>
 where
     M: FederationModule,
     M::ConsensusItem: Clone,
-    M::Error: Debug + Eq,
+    M::Error: Debug,
     M::TxOutputOutcome: Eq + Debug,
 {
     pub async fn new<C, F, FF>(
@@ -67,17 +67,22 @@ where
         self.block_height.store(bh, Ordering::Relaxed);
     }
 
-    pub fn verify_input(&self, input: &M::TxInput) -> Result<TestInputMeta, M::Error> {
+    pub fn verify_input_hack(&self, input: &M::TxInput) -> Result<TestInputMeta, String> {
         let fake_ic = FakeInterconnect::new_block_height_responder(self.block_height.clone());
 
-        let results = self.members.iter().map(|(_, member, _)| {
-            let cache = member.build_verification_cache(std::iter::once(input));
-            let InputMeta { amount, puk_keys } = member.validate_input(&fake_ic, &cache, input)?;
-            Ok(TestInputMeta {
-                amount,
-                keys: puk_keys.collect(),
+        let results = self
+            .members
+            .iter()
+            .map(|(_, member, _)| {
+                let cache = member.build_verification_cache(std::iter::once(input));
+                let InputMeta { amount, puk_keys } =
+                    member.validate_input(&fake_ic, &cache, input)?;
+                Ok(TestInputMeta {
+                    amount,
+                    keys: puk_keys.collect(),
+                })
             })
-        });
+            .map(|res: Result<_, M::Error>| res.map_err(|e| format!("{:?}", e)));
         assert_all_equal(results)
     }
 
@@ -105,7 +110,7 @@ where
         for (id, member, _db) in &mut self.members {
             consensus.extend(
                 member
-                    .consensus_proposal(&mut rng)
+                    .consensus_proposal(&fake_ic, &mut rng)
                     .await
                     .into_iter()
                     .map(|ci| (*id, ci)),
@@ -178,6 +183,28 @@ where
         F: Fn(&mut M) -> O,
     {
         assert_all_equal(self.members.iter_mut().map(|(_, member, _)| fetch(member)))
+    }
+}
+
+impl<M, CC> FakeFed<M, CC>
+where
+    M: FederationModule,
+    M::ConsensusItem: Clone,
+    M::Error: Debug + Eq,
+    M::TxOutputOutcome: Eq + Debug,
+{
+    pub fn verify_input(&self, input: &M::TxInput) -> Result<TestInputMeta, M::Error> {
+        let fake_ic = FakeInterconnect::new_block_height_responder(self.block_height.clone());
+
+        let results = self.members.iter().map(|(_, member, _)| {
+            let cache = member.build_verification_cache(std::iter::once(input));
+            let InputMeta { amount, puk_keys } = member.validate_input(&fake_ic, &cache, input)?;
+            Ok(TestInputMeta {
+                amount,
+                keys: puk_keys.collect(),
+            })
+        });
+        assert_all_equal(results)
     }
 }
 

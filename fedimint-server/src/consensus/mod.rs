@@ -415,10 +415,14 @@ impl FedimintConsensus {
     }
 
     pub async fn await_consensus_proposal(&self) {
+        let interconnect = self.build_interconnect();
         select_all(vec![
-            self.wallet.await_consensus_proposal(self.rng_gen.get_rng()),
-            self.ln.await_consensus_proposal(self.rng_gen.get_rng()),
-            self.mint.await_consensus_proposal(self.rng_gen.get_rng()),
+            self.wallet
+                .await_consensus_proposal(&interconnect, self.rng_gen.get_rng()),
+            self.ln
+                .await_consensus_proposal(&interconnect, self.rng_gen.get_rng()),
+            self.mint
+                .await_consensus_proposal(&interconnect, self.rng_gen.get_rng()),
         ])
         .await;
     }
@@ -433,6 +437,8 @@ impl FedimintConsensus {
             })
             .collect();
 
+        let interconnect = self.build_interconnect();
+
         let mut items: Vec<ConsensusItem> = self
             .db
             .find_by_prefix(&ProposedTransactionKeyPrefix)
@@ -442,21 +448,21 @@ impl FedimintConsensus {
             })
             .chain(
                 self.wallet
-                    .consensus_proposal(self.rng_gen.get_rng())
+                    .consensus_proposal(&interconnect, self.rng_gen.get_rng())
                     .await
                     .into_iter()
                     .map(ConsensusItem::Wallet),
             )
             .chain(
                 self.mint
-                    .consensus_proposal(self.rng_gen.get_rng())
+                    .consensus_proposal(&interconnect, self.rng_gen.get_rng())
                     .await
                     .into_iter()
                     .map(ConsensusItem::Mint),
             )
             .chain(
                 self.ln
-                    .consensus_proposal(self.rng_gen.get_rng())
+                    .consensus_proposal(&interconnect, self.rng_gen.get_rng())
                     .await
                     .into_iter()
                     .map(ConsensusItem::LN),

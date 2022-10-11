@@ -5,6 +5,7 @@ use fedimint_api::{Amount, PeerId};
 use fedimint_core::config::{ClientConfig, Node};
 use fedimint_core::modules::ln::config::LightningModuleConfig;
 use fedimint_core::modules::mint::config::MintConfig;
+use fedimint_tabconf::TabconfConfig;
 use fedimint_wallet::config::WalletConfig;
 use rand::rngs::OsRng;
 use threshold_crypto::serde_impl::SerdeSecret;
@@ -115,6 +116,8 @@ fn trusted_dealer_gen(
         MintConfig::trusted_dealer_gen(peers, params.amount_tiers.as_ref(), &mut rng);
     let (ln_server_cfg, ln_client_cfg) =
         LightningModuleConfig::trusted_dealer_gen(peers, &(), &mut rng);
+    let (tabconf_server_cfg, tabconf_client_cfg) =
+        TabconfConfig::trusted_dealer_gen(peers, &Amount::from_sat(42), &mut rng);
 
     let server_config = netinfo
         .iter()
@@ -143,6 +146,7 @@ fn trusted_dealer_gen(
                 wallet: wallet_server_cfg[&id].clone(),
                 mint: mint_server_cfg[&id].clone(),
                 ln: ln_server_cfg[&id].clone(),
+                tabconf: tabconf_server_cfg[&id].clone(),
             };
             (id, config)
         })
@@ -169,6 +173,7 @@ fn trusted_dealer_gen(
         mint: mint_client_cfg,
         wallet: wallet_client_cfg,
         ln: ln_client_cfg,
+        tabconf: tabconf_client_cfg,
     };
 
     (server_config, client_config)

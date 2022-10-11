@@ -1091,8 +1091,11 @@ dependencies = [
  "fedimint-api",
  "fedimint-derive",
  "rand",
+ "reqwest",
+ "secp256k1",
  "serde",
  "test-log",
+ "tokio",
  "tracing",
  "tracing-subscriber",
 ]
