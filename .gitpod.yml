@@ -7,4 +7,5 @@ github:
     branches: true
 tasks:
   - init: |
+      cachix use fedimint
       cargo build
