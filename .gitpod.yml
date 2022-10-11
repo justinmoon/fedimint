@@ -6,5 +6,9 @@ github:
     # enable for all branches in this repo (defaults to false)
     branches: true
 tasks:
-  - init: |
-      nix develop && cargo check
+  - init:
+      cachix use fedimint
+      nix develop
+      cargo build
+    env:
+      NIX_STORE_DIR: /workspace/nix/store
