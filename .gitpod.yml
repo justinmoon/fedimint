@@ -7,8 +7,9 @@ github:
     branches: true
 tasks:
   - init: |
+      # warning: binary cache 'https://cache.nixos.org' is for Nix stores with prefix '/nix/store', not '/workspace/nix/store'
       cachix use fedimint
       nix develop
       cargo build
     env:
-      NIX_STORE_DIR: /workspace/nix/store
+      # NIX_STORE_DIR: /workspace/nix/store
