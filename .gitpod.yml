@@ -6,7 +6,7 @@ github:
     # enable for all branches in this repo (defaults to false)
     branches: true
 tasks:
-  - init:
+  - init: |
       cachix use fedimint
       nix develop
       cargo build
