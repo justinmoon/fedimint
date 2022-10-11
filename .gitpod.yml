@@ -29,4 +29,5 @@ tasks:
         sudo mount --bind /workspace/cache$DIR $DIR
       done
   - init: |
+      nix develop
       cargo build
