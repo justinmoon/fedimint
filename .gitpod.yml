@@ -5,7 +5,7 @@ github:
     # enable for all branches in this repo (defaults to false)
     branches: true
 tasks:
-  - before: |
-      cachix use fedimint
+  # - before: |
+  #     cachix use fedimint
   - init: |
       cargo build
