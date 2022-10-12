@@ -1,8 +1,9 @@
 use fedimint_api::db::DatabaseKeyPrefixConst;
 use fedimint_api::encoding::{Decodable, Encodable};
-use fedimint_api::{Amount, PeerId};
+use fedimint_api::PeerId;
 use secp256k1::XOnlyPublicKey;
-use serde::{Deserialize, Serialize};
+
+use crate::ResolvedBet;
 
 const DB_PREFIX_USER_BET_KEY: u8 = 0x50;
 const DB_PREFIX_BET_RESOLUTION_KEY: u8 = 0x51;
@@ -55,16 +56,6 @@ impl DatabaseKeyPrefixConst for BetResolutionKeyPrefix {
     const DB_PREFIX: u8 = DB_PREFIX_BET_RESOLUTION_KEY;
     type Key = BetResolutionKey;
     type Value = ResolvedBet;
-}
-
-/// Outcome of a bet
-#[derive(Debug, Clone, Encodable, Decodable, Serialize, Deserialize, Eq, PartialEq, Hash)]
-pub struct ResolvedBet {
-    pub winner: XOnlyPublicKey,
-    pub user_moscow_time: u64,
-    pub consensus_moscow_time: u64,
-    pub prize: Amount,
-    pub paid_out: bool,
 }
 
 ///

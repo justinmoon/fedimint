@@ -739,6 +739,12 @@ impl AsRef<LightningModule> for FedimintConsensus {
     }
 }
 
+impl AsRef<TabconfModule> for FedimintConsensus {
+    fn as_ref(&self) -> &TabconfModule {
+        &self.tabconf
+    }
+}
+
 impl AsRef<FedimintConsensus> for FedimintConsensus {
     fn as_ref(&self) -> &FedimintConsensus {
         self

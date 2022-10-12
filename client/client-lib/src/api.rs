@@ -11,6 +11,7 @@ use fedimint_core::epoch::EpochHistory;
 use fedimint_core::modules::ln::contracts::incoming::IncomingContractOffer;
 use fedimint_core::modules::ln::contracts::ContractId;
 use fedimint_core::modules::ln::{ContractAccount, LightningGateway};
+use fedimint_core::modules::tabconf::ResolvedBet;
 use fedimint_core::modules::wallet::PegOutFees;
 use fedimint_core::outcome::{TransactionStatus, TryIntoOutcome};
 use fedimint_core::transaction::Transaction;
@@ -74,6 +75,11 @@ pub trait IFederationApi: Send + Sync {
 
     /// Register a gateway with the federation
     async fn register_gateway(&self, gateway: LightningGateway) -> Result<()>;
+
+    /// Get winning bet for block height
+    async fn winner(&self, consensus_height: u64) -> Result<ResolvedBet> {
+        unimplemented!()
+    }
 }
 
 dyn_newtype_define! {
@@ -296,6 +302,15 @@ impl<C: JsonRpcClient + Send + Sync> IFederationApi for WsFederationApi<C> {
             Err(e) if e.is_retryable() => Ok(false),
             Err(e) => Err(e),
         }
+    }
+
+    async fn winner(&self, consensus_height: u64) -> Result<ResolvedBet> {
+        self.request(
+            "/tabconf/winner",
+            consensus_height,
+            CurrentConsensus::new(self.peers().threshold()),
+        )
+        .await
     }
 }
 

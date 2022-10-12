@@ -10,6 +10,7 @@ use clap::{Parser, Subcommand};
 use fedimint_api::{Amount, NumPeers, OutPoint, TieredMulti, TransactionId};
 use fedimint_core::config::{load_from_file, ClientConfig};
 use fedimint_core::modules::ln::contracts::ContractId;
+use fedimint_core::modules::tabconf::ResolvedBet;
 use fedimint_core::modules::wallet::txoproof::TxOutProof;
 use mint_client::api::{WsFederationApi, WsFederationConnect};
 use mint_client::mint::SpendableNote;
@@ -96,6 +97,14 @@ enum CliOutput {
 
     SwitchGateway {
         new_gateway: Value,
+    },
+
+    Bet {
+        id: TransactionId,
+    },
+
+    Winner {
+        resolved_bet: ResolvedBet,
     },
 }
 
@@ -223,7 +232,9 @@ enum Command {
     },
 
     /// Pay a lightning invoice via a gateway
-    LnPay { bolt11: lightning_invoice::Invoice },
+    LnPay {
+        bolt11: lightning_invoice::Invoice,
+    },
 
     /// Fetch (re-)issued notes and finalize issuance process
     Fetch,
@@ -240,16 +251,22 @@ enum Command {
     },
 
     /// Wait for incoming invoice to be paid
-    WaitInvoice { invoice: lightning_invoice::Invoice },
+    WaitInvoice {
+        invoice: lightning_invoice::Invoice,
+    },
 
     /// Wait for the fed to reach a consensus block height
-    WaitBlockHeight { height: u64 },
+    WaitBlockHeight {
+        height: u64,
+    },
 
     /// Config enabling client to establish websocket connection to federation
     ConnectInfo,
 
     /// Join a federation using it's ConnectInfo
-    JoinFederation { connect: String },
+    JoinFederation {
+        connect: String,
+    },
 
     /// List registered gateways
     ListGateways,
@@ -259,6 +276,16 @@ enum Command {
         /// node public key for a gateway
         #[clap(value_parser = parse_node_pub_key)]
         pubkey: secp256k1::PublicKey,
+    },
+
+    Bet {
+        block_height: u64,
+        predicted_moscow_time: u64,
+    },
+
+    // FIXME: check all outstanding bets, not just this one ...
+    Winner {
+        block_height: u64,
     },
 }
 
@@ -618,6 +645,23 @@ async fn handle_command(
                     Some(Box::new(e)),
                 )),
             }
+        }
+        Command::Bet {
+            block_height,
+            predicted_moscow_time,
+        } => {
+            let id = client
+                .place_bet(block_height, predicted_moscow_time, rng)
+                .await
+                .or_terminate(CliErrorKind::NetworkError, "Failed to place bet");
+            Ok(CliOutput::Bet { id })
+        }
+        Command::Winner { block_height } => {
+            let resolved_bet = client
+                .resolve_bet(block_height)
+                .await
+                .or_terminate(CliErrorKind::NetworkError, "Failed to resolve winner");
+            Ok(CliOutput::Winner { resolved_bet })
         }
     }
 }

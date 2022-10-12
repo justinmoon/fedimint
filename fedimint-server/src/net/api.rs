@@ -56,6 +56,11 @@ pub async fn run_server(cfg: ServerConfig, fedimint: Arc<FedimintConsensus>) {
         fedimint.ln.api_endpoints(),
         Some(fedimint.ln.api_base_name()),
     );
+    attach_endpoints(
+        &mut rpc_module,
+        fedimint.tabconf.api_endpoints(),
+        Some(fedimint.tabconf.api_base_name()),
+    );
 
     let server = WsServerBuilder::new()
         .build(&cfg.api_bind_addr)

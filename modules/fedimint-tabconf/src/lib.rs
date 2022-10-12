@@ -1,6 +1,7 @@
 mod db;
 
-use crate::db::{BetResolutionKey, BetResolutionKeyPrefix, ResolvedBet, UserBetKey};
+use std::collections::{BTreeMap, HashSet};
+
 use anyhow::anyhow;
 use async_trait::async_trait;
 use fedimint_api::config::GenerateConfig;
@@ -18,7 +19,8 @@ use fedimint_api::{Amount, InputMeta, OutPoint, PeerId};
 use rand::{CryptoRng, RngCore};
 use secp256k1::XOnlyPublicKey;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashSet};
+
+use crate::db::{BetResolutionKey, BetResolutionKeyPrefix, UserBetKey};
 
 pub struct TabconfModule {
     db: Database,
@@ -46,6 +48,16 @@ pub struct RedeemPrize {
 #[derive(Debug, Clone, Copy, Encodable, Decodable, Serialize, Deserialize, Eq, PartialEq, Hash)]
 pub struct BetResolutionProposal {
     moscow_time: u64,
+}
+
+/// Outcome of a bet
+#[derive(Debug, Clone, Encodable, Decodable, Serialize, Deserialize, Eq, PartialEq, Hash)]
+pub struct ResolvedBet {
+    pub winner: XOnlyPublicKey,
+    pub user_moscow_time: u64,
+    pub consensus_moscow_time: u64,
+    pub prize: Amount,
+    pub paid_out: bool,
 }
 
 impl TabconfModule {
@@ -378,12 +390,12 @@ async fn block_height(interconnect: &dyn ModuleInterconect) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use crate::db::ResolvedBet;
-    use crate::{BetResolutionKey, RedeemPrize, TabconfConfig, TabconfModule};
     use fedimint_api::module::testing::FakeFed;
     use fedimint_api::Amount;
     use rand::thread_rng;
     use secp256k1::KeyPair;
+
+    use crate::{BetResolutionKey, RedeemPrize, ResolvedBet, TabconfConfig, TabconfModule};
 
     #[tokio::test]
     async fn test_claim_prize() {
@@ -429,18 +441,19 @@ mod tests {
             })
             .is_err());
 
-        let good_output = RedeemPrize {
+        let good_input = RedeemPrize {
             resolve_consensus_height: 100,
             amount: Amount::from_sat(420),
         };
-        let input = fed.verify_input_hack(&good_output).unwrap();
+        let input = fed.verify_input_hack(&good_input).unwrap();
 
         assert_eq!(input.amount.amount, Amount::from_sat(420));
         assert_eq!(input.amount.fee, Amount::ZERO);
         assert_eq!(input.keys, vec![sk.x_only_public_key().0]);
 
-        fed.consensus_round(&[good_output.clone()], &[]).await;
+        // TODO: this needs an output ...
+        fed.consensus_round(&[good_input.clone()], &[]).await;
 
-        assert!(fed.verify_input_hack(&good_output).is_err());
+        assert!(fed.verify_input_hack(&good_input).is_err());
     }
 }

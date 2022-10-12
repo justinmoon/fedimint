@@ -180,9 +180,7 @@ impl TransactionBuilder {
             Input::Mint(input) => client.mint_client().input_amount(input),
             Input::Wallet(input) => client.wallet_client().input_amount(input),
             Input::LN(input) => client.ln_client().input_amount(input),
-            Input::Tabconf(_) => {
-                unimplemented!()
-            }
+            Input::Tabconf(input) => client.tabconf_client().input_amount(input),
         })
     }
 
@@ -197,9 +195,7 @@ impl TransactionBuilder {
             Output::Mint(output) => client.mint_client().output_amount(output),
             Output::Wallet(output) => client.wallet_client().output_amount(output),
             Output::LN(output) => client.ln_client().output_amount(output),
-            Output::Tabconf(_) => {
-                unimplemented!()
-            }
+            Output::Tabconf(output) => client.tabconf_client().output_amount(output),
         })
     }
 

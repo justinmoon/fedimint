@@ -2,6 +2,7 @@ pub mod api;
 pub mod ln;
 pub mod mint;
 pub mod query;
+pub mod tabconf;
 pub mod transaction;
 pub mod utils;
 pub mod wallet;
@@ -10,9 +11,8 @@ use std::time::Duration;
 #[cfg(not(target_family = "wasm"))]
 use std::time::SystemTime;
 
-use async_trait::async_trait;
-
 use api::FederationApi;
+use async_trait::async_trait;
 use bitcoin::util::key::KeyPair;
 use bitcoin::{secp256k1, Address, Transaction as BitcoinTransaction};
 use bitcoin_hashes::{sha256, Hash};
@@ -26,6 +26,7 @@ use fedimint_api::{
     Amount, FederationModule, OutPoint, PeerId, TransactionId,
 };
 use fedimint_core::epoch::EpochHistory;
+use fedimint_core::modules::tabconf::ResolvedBet;
 use fedimint_core::modules::wallet::PegOut;
 use fedimint_core::outcome::TransactionStatus;
 use fedimint_core::transaction::Transaction;
@@ -56,6 +57,7 @@ use mint::NoteIssuanceRequests;
 use rand::{CryptoRng, RngCore};
 use secp256k1_zkp::{All, Secp256k1};
 use serde::{Deserialize, Serialize};
+use tabconf::{TabconfClient, TabconfClientError};
 use thiserror::Error;
 use threshold_crypto::PublicKey;
 use tracing::debug;
@@ -177,6 +179,13 @@ impl<T: AsRef<ClientConfig> + Clone> Client<T> {
     pub fn wallet_client(&self) -> WalletClient {
         WalletClient {
             config: &self.config.as_ref().wallet,
+            context: &self.context,
+        }
+    }
+
+    pub fn tabconf_client(&self) -> TabconfClient {
+        TabconfClient {
+            config: &self.config.as_ref().tabconf,
             context: &self.context,
         }
     }
@@ -507,6 +516,46 @@ impl<T: AsRef<ClientConfig> + Clone> Client<T> {
             .fetch_epoch_history(epoch, epoch_pk)
             .await
             .map_err(|e| e.into())
+    }
+
+    /// Resolve all outstanding bets, sweep funds if we won
+    pub async fn resolve_bets(&self) -> Result<()> {
+        let _unresolved_bets = self.tabconf_client().get_unresolved_bets();
+        Ok(())
+    }
+
+    /// Resolve single bet, sweep funds if we won
+    pub async fn resolve_bet(&self, block_height: u64) -> Result<ResolvedBet> {
+        // TODO: sweep funds if we won ...
+        Ok(self
+            .tabconf_client()
+            .resolve_bet(block_height)
+            .await
+            .map_err(ClientError::TabconfClientError)?)
+    }
+
+    /// Make a bet on the bitcoin price
+    pub async fn place_bet(
+        &self,
+        block_height: u64,
+        predicted_moscow_time: u64,
+        rng: impl RngCore + CryptoRng,
+    ) -> Result<TransactionId> {
+        let batch = DbBatch::new();
+        let mut builder = TransactionBuilder::default();
+
+        let output = self
+            .tabconf_client()
+            .create_bet_output(block_height, predicted_moscow_time);
+        builder.output(Output::Tabconf(output));
+
+        let coins = self
+            .mint_client()
+            .select_coins(self.tabconf_client().config.bet_size)?;
+        builder.input_coins(coins, &self.context.secp)?;
+
+        let mint_tx_id = self.submit_tx_with_change(builder, batch, rng).await?;
+        Ok(mint_tx_id)
     }
 }
 
@@ -1114,6 +1163,8 @@ pub enum ClientError {
     MintClientError(#[from] MintClientError),
     #[error("Lightning client error: {0}")]
     LnClientError(#[from] LnClientError),
+    #[error("Tabconf client error: {0}")]
+    TabconfClientError(#[from] TabconfClientError),
     #[error("Peg-in amount must be greater than peg-in fee")]
     PegInAmountTooSmall,
     #[error("Peg-out waiting for UTXOs")]
