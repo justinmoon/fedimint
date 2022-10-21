@@ -8,3 +8,6 @@ it
 .tmpenv
 .direnv
 .vscode
+
+/lnd1
+/lnd2
