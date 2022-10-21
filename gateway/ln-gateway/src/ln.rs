@@ -3,6 +3,9 @@ use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 use async_trait::async_trait;
 use fedimint_server::modules::ln::contracts::Preimage;
 use secp256k1::PublicKey;
+use thiserror::Error;
+
+use crate::lnd::LndError;
 
 #[async_trait]
 pub trait LnRpc: Send + Sync + 'static {
@@ -23,5 +26,11 @@ pub struct LnRpcRef {
     pub work_dir: PathBuf,
 }
 
-#[derive(Debug)]
-pub struct LightningError(pub Option<i32>);
+// pub enum LightningError(pub Option<i32>);
+#[derive(Debug, Error)]
+pub enum LightningError {
+    #[error("Rpc error")] // FIXME: display the i32
+    ClnError(Option<i32>),
+    #[error("Rpc error")] // FIXME: display the i32
+    LndError(LndError),
+}

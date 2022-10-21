@@ -1,17 +1,8 @@
+use ln_gateway::lnd::LndError;
+
 ///
 /// cargo run --bin lnd http://localhost:11009 $PWD/lnd2/tls.cert $PWD/lnd2/data/chain/bitcoin/regtest/admin.macaroon
 ///
-use thiserror::Error;
-
-#[derive(Debug, Error)]
-pub enum LndError {
-    #[error("LND connect error {0}")]
-    ConnectError(tonic_lnd::ConnectError),
-    #[error("LND rpc error {0}")]
-    RpcError(tonic_lnd::Error),
-    #[error("No preimage")]
-    NoPreimage,
-}
 
 #[tokio::main]
 async fn main() -> Result<(), LndError> {

@@ -24,7 +24,7 @@ else
   LIGHTNING_FLAGS="--dev-fast-gossip --dev-bitcoind-poll=1"
 fi
 
-# Start lightning nodes
+# Start core-lightning nodes
 lightningd $LIGHTNING_FLAGS --network regtest --bitcoin-rpcuser=bitcoin --bitcoin-rpcpassword=bitcoin --lightning-dir=$FM_LN1_DIR --addr=127.0.0.1:9000 &
 echo $! >> $FM_PID_FILE
 lightningd $LIGHTNING_FLAGS --network regtest --bitcoin-rpcuser=bitcoin --bitcoin-rpcpassword=bitcoin --lightning-dir=$FM_LN2_DIR --addr=127.0.0.1:9001 &
@@ -35,6 +35,8 @@ done
 until [ -e $FM_LN2_DIR/regtest/lightning-rpc ]; do
     sleep $POLL_INTERVAL
 done
+
+# TODO: start lnd nodes, open lnd channel
 
 # Initialize wallet and get ourselves some money
 mine_blocks 101

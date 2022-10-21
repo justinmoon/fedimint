@@ -100,7 +100,7 @@ impl LnRpc for Mutex<cln_rpc::ClnRpc> {
                 } else {
                     debug!(%message, "c-lightning pay returned error");
                 }
-                Err(LightningError(code))
+                Err(LightningError::ClnError(code))
             }
         }
     }

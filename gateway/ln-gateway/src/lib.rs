@@ -1,5 +1,6 @@
 pub mod cln;
 pub mod ln;
+pub mod lnd;
 pub mod rpc;
 pub mod webserver;
 
