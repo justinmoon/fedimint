@@ -1,7 +1,18 @@
+///
 /// cargo run --bin lnd http://localhost:11009 $PWD/lnd2/tls.cert $PWD/lnd2/data/chain/bitcoin/regtest/admin.macaroon
+///
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum LndError {
+    #[error("LND connect error {0}")]
+    ConnectError(tonic_lnd::ConnectError),
+    #[error("LND rpc error {0}")]
+    RpcError(tonic_lnd::Error),
+}
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), LndError> {
     let mut args = std::env::args_os();
     args.next().expect("not even zeroth arg given");
     let address = args
@@ -16,17 +27,19 @@ async fn main() {
     // Connecting to LND requires only address, cert file, and macaroon file
     let mut client = tonic_lnd::connect(address, cert_file, macaroon_file)
         .await
-        .expect("failed to connect");
+        .map_err(LndError::ConnectError)?;
 
     let info = client
         // All calls require at least empty parameter
         .get_info(tonic_lnd::rpc::GetInfoRequest {})
         .await
-        .expect("failed to get info");
+        .map_err(LndError::RpcError)?;
 
     // We only print it here, note that in real-life code you may want to call `.into_inner()` on
     // the response to get the message.
     println!("{:#?}", info);
 
     // https://github.com/yzernik/squeakroad/blob/e0f4785616868874ee62aa6e6c29ffe6b2646f62/src/withdraw.rs#L151-L158
+
+    Ok(())
 }
