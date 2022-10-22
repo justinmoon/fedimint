@@ -19,41 +19,47 @@ export FM_BIN_DIR="$SRC_DIR/target/debug"
 export FM_PID_FILE="$FM_TMP_DIR/.pid"
 export FM_LN1_DIR="$FM_TEST_DIR/ln1"
 export FM_LN2_DIR="$FM_TEST_DIR/ln2"
+export FM_LND1_DIR="$FM_TEST_DIR/lnd1"
+export FM_LND2_DIR="$FM_TEST_DIR/lnd2"
 export FM_BTC_DIR="$FM_TEST_DIR/bitcoin"
 export FM_CFG_DIR="$FM_TEST_DIR/cfg"
 mkdir -p $FM_LN1_DIR
 mkdir -p $FM_LN2_DIR
+mkdir -p $FM_LND1_DIR
+mkdir -p $FM_LND2_DIR
 mkdir -p $FM_BTC_DIR
 mkdir -p $FM_CFG_DIR
 
 # Generate federation configs
-# CERTS=""
-# for ((ID=0; ID<FM_FED_SIZE; ID++));
-# do
-#   mkdir $FM_CFG_DIR/server-$ID
-#   base_port=$(echo "4000 + $ID * 10" | bc -l)
-#   $FM_BIN_DIR/distributedgen create-cert --out-dir $FM_CFG_DIR/server-$ID --base-port $base_port --name "Server-$ID"
-#   CERTS="$CERTS,$(cat $FM_CFG_DIR/server-$ID/tls-cert)"
-# done
-# CERTS=${CERTS:1}
-# echo "Running DKG with certs: $CERTS"
+CERTS=""
+for ((ID=0; ID<FM_FED_SIZE; ID++));
+do
+  mkdir $FM_CFG_DIR/server-$ID
+  base_port=$(echo "4000 + $ID * 10" | bc -l)
+  $FM_BIN_DIR/distributedgen create-cert --out-dir $FM_CFG_DIR/server-$ID --base-port $base_port --name "Server-$ID"
+  CERTS="$CERTS,$(cat $FM_CFG_DIR/server-$ID/tls-cert)"
+done
+CERTS=${CERTS:1}
+echo "Running DKG with certs: $CERTS"
 
-# for ((ID=0; ID<FM_FED_SIZE; ID++));
-# do
-#   $FM_BIN_DIR/distributedgen run --out-dir $FM_CFG_DIR/server-$ID --certs $CERTS &
-# done
-# wait
+for ((ID=0; ID<FM_FED_SIZE; ID++));
+do
+  $FM_BIN_DIR/distributedgen run --out-dir $FM_CFG_DIR/server-$ID --certs $CERTS &
+done
+wait
 
-# # Move the client config and all server configs to root dir
-# mv $FM_CFG_DIR/server-0/client.json $FM_CFG_DIR/
-# for ((ID=0; ID<FM_FED_SIZE; ID++));
-# do
-#   mv $FM_CFG_DIR/server-$ID/server-$ID.json $FM_CFG_DIR/
-# done
+# Move the client config and all server configs to root dir
+mv $FM_CFG_DIR/server-0/client.json $FM_CFG_DIR/
+for ((ID=0; ID<FM_FED_SIZE; ID++));
+do
+  mv $FM_CFG_DIR/server-$ID/server-$ID.json $FM_CFG_DIR/
+done
 
 # Define clients
 export FM_LN1="lightning-cli --network regtest --lightning-dir=$FM_LN1_DIR"
 export FM_LN2="lightning-cli --network regtest --lightning-dir=$FM_LN2_DIR"
+export FM_LNCLI1="lncli -n regtest --lnddir=$FM_LND1_DIR --rpcserver=localhost:11010"
+export FM_LNCLI2="lncli -n regtest --lnddir=$FM_LND2_DIR --rpcserver=localhost:11009"
 export FM_BTC_CLIENT="bitcoin-cli -regtest -rpcuser=bitcoin -rpcpassword=bitcoin"
 export FM_MINT_CLIENT="$FM_BIN_DIR/fedimint-cli --workdir $FM_CFG_DIR"
 export FM_MINT_RPC_CLIENT="$FM_BIN_DIR/mint-rpc-client"
@@ -64,6 +70,8 @@ export FM_GATEWAY_CLI="$FM_BIN_DIR/gateway-cli"
 # Alias clients
 alias ln1="\$FM_LN1"
 alias ln2="\$FM_LN2"
+alias lncli1="\$FM_LNCLI1"
+alias lncli2="\$FM_LNCLI2"
 alias btc_client="\$FM_BTC_CLIENT"
 alias mint_client="\$FM_MINT_CLIENT"
 alias mint_rpc_client="\$FM_MINT_RPC_CLIENT"

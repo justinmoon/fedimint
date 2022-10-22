@@ -29,6 +29,7 @@ lightningd $LIGHTNING_FLAGS --network regtest --bitcoin-rpcuser=bitcoin --bitcoi
 echo $! >> $FM_PID_FILE
 lightningd $LIGHTNING_FLAGS --network regtest --bitcoin-rpcuser=bitcoin --bitcoin-rpcpassword=bitcoin --lightning-dir=$FM_LN2_DIR --addr=127.0.0.1:9001 &
 echo $! >> $FM_PID_FILE
+# FIXME: could this just be await_cln_block_processing?
 until [ -e $FM_LN1_DIR/regtest/lightning-rpc ]; do
     sleep $POLL_INTERVAL
 done
@@ -36,7 +37,14 @@ until [ -e $FM_LN2_DIR/regtest/lightning-rpc ]; do
     sleep $POLL_INTERVAL
 done
 
-# TODO: start lnd nodes, open lnd channel
+# Start lnd nodes
+cp $PWD/scripts/lnd1.conf $FM_LND1_DIR/lnd.conf
+cp $PWD/scripts/lnd2.conf $FM_LND2_DIR/lnd.conf
+
+lnd --noseedbackup --lnddir=$PWD/lnd1 &
+lnd --noseedbackup --lnddir=$PWD/lnd2 &
+
+await_lnd_block_processing
 
 # Initialize wallet and get ourselves some money
 mine_blocks 101

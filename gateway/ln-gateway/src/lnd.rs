@@ -1,10 +1,15 @@
+use std::{net::SocketAddr, path::PathBuf};
+
 use async_trait::async_trait;
 use fedimint_server::modules::ln::contracts::Preimage;
 use thiserror::Error;
 use tokio::sync::Mutex;
 use tracing::instrument;
 
-use crate::ln::{LightningError, LnRpc};
+use crate::{
+    ln::{LightningError, LnRpc, LnRpcRef},
+    rpc::GatewayRpcSender,
+};
 
 #[derive(Debug, Error)]
 pub enum LndError {
@@ -43,3 +48,14 @@ impl LnRpc for Mutex<tonic_lnd::Client> {
         unimplemented!()
     }
 }
+
+// TODO: update arguments
+// FIXME: is this the right error?
+// pub async fn build_lnd_rpc(
+//     _sender: GatewayRpcSender,
+//     bind_addr: SocketAddr,
+//     workdir: PathBuf,
+// ) -> Result<LnRpcRef, LightningError> {
+
+//     unimplemented!()
+// }

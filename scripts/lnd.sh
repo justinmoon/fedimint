@@ -63,26 +63,13 @@ function await_lnd_block_processing() {
 echo "WAITING FOR LND STARTUP"
 await_lnd_block_processing
 
-# give ln1's on-chain wallet 1 bitcoin
-ADDRESS=$($LNCLI1 newaddress p2wkh | jq -r ".address")
-send_bitcoin $ADDRESS 100000000
-mine_blocks 10
-await_lnd_block_processing
-
-# ln1 connects to ln2
-LN2_PUBKEY=$($LNCLI2 getinfo | jq -r ".identity_pubkey")
-LN2_CONNECTION_STRING=$LN2_PUBKEY@localhost:9734 # hostname is in lnd2.conf
-$LNCLI1 connect $LN2_CONNECTION_STRING
-
-# ln1 opens channel to ln2 for 1m sats
-echo "OPEN CHANNEL\n\n\n"
-$LNCLI1 openchannel $LN2_PUBKEY 1000000
+open_lnd_channel
 mine_blocks 10
 
 # send funds from ln1 to ln2 via rust
 INVOICE=$($LNCLI2 addinvoice -amt 100 | jq -r ".payment_request")
 echo "invoice $INVOICE"
-cargo run --bin lnd http://localhost:11010 $PWD/lnd1/tls.cert $PWD/lnd1/data/chain/bitcoin/regtest/admin.macaroon $INVOICE
+cargo run --bin lnd_test http://localhost:11010 $PWD/lnd1/tls.cert $PWD/lnd1/data/chain/bitcoin/regtest/admin.macaroon $INVOICE
 
 pkill "lnd" 2>&1 /dev/null
 pkill "bitcoind" 2>&1 /dev/null

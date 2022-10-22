@@ -2,6 +2,7 @@ pub mod cln;
 pub mod ln;
 pub mod lnd;
 pub mod rpc;
+pub mod util;
 pub mod webserver;
 
 use std::borrow::Cow;
@@ -419,6 +420,8 @@ pub enum LnGatewayError {
     MintClientE(#[from] MintClientError),
     #[error("Other: {0:?}")]
     Other(#[from] anyhow::Error),
+    #[error("Lightning RPC error: {0:?}")]
+    LightningRpcError(#[from] LightningError), // FIXME: rename this arg
 }
 
 pub fn serde_hex_deserialize<'d, T: bitcoin::consensus::Decodable, D: Deserializer<'d>>(
