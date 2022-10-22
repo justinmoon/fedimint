@@ -23,6 +23,7 @@ pub struct ClientConfig {
 }
 
 pub fn load_from_file<T: DeserializeOwned>(path: &Path) -> T {
+    println!("path {:?}", &path);
     let file = std::fs::File::open(path).expect("Can't read cfg file.");
     serde_json::from_reader(file).expect("Could not parse cfg file.")
 }

@@ -2,36 +2,48 @@ use std::{path::PathBuf, sync::Arc};
 
 use bitcoin::secp256k1::PublicKey;
 use ln_gateway::{
-    lnd::LndError, util::build_federation_client, GatewayRequest, LnGateway, LnGatewayError,
+    lnd::{spawn_htlc_interceptor, LndError},
+    rpc::GatewayRpcSender,
+    util::build_federation_client,
+    GatewayRequest, LnGateway, LnGatewayError,
 };
 use tokio::sync::{mpsc, Mutex};
 
 #[tokio::main]
 async fn main() -> Result<(), LnGatewayError> {
+    // FIXME: use clap ... this changes if run via `cargo run` or `./target/...`
     let mut args = std::env::args();
 
-    if let Some(ref arg) = args.nth(1) {
-        if arg.as_str() == "version-hash" {
-            println!("{}", env!("GIT_HASH"));
-            return Ok(());
-        }
-    }
+    // if let Some(ref arg) = args.nth(1) {
+    //     if arg.as_str() == "version-hash" {
+    //         println!("{}", env!("GIT_HASH"));
+    //         return Ok(());
+    //     }
+    // }
+    println!("interceptor: args {:?}", args);
 
     args.next().expect("not even zeroth arg given");
-    let address = args
+    let host = args
         .next()
-        .expect("missing arguments: address, cert file, macaroon file, workdir");
-    let cert_file = args
+        .expect("missing arguments: host, port, cert file, macaroon file, workdir");
+    println!("host {}", host);
+    let port = args
+        .next()
+        .expect("missing arguments: port, cert file, macaroon file, workdir");
+    let tls_cert_path = args
         .next()
         .expect("missing arguments: cert file, macaroon file, workdir");
-    let macaroon_file = args
+    let macaroon_path = args
         .next()
         .expect("missing arguments: macaroon file, workdir");
     let work_dir = args.next().expect("missing argument: workdir");
     let work_dir = PathBuf::from(work_dir);
+    let port: u32 = port.parse().expect("port is not u32");
 
     // Connecting to LND requires only address, cert file, and macaroon file
-    let mut ln_rpc = tonic_lnd::connect(address, cert_file, macaroon_file)
+    let address = format!("http://{}:{}", host, port);
+    println!("interceptor: connecting");
+    let mut ln_rpc = tonic_lnd::connect(address, tls_cert_path.clone(), macaroon_path.clone())
         .await
         .map_err(|e| {
             LnGatewayError::LightningRpcError(ln_gateway::ln::LightningError::LndError(
@@ -39,6 +51,7 @@ async fn main() -> Result<(), LnGatewayError> {
             ))
         })?;
 
+    println!("interceptor: getinfo");
     let info = ln_rpc
         // All calls require at least empty parameter
         .get_info(tonic_lnd::rpc::GetInfoRequest {})
@@ -50,12 +63,13 @@ async fn main() -> Result<(), LnGatewayError> {
 
     let (tx, rx): (mpsc::Sender<GatewayRequest>, mpsc::Receiver<GatewayRequest>) =
         mpsc::channel(100);
+    let sender = GatewayRpcSender::new(tx.clone());
 
-    // FIXME: do we need this???
-    // let sender = GatewayRpcSender::new(tx.clone());
+    println!("interceptor: spawning");
+    let handle = spawn_htlc_interceptor(sender, host, port, tls_cert_path, macaroon_path);
 
     // TODO: cli args to configure
-    let bind_addr = "localhost:8080"
+    let bind_addr = "127.0.0.1:8080"
         .parse()
         .expect("Invalid gateway bind address");
 

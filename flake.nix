@@ -843,6 +843,7 @@
             RUST_SRC_PATH = "${fenixChannel.rust-src}/lib/rustlib/src/rust/library";
             LIBCLANG_PATH = "${pkgs.libclang.lib}/lib/";
             ROCKSDB_LIB_DIR = "${rocksdb-7}/lib/";
+            PROTOC = "${pkgs.protobuf}/bin/protoc";
 
             shellHook = ''
               # auto-install git hooks

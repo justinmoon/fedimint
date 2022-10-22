@@ -1,14 +1,17 @@
 use std::{net::SocketAddr, path::PathBuf};
 
 use async_trait::async_trait;
+use bitcoin_hashes::{sha256::Hash as Sha256Hash, Hash};
+use fedimint_api::{db::SerializableDatabaseValue, Amount};
 use fedimint_server::modules::ln::contracts::Preimage;
 use thiserror::Error;
-use tokio::sync::Mutex;
+use tokio::{sync::Mutex, task::JoinHandle};
 use tracing::instrument;
 
 use crate::{
     ln::{LightningError, LnRpc, LnRpcRef},
     rpc::GatewayRpcSender,
+    LndHtlc,
 };
 
 #[derive(Debug, Error)]
@@ -61,11 +64,12 @@ impl LnRpc for Mutex<tonic_lnd::Client> {
 // }
 
 pub fn spawn_htlc_interceptor(
+    sender: GatewayRpcSender,
     host: String,
     port: u32,
-    cert_file_path: String,
-    macaroon_file_path: String,
-) {
+    tls_cert_path: String,
+    macaroon_path: String,
+) -> JoinHandle<()> {
     tokio::spawn(async move {
         // Connecting to LND requires only address, cert file, and macaroon file
         let mut client =
@@ -84,6 +88,11 @@ pub fn spawn_htlc_interceptor(
             .expect("Failed to call subscribe_invoices")
             .into_inner();
 
+        loop {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            tracing::info!("sleep");
+        }
+
         while let Some(htlc) = htlc_stream
             .message()
             .await
@@ -91,16 +100,17 @@ pub fn spawn_htlc_interceptor(
         {
             println!("htlc {:?}", htlc);
             let lnd_htlc = LndHtlc {
-                amount: htlc.incoming_amount_msat,
-                payment_hash: htlc.payment_hash,
+                amount: Amount::from_msat(htlc.incoming_amount_msat),
+                payment_hash: Sha256Hash::from_slice(&htlc.payment_hash).unwrap(), // FIXME
             };
-            let preimage = plugin.state().send(htlc_accepted).await?;
-            let preimage_string = preimage.to_public_key()?.to_string();
+            let preimage = sender.send(lnd_htlc).await.unwrap(); // FIXME
+            let preimage_bytes = preimage.to_public_key().unwrap().to_bytes(); // FIXME
+
             // TODO: handle failure
             let response = tonic_openssl_lnd::routerrpc::ForwardHtlcInterceptResponse {
                 incoming_circuit_key: htlc.incoming_circuit_key,
-                action: 0,                 // this will claim the htlc
-                preimage: preimage_string, // this would be for a real preimage
+                action: 0,                // this will claim the htlc
+                preimage: preimage_bytes, // this would be for a real preimage
                 failure_code: 0,
                 failure_message: vec![],
             };

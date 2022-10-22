@@ -12,27 +12,17 @@ use tokio::io::{stdin, stdout};
 use tokio::sync::Mutex;
 use tracing::{debug, error, instrument};
 
+use crate::as_fedimint_amount;
 use crate::{
     ln::{LightningError, LnRpc, LnRpcRef},
     rpc::GatewayRpcSender,
 };
 
-/// The core-lightning `htlc_accepted` event's `amount` field has a "msat" suffix
-fn as_fedimint_amount<'de, D>(amount: D) -> Result<Amount, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let amount = String::deserialize(amount)?;
-    Ok(Amount::from_msat(
-        amount[0..amount.len() - 4].parse::<u64>().unwrap(),
-    ))
-}
-
 // TODO: upstream these structs to cln-plugin
 #[derive(Clone, Deserialize, Debug)]
 pub struct Htlc {
     #[serde(deserialize_with = "as_fedimint_amount")]
-    pub amount: Amount, // FIXME: why is this a fedimint amount?
+    pub amount: Amount,
     pub cltv_expiry: u32,
     pub cltv_expiry_relative: u32,
     pub payment_hash: bitcoin_hashes::sha256::Hash,

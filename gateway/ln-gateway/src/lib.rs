@@ -35,6 +35,18 @@ use crate::ln::{LightningError, LnRpc};
 
 pub type Result<T> = std::result::Result<T, LnGatewayError>;
 
+/// The core-lightning `htlc_accepted` event's `amount` field has a "msat" suffix
+/// FIXME: put somewhere better ...
+pub fn as_fedimint_amount<'de, D>(amount: D) -> std::result::Result<Amount, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let amount = String::deserialize(amount)?;
+    Ok(Amount::from_msat(
+        amount[0..amount.len() - 4].parse::<u64>().unwrap(),
+    ))
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BalancePayload;
 
@@ -60,8 +72,8 @@ pub struct WithdrawPayload {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LndHtlc {
-    #[serde(with = "bitcoin::util::amount::serde::as_sat")]
-    pub amount: bitcoin::Amount,
+    #[serde(deserialize_with = "as_fedimint_amount")]
+    pub amount: Amount,
     pub payment_hash: bitcoin_hashes::sha256::Hash,
 }
 
@@ -103,6 +115,7 @@ macro_rules! impl_gateway_request_trait {
     };
 }
 impl_gateway_request_trait!(HtlcAccepted, Preimage, GatewayRequest::HtlcAccepted);
+impl_gateway_request_trait!(LndHtlc, Preimage, GatewayRequest::LndHtlc);
 impl_gateway_request_trait!(ContractId, (), GatewayRequest::PayInvoice);
 impl_gateway_request_trait!(BalancePayload, Amount, GatewayRequest::Balance);
 impl_gateway_request_trait!(
@@ -324,7 +337,7 @@ impl LnGateway {
             .await
     }
 
-    async fn handle_lnd_htlc_msg(&self, lnd_htlc: Lndhtlc) -> Result<Preimage> {
+    async fn handle_lnd_htlc_msg(&self, lnd_htlc: LndHtlc) -> Result<Preimage> {
         let mut rng = rand::rngs::OsRng;
         debug!(
             "Incoming LND HTLC for payment hash {}",
@@ -393,7 +406,7 @@ impl LnGateway {
                             .handle(|htlc_accepted| self.handle_htlc_incoming_msg(htlc_accepted))
                             .await;
                     }
-                    GatewayRequest::Lndhtlc(inner) => {
+                    GatewayRequest::LndHtlc(inner) => {
                         inner
                             .handle(|lnd_htlc| self.handle_lnd_htlc_msg(lnd_htlc))
                             .await;

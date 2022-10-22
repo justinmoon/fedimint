@@ -29,6 +29,7 @@ pub async fn run_webserver(
         .layer(Extension(rpc))
         .layer(CorsLayer::permissive());
 
+    println!("running webserver \n\n\n\n\n");
     axum::Server::bind(&bind_addr)
         .serve(app.into_make_service())
         .await

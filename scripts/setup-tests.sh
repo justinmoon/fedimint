@@ -13,6 +13,7 @@ POLL_INTERVAL=1
 bitcoind -regtest -fallbackfee=0.0004 -txindex -server -rpcuser=bitcoin -rpcpassword=bitcoin -datadir=$FM_BTC_DIR -zmqpubrawblock=tcp://127.0.0.1:28332 -zmqpubrawtx=tcp://127.0.0.1:28333 &
 echo $! >> $FM_PID_FILE
 
+# sleep 10 # wait for bitcoind to start ...
 
 until [ "$($FM_BTC_CLIENT getblockchaininfo | jq -r '.chain')" == "regtest" ]; do
   sleep $POLL_INTERVAL
@@ -42,14 +43,20 @@ done
 cp $PWD/scripts/lnd1.conf $FM_LND1_DIR/lnd.conf
 cp $PWD/scripts/lnd2.conf $FM_LND2_DIR/lnd.conf
 lnd --noseedbackup --lnddir=$FM_LND1_DIR &
+echo $! >> $FM_PID_FILE
 lnd --noseedbackup --lnddir=$FM_LND2_DIR &
-
-cargo run --bin gateway_lnd http://localhost:11010 $FM_LND1_DIR/tls.cert $FM_LND1_DIR/data/chain/bitcoin/regtest/admin.macaroon &
+echo $! >> $FM_PID_FILE
 
 # Initialize wallet and get ourselves some money
 mine_blocks 101
 
 await_lnd_block_processing
 
+# cargo run --bin gateway_lnd http://localhost:11010 $FM_LND1_DIR/tls.cert $FM_LND1_DIR/data/chain/bitcoin/regtest/admin.macaroon &
+
 # Open channel
-open_channel
+# open_channel
+
+# Open lnd channel
+open_lnd_channel
+mine_blocks 10

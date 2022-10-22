@@ -10,8 +10,16 @@ source ./scripts/setup-tests.sh
 ./scripts/pegin.sh # peg in user
 
 export PEG_IN_AMOUNT=99999
-start_gateway
+
+# start_gateway
+export RUST_BACKTRACE=1
+$FM_BIN_DIR/gateway_lnd localhost 11010 $FM_LND1_DIR/tls.cert $FM_LND1_DIR/data/chain/bitcoin/regtest/admin.macaroon $FM_CFG_DIR &
+echo $! >> $FM_PID_FILE
+sleep 1
+
 ./scripts/pegin.sh $PEG_IN_AMOUNT 1 # peg in gateway
+
+# start 
 
 #### BEGIN TESTS ####
 
@@ -47,7 +55,7 @@ INVOICE_STATUS="$(echo $INVOICE_RESULT | jq -r '.status')"
 [[ "$INVOICE_STATUS" = "paid" ]]
 
 # incoming lightning
-# INVOICE="$($FM_MINT_CLIENT ln-invoice '100000msat' 'integration test' | jq -r '.invoice')"
-# INVOICE_RESULT=$($FM_LN2 pay $INVOICE)
-# INVOICE_STATUS="$(echo $INVOICE_RESULT | jq -r '.status')"
-# [[ "$INVOICE_STATUS" = "complete" ]]
+INVOICE="$($FM_MINT_CLIENT ln-invoice '100000msat' 'integration test' | jq -r '.invoice')"
+INVOICE_RESULT=$($FM_LN2 pay $INVOICE)
+INVOICE_STATUS="$(echo $INVOICE_RESULT | jq -r '.status')"
+[[ "$INVOICE_STATUS" = "complete" ]]
