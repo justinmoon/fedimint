@@ -59,3 +59,52 @@ impl LnRpc for Mutex<tonic_lnd::Client> {
 
 //     unimplemented!()
 // }
+
+pub fn spawn_htlc_interceptor(
+    host: String,
+    port: u32,
+    cert_file_path: String,
+    macaroon_file_path: String,
+) {
+    tokio::spawn(async move {
+        // Connecting to LND requires only address, cert file, and macaroon file
+        let mut client =
+            tonic_openssl_lnd::connect_router(host, port, tls_cert_path, macaroon_path)
+                .await
+                .expect("failed to connect");
+
+        let (tx, rx) = tokio::sync::mpsc::channel::<
+            tonic_openssl_lnd::routerrpc::ForwardHtlcInterceptResponse,
+        >(1024);
+        let stream = tokio_stream::wrappers::ReceiverStream::new(rx);
+
+        let mut htlc_stream = client
+            .htlc_interceptor(stream)
+            .await
+            .expect("Failed to call subscribe_invoices")
+            .into_inner();
+
+        while let Some(htlc) = htlc_stream
+            .message()
+            .await
+            .expect("Failed to receive invoices")
+        {
+            println!("htlc {:?}", htlc);
+            let lnd_htlc = LndHtlc {
+                amount: htlc.incoming_amount_msat,
+                payment_hash: htlc.payment_hash,
+            };
+            let preimage = plugin.state().send(htlc_accepted).await?;
+            let preimage_string = preimage.to_public_key()?.to_string();
+            // TODO: handle failure
+            let response = tonic_openssl_lnd::routerrpc::ForwardHtlcInterceptResponse {
+                incoming_circuit_key: htlc.incoming_circuit_key,
+                action: 0,                 // this will claim the htlc
+                preimage: preimage_string, // this would be for a real preimage
+                failure_code: 0,
+                failure_message: vec![],
+            };
+            tx.send(response).await.unwrap();
+        }
+    })
+}

@@ -32,7 +32,7 @@ where
 #[derive(Clone, Deserialize, Debug)]
 pub struct Htlc {
     #[serde(deserialize_with = "as_fedimint_amount")]
-    pub amount: Amount,
+    pub amount: Amount, // FIXME: why is this a fedimint amount?
     pub cltv_expiry: u32,
     pub cltv_expiry_relative: u32,
     pub payment_hash: bitcoin_hashes::sha256::Hash,

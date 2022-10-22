@@ -58,9 +58,18 @@ pub struct WithdrawPayload {
     pub address: Address,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct LndHtlc {
+    #[serde(with = "bitcoin::util::amount::serde::as_sat")]
+    pub amount: bitcoin::Amount,
+    pub payment_hash: bitcoin_hashes::sha256::Hash,
+}
+
 #[derive(Debug)]
 pub enum GatewayRequest {
+    // TODO: give this message a cln-specific name
     HtlcAccepted(GatewayRequestInner<HtlcAccepted>),
+    LndHtlc(GatewayRequestInner<LndHtlc>),
     PayInvoice(GatewayRequestInner<ContractId>),
     Balance(GatewayRequestInner<BalancePayload>),
     DepositAddress(GatewayRequestInner<DepositAddressPayload>),
@@ -315,6 +324,16 @@ impl LnGateway {
             .await
     }
 
+    async fn handle_lnd_htlc_msg(&self, lnd_htlc: Lndhtlc) -> Result<Preimage> {
+        let mut rng = rand::rngs::OsRng;
+        debug!(
+            "Incoming LND HTLC for payment hash {}",
+            lnd_htlc.payment_hash
+        );
+        self.buy_preimage_internal(&lnd_htlc.payment_hash, &lnd_htlc.amount, &mut rng)
+            .await
+    }
+
     async fn handle_balance_msg(&self) -> Result<Amount> {
         let fetch_results = self.federation_client.fetch_all_coins().await;
         fetch_results
@@ -372,6 +391,11 @@ impl LnGateway {
                     GatewayRequest::HtlcAccepted(inner) => {
                         inner
                             .handle(|htlc_accepted| self.handle_htlc_incoming_msg(htlc_accepted))
+                            .await;
+                    }
+                    GatewayRequest::Lndhtlc(inner) => {
+                        inner
+                            .handle(|lnd_htlc| self.handle_lnd_htlc_msg(lnd_htlc))
                             .await;
                     }
                     GatewayRequest::PayInvoice(inner) => {

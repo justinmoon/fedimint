@@ -40,6 +40,7 @@ thiserror = "1.0.37"
 tonic_lnd = "0.4.0"
 tracing = { version = "0.1.37", default-features = false, features= ["log", "attributes", "std"] }
 tokio = {version = "1.21", features = ["full"]}
+tonic_openssl_lnd = "0.1.5"
 tower-http = { version = "0.3.4", features = ["cors"] }
 url = { version = "2.3.1", features = ["serde"] }
 
