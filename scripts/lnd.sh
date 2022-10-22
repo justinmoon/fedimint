@@ -42,19 +42,19 @@ lnd --noseedbackup --lnddir=$PWD/lnd2 &
 mine_blocks 102  # lnd seems to want blocks mined in order to sync chain and startup rpc servers
 
 
-LNCLI1="lncli -n regtest --lnddir=$PWD/lnd1 --rpcserver=localhost:11010"
-LNCLI2="lncli -n regtest --lnddir=$PWD/lnd2 --rpcserver=localhost:11009"
+FM_LNCLI1="lncli -n regtest --lnddir=$PWD/lnd1 --rpcserver=localhost:11010"
+FM_LNCLI2="lncli -n regtest --lnddir=$PWD/lnd2 --rpcserver=localhost:11009"
 
 function await_lnd_block_processing() {
 
   # ln1
-  until [ "true" == "$($LNCLI1 getinfo | jq -r '.synced_to_chain')" ]
+  until [ "true" == "$($FM_LNCLI1 getinfo | jq -r '.synced_to_chain')" ]
   do
     sleep $POLL_INTERVAL
   done
 
   # ln2
-  until [ "true" == "$($LNCLI2 getinfo | jq -r '.synced_to_chain')" ]
+  until [ "true" == "$($FM_LNCLI2 getinfo | jq -r '.synced_to_chain')" ]
   do
     sleep $POLL_INTERVAL
   done
@@ -67,7 +67,7 @@ open_lnd_channel
 mine_blocks 10
 
 # send funds from ln1 to ln2 via rust
-INVOICE=$($LNCLI2 addinvoice -amt 100 | jq -r ".payment_request")
+INVOICE=$($FM_LNCLI2 addinvoice -amt 100 | jq -r ".payment_request")
 echo "invoice $INVOICE"
 cargo run --bin lnd_test http://localhost:11010 $PWD/lnd1/tls.cert $PWD/lnd1/data/chain/bitcoin/regtest/admin.macaroon $INVOICE
 

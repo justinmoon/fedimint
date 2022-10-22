@@ -10,8 +10,9 @@ source ./scripts/build.sh $FM_FED_SIZE
 POLL_INTERVAL=1
 
 # Start bitcoind and wait for it to become ready
-bitcoind -regtest -fallbackfee=0.0004 -txindex -server -rpcuser=bitcoin -rpcpassword=bitcoin -datadir=$FM_BTC_DIR &
+bitcoind -regtest -fallbackfee=0.0004 -txindex -server -rpcuser=bitcoin -rpcpassword=bitcoin -datadir=$FM_BTC_DIR -zmqpubrawblock=tcp://127.0.0.1:28332 -zmqpubrawtx=tcp://127.0.0.1:28333 &
 echo $! >> $FM_PID_FILE
+
 
 until [ "$($FM_BTC_CLIENT getblockchaininfo | jq -r '.chain')" == "regtest" ]; do
   sleep $POLL_INTERVAL
@@ -37,17 +38,18 @@ until [ -e $FM_LN2_DIR/regtest/lightning-rpc ]; do
     sleep $POLL_INTERVAL
 done
 
-# Start lnd nodes
+# Start lnd nodes, htlc interceptor, wait for block sync
 cp $PWD/scripts/lnd1.conf $FM_LND1_DIR/lnd.conf
 cp $PWD/scripts/lnd2.conf $FM_LND2_DIR/lnd.conf
+lnd --noseedbackup --lnddir=$FM_LND1_DIR &
+lnd --noseedbackup --lnddir=$FM_LND2_DIR &
 
-lnd --noseedbackup --lnddir=$PWD/lnd1 &
-lnd --noseedbackup --lnddir=$PWD/lnd2 &
-
-await_lnd_block_processing
+cargo run --bin gateway_lnd http://localhost:11010 $FM_LND1_DIR/tls.cert $FM_LND1_DIR/data/chain/bitcoin/regtest/admin.macaroon &
 
 # Initialize wallet and get ourselves some money
 mine_blocks 101
+
+await_lnd_block_processing
 
 # Open channel
 open_channel

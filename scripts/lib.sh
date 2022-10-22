@@ -21,19 +21,19 @@ function open_channel() {
 
 function open_lnd_channel() {
   # give ln1's on-chain wallet 1 bitcoin
-  ADDRESS=$($LNCLI1 newaddress p2wkh | jq -r ".address")
+  ADDRESS=$($FM_LNCLI1 newaddress p2wkh | jq -r ".address")
   send_bitcoin $ADDRESS 100000000
   mine_blocks 10
   await_lnd_block_processing
 
   # ln1 connects to ln2
-  LN2_PUBKEY=$($LNCLI2 getinfo | jq -r ".identity_pubkey")
+  LN2_PUBKEY=$($FM_LNCLI2 getinfo | jq -r ".identity_pubkey")
   LN2_CONNECTION_STRING=$LN2_PUBKEY@localhost:9734 # hostname is in lnd2.conf
-  $LNCLI1 connect $LN2_CONNECTION_STRING
+  $FM_LNCLI1 connect $LN2_CONNECTION_STRING
 
   # ln1 opens channel to ln2 for 1m sats
   echo "OPEN CHANNEL\n\n\n"
-  $LNCLI1 openchannel $LN2_PUBKEY 1000000
+  $FM_LNCLI1 openchannel $LN2_PUBKEY 1000000
 }
 
 function await_block_sync() {
@@ -69,13 +69,13 @@ function await_cln_block_processing() {
 
 function await_lnd_block_processing() {
   # ln1
-  until [ "true" == "$($LNCLI1 getinfo | jq -r '.synced_to_chain')" ]
+  until [ "true" == "$($FM_LNCLI1 getinfo | jq -r '.synced_to_chain')" ]
   do
     sleep $POLL_INTERVAL
   done
 
   # ln2
-  until [ "true" == "$($LNCLI2 getinfo | jq -r '.synced_to_chain')" ]
+  until [ "true" == "$($FM_LNCLI2 getinfo | jq -r '.synced_to_chain')" ]
   do
     sleep $POLL_INTERVAL
   done
