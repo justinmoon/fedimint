@@ -67,9 +67,10 @@ open_lnd_channel
 mine_blocks 10
 
 # send funds from ln1 to ln2 via rust
-INVOICE=$($FM_LNCLI2 addinvoice -amt 100 | jq -r ".payment_request")
-echo "invoice $INVOICE"
-cargo run --bin lnd_test http://localhost:11010 $PWD/lnd1/tls.cert $PWD/lnd1/data/chain/bitcoin/regtest/admin.macaroon $INVOICE
+# INVOICE=$($FM_LNCLI2 addinvoice -amt 100 | jq -r ".payment_request")
+# echo "invoice $INVOICE"
+# cargo run --bin lnd_test http://localhost:11010 $PWD/lnd1/tls.cert $PWD/lnd1/data/chain/bitcoin/regtest/admin.macaroon $INVOICE
+$FM_BIN_DIR/gateway_lnd localhost 11010 $FM_LND1_DIR/tls.cert $FM_LND1_DIR/data/chain/bitcoin/regtest/admin.macaroon $FM_CFG_DIR &
 
-pkill "lnd" 2>&1 /dev/null
-pkill "bitcoind" 2>&1 /dev/null
+# pkill "lnd" 2>&1 /dev/null
+# pkill "bitcoind" 2>&1 /dev/null

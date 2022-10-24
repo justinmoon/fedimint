@@ -31,9 +31,9 @@ function open_lnd_channel() {
   LN2_CONNECTION_STRING=$LN2_PUBKEY@localhost:9734 # hostname is in lnd2.conf
   $FM_LNCLI1 connect $LN2_CONNECTION_STRING
 
-  # ln1 opens channel to ln2 for 1m sats
+  # ln1 opens channel to ln2 for 1m sats, 5m sats on each side
   echo "OPEN CHANNEL\n\n\n"
-  $FM_LNCLI1 openchannel $LN2_PUBKEY 1000000
+  $FM_LNCLI1 openchannel $LN2_PUBKEY 10000000 --push_amt 5000000
 }
 
 function await_block_sync() {

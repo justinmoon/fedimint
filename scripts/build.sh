@@ -9,7 +9,15 @@ export FM_TMP_DIR=${2-"$(mktemp -d)"}
 echo "Setting up env variables in $FM_TMP_DIR"
 
 # Builds the rust executables and sets environment variables
-SRC_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )/.." &> /dev/null && pwd )"
+# echo SOURCEEEEE
+# echo $BASH_SOURCE[0]
+# echo $BASH_SOURCE[1]
+# echo $0
+# echo $1
+# SRC_DIR="$( cd -- "$( dirname -- "${$1}" )/.." &> /dev/null && pwd )"
+SRC_DIR=/Users/justin/fedimint/fedimint
+cd $SRC_DIR || exit 1
+# SRC_DIR=$PWD
 cd $SRC_DIR || exit 1
 cargo build
 
@@ -79,4 +87,4 @@ alias clientd="\$FM_CLIENTD"
 alias clientd-cli="\$FM_CLIENTD_CLI"
 alias gateway-cli="\$FM_GATEWAY_CLI"
 
-trap kill_fedimint_processes EXIT
+# trap kill_fedimint_processes EXIT

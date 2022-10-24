@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::{path::PathBuf, sync::Arc};
 
 use bitcoin::secp256k1::PublicKey;
@@ -8,6 +9,16 @@ use ln_gateway::{
     GatewayRequest, LnGateway, LnGatewayError,
 };
 use tokio::sync::{mpsc, Mutex};
+
+fn change_file_name(path: impl AsRef<Path>, name: &str) -> PathBuf {
+    let path = path.as_ref();
+    let mut result = path.to_owned();
+    result.set_file_name(name);
+    if let Some(ext) = path.extension() {
+        result.set_extension(ext);
+    }
+    result
+}
 
 #[tokio::main]
 async fn main() -> Result<(), LnGatewayError> {
@@ -66,7 +77,20 @@ async fn main() -> Result<(), LnGatewayError> {
     let sender = GatewayRpcSender::new(tx.clone());
 
     println!("interceptor: spawning");
-    let handle = spawn_htlc_interceptor(sender, host, port, tls_cert_path, macaroon_path);
+    // let handle = spawn_htlc_interceptor(
+    //     sender,
+    //     host,
+    //     port,
+    //     tls_cert_path,
+    //     change_file_name(macaroon_path, "router.macaroon")
+    //         .display()
+    //         .to_string(),
+    // );
+
+    // loop {
+    //     tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+    //     println!("sleep");
+    // }
 
     // TODO: cli args to configure
     let bind_addr = "127.0.0.1:8080"

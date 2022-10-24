@@ -42,20 +42,51 @@ sleep 1
 # RECEIVED=$($FM_BTC_CLIENT getreceivedbyaddress $PEG_OUT_ADDR)
 # [[ "$RECEIVED" = "0.00000500" ]]
 
+# # outgoing lightning
+# INVOICE="$($FM_LN2 invoice 100000 test test 1m | jq -r '.bolt11')"
+# await_cln_block_processing
+# $FM_MINT_CLIENT ln-pay $INVOICE
+# # Check that ln-gateway has received the ecash notes from the user payment
+# # 100,000 sats + 100 sats without processing fee
+# LN_GATEWAY_BALANCE="$($FM_GATEWAY_CLI balance | jq -r '.balance_msat')"
+# [[ "$LN_GATEWAY_BALANCE" = "100100000" ]]
+# INVOICE_RESULT="$($FM_LN2 waitinvoice test)"
+# INVOICE_STATUS="$(echo $INVOICE_RESULT | jq -r '.status')"
+# [[ "$INVOICE_STATUS" = "paid" ]]
+
+# # incoming lightning
+# INVOICE="$($FM_MINT_CLIENT ln-invoice '100000msat' 'integration test' | jq -r '.invoice')"
+# INVOICE_RESULT=$($FM_LN2 pay $INVOICE)
+# INVOICE_STATUS="$(echo $INVOICE_RESULT | jq -r '.status')"
+# [[ "$INVOICE_STATUS" = "complete" ]]
+
 # outgoing lightning
-INVOICE="$($FM_LN2 invoice 100000 test test 1m | jq -r '.bolt11')"
-await_cln_block_processing
+echo $FM_MINT_CLIENT info
+INVOICE=$($FM_LNCLI2 addinvoice -amt_msat 100000 | jq -r ".payment_request")
 $FM_MINT_CLIENT ln-pay $INVOICE
-# Check that ln-gateway has received the ecash notes from the user payment
-# 100,000 sats + 100 sats without processing fee
 LN_GATEWAY_BALANCE="$($FM_GATEWAY_CLI balance | jq -r '.balance_msat')"
 [[ "$LN_GATEWAY_BALANCE" = "100100000" ]]
-INVOICE_RESULT="$($FM_LN2 waitinvoice test)"
-INVOICE_STATUS="$(echo $INVOICE_RESULT | jq -r '.status')"
-[[ "$INVOICE_STATUS" = "paid" ]]
 
 # incoming lightning
+# echo "ln1"
+# $FM_LNCLI1 getinfo
+# echo "ln2"
+# $FM_LNCLI2 getinfo
+
+# echo "channels"
+# $FM_LNCLI1 listchannels
+# $FM_LNCLI2 listchannels
+
+# echo "peers"
+# $FM_LNCLI1 listpeers
+# $FM_LNCLI2 listpeers
+
+INVOICE=$($FM_LNCLI1 addinvoice -amt_msat 100000 | jq -r ".payment_request")
+PAY_RESULT=$($FM_LNCLI2 payinvoice $INVOICE --timeout 10s)
+
 INVOICE="$($FM_MINT_CLIENT ln-invoice '100000msat' 'integration test' | jq -r '.invoice')"
-INVOICE_RESULT=$($FM_LN2 pay $INVOICE)
-INVOICE_STATUS="$(echo $INVOICE_RESULT | jq -r '.status')"
-[[ "$INVOICE_STATUS" = "complete" ]]
+PAY_RESULT=$($FM_LNCLI1 payinvoice $INVOICE --timeout 10s)
+echo $PAY_RESULT
+# INVOICE_STATUS="$(echo $INVOICE_RESULT | jq -r '.status')"
+# echo $INVOICE_RESULT
+# [[ "$INVOICE_STATUS" = "complete" ]]

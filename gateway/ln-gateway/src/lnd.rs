@@ -48,20 +48,13 @@ impl LnRpc for Mutex<tonic_lnd::Client> {
         if send_response.payment_preimage.is_empty() {
             return Err(LightningError::LndError(LndError::NoPreimage));
         };
-        unimplemented!()
+
+        // let preimage: Preimage = send_response.payment_preimage.into();
+
+        // FIXME: try_into because payment_preimage is [u8], not [u8; 32] as desired
+        Ok(Preimage(send_response.payment_preimage.try_into().unwrap()))
     }
 }
-
-// TODO: update arguments
-// FIXME: is this the right error?
-// pub async fn build_lnd_rpc(
-//     _sender: GatewayRpcSender,
-//     bind_addr: SocketAddr,
-//     workdir: PathBuf,
-// ) -> Result<LnRpcRef, LightningError> {
-
-//     unimplemented!()
-// }
 
 pub fn spawn_htlc_interceptor(
     sender: GatewayRpcSender,
@@ -77,6 +70,7 @@ pub fn spawn_htlc_interceptor(
                 .await
                 .expect("failed to connect");
 
+        println!("interceptor: connected");
         let (tx, rx) = tokio::sync::mpsc::channel::<
             tonic_openssl_lnd::routerrpc::ForwardHtlcInterceptResponse,
         >(1024);
@@ -87,11 +81,12 @@ pub fn spawn_htlc_interceptor(
             .await
             .expect("Failed to call subscribe_invoices")
             .into_inner();
+        println!("interceptor: streaming");
 
-        loop {
-            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-            tracing::info!("sleep");
-        }
+        // loop {
+        //     tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        //     println!("sleep");
+        // }
 
         while let Some(htlc) = htlc_stream
             .message()
