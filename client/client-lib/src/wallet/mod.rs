@@ -15,7 +15,7 @@ use tracing::debug;
 use crate::utils::ClientContext;
 use crate::{ApiError, ModuleClient};
 
-mod db;
+pub mod db;
 
 /// Federation module client for the Wallet module. It can both create transaction inputs and
 /// outputs of the wallet (on-chain) type.
