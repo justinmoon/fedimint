@@ -19,7 +19,7 @@ impl DatabaseKeyPrefixConst for PegInKey {
     type Value = [u8; 32]; // TODO: introduce newtype
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Encodable, Decodable)]
 pub struct PegInPrefixKey;
 
 impl DatabaseKeyPrefixConst for PegInPrefixKey {
