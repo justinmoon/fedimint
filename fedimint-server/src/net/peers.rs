@@ -195,8 +195,6 @@ where
                 }
             };
 
-            tracing::info!("peer {}", peer);
-            tracing::info!("connected_senders {:?}", connection_senders.keys());
             let err = connection_senders
                 .get_mut(&peer)
                 .expect("Authenticating connectors should not return unknown peers")
