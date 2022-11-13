@@ -68,7 +68,7 @@ fn trusted_dealer_gen(
         .iter()
         .map(|peer| {
             // FIXME: regex
-            let parts: Vec<&str> = peer.connection_string.split('@').collect();
+            let parts: Vec<&str> = peer.config_string.split('@').collect();
             parts[1].to_string()
         })
         .collect();

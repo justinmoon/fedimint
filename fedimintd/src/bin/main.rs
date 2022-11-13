@@ -19,7 +19,7 @@ use tracing_subscriber::Layer;
 pub struct ServerOpts {
     pub cfg_path: PathBuf,
     #[arg(default_value = None)]
-    pub password: Option<String>,
+    pub password: String,
     #[arg(default_value = None)]
     pub ui_port: Option<u32>,
     #[cfg(feature = "telemetry")]

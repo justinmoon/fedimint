@@ -15,7 +15,6 @@ use rand::rngs::OsRng;
 use ring::aead::LessSafeKey;
 use tokio_rustls::rustls;
 use tracing::info;
-use tracing_subscriber::EnvFilter;
 
 #[derive(Parser)]
 struct Cli {
@@ -47,7 +46,7 @@ enum Command {
 
         /// The password that encrypts the configs, will prompt if not passed in
         #[arg(long = "password")]
-        password: Option<String>,
+        password: String,
     },
     /// All peers must run distributed key gen at the same time to create configs
     Run {
@@ -79,18 +78,12 @@ enum Command {
 
         /// The password that encrypts the configs, will prompt if not passed in
         #[arg(long = "password")]
-        password: Option<String>,
+        password: String,
     },
 }
 
 #[tokio::main]
-async fn main() {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
-        )
-        .init();
-
+pub async fn main() {
     let mut task_group = TaskGroup::new();
 
     let command: Command = Cli::parse().command;

@@ -51,15 +51,7 @@ pub fn encrypted_read(key: &LessSafeKey, file: PathBuf) -> (Vec<u8>, Nonce) {
     (encrypted_bytes, incremented)
 }
 
-pub fn get_key(password: Option<String>, salt_path: PathBuf) -> LessSafeKey {
-    let password = match password {
-        None => rpassword::prompt_password("Enter a password to encrypt configs: ").unwrap(),
-        Some(password) => {
-            println!("WARNING: Passing in a password from the command line may be less secure!");
-            password
-        }
-    };
-
+pub fn get_key(password: String, salt_path: PathBuf) -> LessSafeKey {
     let salt_str = fs::read_to_string(salt_path).expect("Can't read salt file");
     let salt = hex::decode(salt_str).expect("Can't decode hex");
     let mut key = [0u8; digest::SHA256_OUTPUT_LEN];
