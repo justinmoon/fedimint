@@ -76,7 +76,7 @@ struct AddGuardiansTemplate {
     guardians: Vec<Guardian>,
 }
 
-async fn add_guardians(Extension(state): Extension<MutableState>) -> AddGuardiansTemplate {
+async fn add_guardians_page(Extension(state): Extension<MutableState>) -> AddGuardiansTemplate {
     let state = state.read().unwrap();
     AddGuardiansTemplate {
         federation_name: state.federation_name.clone(),
@@ -320,8 +320,9 @@ pub async fn run_ui(cfg_path: PathBuf, sender: Sender<UiMessage>, port: u32) {
         .route("/", get(home_page))
         .route("/federation_params", get(params_page))
         .route("/post_federation_params", post(post_federation_params))
-        .route("/add_guardians", get(dealer).post(add_guardians))
-        .route("/configs", get(display_configs))
+        .route("/add_guardians", get(add_guardians_page))
+        // .route("/submit_guardians".post(submit_guardians))
+        // .route("/configs", get(display_configs))
         //.route("/distributed_key_gen", post(distributed_key_gen))
         .route("/qr", get(qr))
         .layer(Extension(state));
