@@ -38,7 +38,7 @@ done
 CERTS=${CERTS:1}
 echo "Running DKG with certs: $CERTS"
 
-for ((ID=0; ID<FM_FED_SIZE; ID++));
+for ((ID=0; ID<1; ID++));
 do
   $FM_BIN_DIR/distributedgen run --out-dir $FM_CFG_DIR/server-$ID --certs $CERTS --password "pass$ID" &
 done

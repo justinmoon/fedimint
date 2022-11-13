@@ -19,7 +19,7 @@ use tracing_subscriber::Layer;
 pub struct ServerOpts {
     pub cfg_path: PathBuf,
     #[arg(default_value = None)]
-    pub password: Option<String>,
+    pub password: String,
     #[arg(default_value = None)]
     pub ui_port: Option<u32>,
     #[cfg(feature = "telemetry")]
@@ -65,13 +65,22 @@ async fn main() -> anyhow::Result<()> {
 
     let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
 
-    if let Some(ui_port) = opts.ui_port {
-        // Spawn UI, wait for it to finish
-        tokio::spawn(run_ui(opts.cfg_path.clone(), sender, ui_port));
-        receiver
-            .recv()
-            .await
-            .expect("failed to receive setup message");
+    let cfg_path = opts.cfg_path.join(CONFIG_FILE);
+    let cfg_exists = std::path::Path::new(&cfg_path).exists();
+    if !cfg_exists {
+        if let Some(ui_port) = opts.ui_port {
+            // Spawn UI, wait for it to finish
+            tokio::spawn(run_ui(
+                opts.cfg_path.clone(),
+                sender,
+                ui_port,
+                opts.password.clone(), // assuming that password is set
+            ));
+            receiver
+                .recv()
+                .await
+                .expect("failed to receive setup message");
+        }
     }
 
     let salt_path = opts.cfg_path.join(SALT_FILE);
@@ -79,6 +88,7 @@ async fn main() -> anyhow::Result<()> {
     let (decrypted, _) = encrypted_read(&key, opts.cfg_path.join(CONFIG_FILE));
     let cfg_string = String::from_utf8(decrypted).expect("is not correctly encoded");
     let cfg: ServerConfig = serde_json::from_str(&cfg_string).expect("could not parse config");
+    tracing::info!("running fedimint {:?}", &cfg);
 
     let db: Database = fedimint_rocksdb::RocksDb::open(opts.cfg_path.join(DB_FILE))
         .expect("Error opening DB")
