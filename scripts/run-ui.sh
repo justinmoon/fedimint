@@ -2,7 +2,8 @@
 
 export FM_FED_SIZE=${1:-2}
 # clear out federation startup configs folder
-rm -rf $PWD/fed-ui
+rm -r $PWD/fed-ui
+mkdir $PWD/fed-ui
 
 # start bitcoind on regtest in the background
 bitcoind -regtest -daemon -fallbackfee=0.0004 -txindex -server -rpcuser=bitcoin -rpcpassword=bitcoin
