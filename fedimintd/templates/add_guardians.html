@@ -12,15 +12,6 @@
         <p>{{guardian.name}}</p>
         <p>TLS: {{guardian.config_string}}</p>
         {% endfor %}
-        <form class="mt-3" action="/add_guardians" method="post">
-            <div class="form-group">
-                <label for="federation_name">
-                    <h1>Federation Name</h1>
-                </label>
-                <input type="text" class="form-control" name="federation_name" placeholder="Cypherpunks" required />
-            </div>
-            <button type="submit" class="btn btn-primary my-3">Start Your Federation</button>
-        </form>
     </div>
 </div>
 {% endblock %}

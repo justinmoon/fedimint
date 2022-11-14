@@ -185,7 +185,7 @@ async fn post_federation_params(
     // update state
     state.federation_name = form.federation_name;
 
-    Ok(Redirect::to("/add_other_guardians".parse().unwrap()))
+    Ok(Redirect::to("/add_guardians".parse().unwrap()))
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -294,7 +294,6 @@ pub enum UiMessage {
 pub async fn run_ui(cfg_path: PathBuf, sender: Sender<UiMessage>, port: u32) {
     let mut rng = OsRng;
     let secp = bitcoin::secp256k1::Secp256k1::new();
-    let (_, pubkey) = secp.generate_keypair(&mut rng);
     let config_string = "".to_string();
     let guardians = vec![Guardian {
         config_string: config_string.clone(),
