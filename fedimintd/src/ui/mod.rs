@@ -176,13 +176,14 @@ async fn post_federation_params(
         config_string,
     }];
 
-    for i in 1..form.guardians_count {
+    for i in 0..form.guardians_count {
         guardians.push(Guardian {
             name: format!("Guardian {}", i),
             config_string: "".into(),
         });
     }
     // update state
+    state.guardians = guardians;
     state.federation_name = form.federation_name;
 
     Ok(Redirect::to("/add_guardians".parse().unwrap()))

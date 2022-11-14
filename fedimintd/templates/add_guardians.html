@@ -9,9 +9,36 @@
         <h1>Configure Guardians for the {{federation_name}} Federation</h1>
         <!-- show your connection string-->
         {% for guardian in guardians %}
-        <p>{{guardian.name}}</p>
-        <p>TLS: {{guardian.config_string}}</p>
+        {% if guardian.config_string != "" %}
+        <div class="input-group">
+            <label for="connection_string">Your Connection String</label>
+            <input type="text" class="form-control" id="connection_string" value="{{guardian.config_string}}" readonly>
+            <!-- Copy button that copies contents of the connection string on click -->
+            <div class="input-group-append">
+                <button class="btn btn-outline-primary" type="button" id="copy-button">Copy</button>
+            </div>
+        </div>
+        {% else %}
+        <div class="input-group">
+            <label for="{{guardian.name}}-name">{{guardian.name}}'s Name</label>
+            <input type="text" class="form-control" id="{{guardian.name}}-name" placeholder="{{guardian.name}}'s Name">
+        </div>
+        <div class="input-group">
+            <label for="{{guardian.name}}-connection_string">{{guardian.name}}'s Connection String</label>
+            <input type="text" class="form-control" id="{{guardian.name}}-connection_string"
+                placeholder="{{guardian.name}}'s Connection String">
+        </div>
+        {% endif %}
         {% endfor %}
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.querySelector("#copy-button").addEventListener("click", function (e) {
+        const config = document.getElementById("client-config");
+        navigator.clipboard.writeText(config.value);
+    });
+</script>
 {% endblock %}
