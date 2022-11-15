@@ -65,18 +65,22 @@ async fn main() -> anyhow::Result<()> {
 
     let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
 
-    if let Some(ui_port) = opts.ui_port {
-        // Spawn UI, wait for it to finish
-        tokio::spawn(run_ui(
-            opts.cfg_path.clone(),
-            sender,
-            ui_port,
-            opts.password.clone(), // assuming that password is set
-        ));
-        receiver
-            .recv()
-            .await
-            .expect("failed to receive setup message");
+    let cfg_path = opts.cfg_path.join(CONFIG_FILE);
+    let cfg_exists = std::path::Path::new(&cfg_path).exists();
+    if !cfg_exists {
+        if let Some(ui_port) = opts.ui_port {
+            // Spawn UI, wait for it to finish
+            tokio::spawn(run_ui(
+                opts.cfg_path.clone(),
+                sender,
+                ui_port,
+                opts.password.clone(), // assuming that password is set
+            ));
+            receiver
+                .recv()
+                .await
+                .expect("failed to receive setup message");
+        }
     }
 
     let salt_path = opts.cfg_path.join(SALT_FILE);
