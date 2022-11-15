@@ -2,17 +2,15 @@
 {% block title %} Fedimint {% endblock %}
 
 {% block content %}
-<div>
-    <div class="container text-center mt-5">
-
-        <!-- Show Your Federation Name -->
-        <h1>Configure Guardians for the {{federation_name}} Federation</h1>
-        <!-- show your connection string-->
+<div class="container text-center mt-5">
+    <!-- Show Your Federation Name -->
+    <h1>Add the Other Guardians' Connection Strings for the {{federation_name}} Federation</h1>
+    <form id="guardians_form">
         {% for guardian in guardians %}
         {% if guardian.config_string != "" %}
-        <div class="input-group">
-            <label for="connection_string">Your Connection String</label>
-            <input type="text" class="form-control" id="connection_string" value="{{guardian.config_string}}" readonly>
+        <div class="input-group mt-3">
+            <input type="text" class="form-control" id="my_connection_string" value="{{guardian.config_string}}"
+                readonly>
             <!-- Copy button that copies contents of the connection string on click -->
             <div class="input-group-append">
                 <button class="btn btn-outline-primary" type="button" id="copy-button">Copy</button>
@@ -20,25 +18,46 @@
         </div>
         {% else %}
         <div class="input-group">
-            <label for="{{guardian.name}}-name">{{guardian.name}}'s Name</label>
-            <input type="text" class="form-control" id="{{guardian.name}}-name" placeholder="{{guardian.name}}'s Name">
-        </div>
-        <div class="input-group">
-            <label for="{{guardian.name}}-connection_string">{{guardian.name}}'s Connection String</label>
             <input type="text" class="form-control" id="{{guardian.name}}-connection_string"
                 placeholder="{{guardian.name}}'s Connection String">
         </div>
         {% endif %}
         {% endfor %}
-    </div>
+        <button class="btn btn-primary mt-3" type="submit">Submit</button>
+    </form>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
     document.querySelector("#copy-button").addEventListener("click", function (e) {
-        const config = document.getElementById("client-config");
+        const config = document.getElementById("my_connection_string");
         navigator.clipboard.writeText(config.value);
     });
+
+    // concat all text inputs into single array then submit array as form
+    const myForm = document.querySelector("#guardians_form");
+    myForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        let connections_strings = Array.from(myForm.querySelectorAll('input[type="text"]')).map(
+            (input) => input.value);
+
+        // TODO: this throws the error, axum needs it as form data matching the template form 
+        fetch("/post_guardians", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded"
+            },
+            body: JSON.stringify(connections_strings)
+        }).then((response) => {
+            console.log(response);
+            if (response.ok) {
+                window.location.href = "/confirm";
+            } else {
+                alert("Something went wrong");
+            }
+        });
+    })
+
 </script>
 {% endblock %}

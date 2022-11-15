@@ -84,59 +84,53 @@ async fn add_guardians_page(Extension(state): Extension<MutableState>) -> AddGua
     }
 }
 
-// async fn add_guardian(
-//     Extension(state): Extension<MutableState>,
-//     Form(form): Form<Guardian>,
-// ) -> Result<Redirect, (StatusCode, String)> {
-//     state.write().unwrap().guardians.push(Guardian {
-//         config_string: form.config_string,
-//         name: form.name,
-//     });
-//     Ok(Redirect::to("/dealer".parse().unwrap()))
-// }
+fn parse_name_from_connection_string(connection_string: &String) -> String {
+    let parts = connection_string.split(":").collect::<Vec<&str>>();
+    parts[2].to_string()
+}
 
-// #[derive(Deserialize, Debug)]
-// #[allow(dead_code)]
-// struct FedName {
-//     federation_name: String,
-//     btc_rpc: String,
-// }
+#[derive(Deserialize, Debug, Clone)]
+#[allow(dead_code)]
+pub struct GuardiansForm {
+    connection_strings: Vec<String>,
+}
 
-// async fn deal(
-//     Extension(state): Extension<MutableState>,
-//     Form(form): Form<FedName>,
-// ) -> Result<Redirect, (StatusCode, String)> {
-//     let mut state = state.write().unwrap();
-//     state.federation_name = form.federation_name;
-//     state.btc_rpc = Some(form.btc_rpc.clone());
+#[debug_handler]
+async fn post_guardians(
+    Extension(state): Extension<MutableState>,
+    Form(form): Form<GuardiansForm>,
+) -> Result<Redirect, (StatusCode, String)> {
+    let mut state = state.write().unwrap();
 
-//     let parts: Vec<&str> = form.btc_rpc.split('@').collect();
-//     let user_pass = parts[0].to_string();
-//     let btc_rpc_address = parts[1].to_string();
-//     let parts: Vec<&str> = user_pass.split(':').collect();
-//     let btc_rpc_user = parts[0].to_string();
-//     let btc_rpc_pass = parts[1].to_string();
-//     let btc_rpc = BitcoindRpcCfg {
-//         btc_rpc_address,
-//         btc_rpc_user,
-//         btc_rpc_pass,
-//     };
+    let mut guardians = state.guardians.clone();
+    for i in 0..form.connection_strings.len() {
+        let connection_string = form.connection_strings[i].clone();
+        guardians[i] = Guardian {
+            name: parse_name_from_connection_string(&connection_string),
+            config_string: connection_string,
+        };
+    }
 
-//     let (server_configs, client_config) = configgen(
-//         state.federation_name.clone(),
-//         state.guardians.clone(),
-//         btc_rpc,
-//     );
-//     state.server_configs = Some(server_configs.clone());
-//     state.client_config = Some(client_config.clone());
+    state.guardians = guardians;
 
-//     tracing::info!("Generated configs");
+    Ok(Redirect::to("/confirm".parse().unwrap()))
+}
 
-//     save_configs(&server_configs[0].1, &client_config, &state.cfg_path);
-//     run_fedimint(&mut state);
+#[derive(Template)]
+#[template(path = "confirm.html")]
+struct ConfirmTemplate {
+    federation_name: String,
+    guardians: Vec<Guardian>,
+}
 
-//     Ok(Redirect::to("/configs".parse().unwrap()))
-// }
+async fn confirm_page(Extension(state): Extension<MutableState>) -> ConfirmTemplate {
+    let state = state.read().unwrap();
+
+    ConfirmTemplate {
+        federation_name: state.federation_name.clone(),
+        guardians: state.guardians.clone(),
+    }
+}
 
 #[derive(Template)]
 #[template(path = "params.html")]
@@ -176,9 +170,9 @@ async fn post_federation_params(
         config_string,
     }];
 
-    for i in 0..form.guardians_count {
+    for i in 1..form.guardians_count {
         guardians.push(Guardian {
-            name: format!("Guardian {}", i),
+            name: format!("Guardian-{}", i + 1),
             config_string: "".into(),
         });
     }
@@ -321,8 +315,8 @@ pub async fn run_ui(cfg_path: PathBuf, sender: Sender<UiMessage>, port: u32) {
         .route("/federation_params", get(params_page))
         .route("/post_federation_params", post(post_federation_params))
         .route("/add_guardians", get(add_guardians_page))
-        // .route("/submit_guardians".post(submit_guardians))
-        // .route("/configs", get(display_configs))
+        .route("/post_guardians", post(post_guardians))
+        .route("/confirm", get(confirm_page))
         //.route("/distributed_key_gen", post(distributed_key_gen))
         .route("/qr", get(qr))
         .layer(Extension(state));
