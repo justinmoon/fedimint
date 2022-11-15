@@ -59,26 +59,35 @@ pub struct Guardian {
 
 #[derive(Template)]
 #[template(path = "home.html")]
-struct HomeTemplate {
-    federation_name: String,
-    running: bool,
-    federation_connection_string: String,
-}
+struct HomeTemplate {}
 
 async fn home_page(Extension(state): Extension<MutableState>) -> HomeTemplate {
+    HomeTemplate {}
+}
+
+#[derive(Template)]
+#[template(path = "run.html")]
+struct RunTemplate {
+    connection_string: String,
+    has_connection_string: bool,
+}
+
+async fn run_page(Extension(state): Extension<MutableState>) -> RunTemplate {
     let state = state.read().unwrap();
-    let federation_connection_string = match state.client_config.clone() {
-        Some(client_config) => {
-            let connect_info = WsFederationConnect::from(&client_config);
-            serde_json::to_string(&connect_info).unwrap()
+    let path = state.cfg_path.join("client.json");
+    let connection_string: String = match std::fs::File::open(path) {
+        Ok(file) => {
+            let cfg: ClientConfig =
+                serde_json::from_reader(file).expect("Could not parse cfg file.");
+            let connect_info = WsFederationConnect::from(&cfg);
+            serde_json::to_string(&connect_info).expect("should deserialize")
         }
-        None => "".into(),
+        Err(_) => "".into(),
     };
 
-    HomeTemplate {
-        federation_name: state.federation_name.clone(),
-        running: state.running,
-        federation_connection_string,
+    RunTemplate {
+        connection_string: connection_string.clone(),
+        has_connection_string: connection_string.len() > 0,
     }
 }
 
@@ -236,7 +245,7 @@ async fn post_guardians(
     //     }
     //     None => Ok(Redirect::to("/post_guardians".parse().unwrap())),
     // }
-    Ok(Redirect::to("/qr".parse().unwrap()))
+    Ok(Redirect::to("/run".parse().unwrap()))
 }
 
 // #[derive(Template)] #[template(path = "confirm.html")]
@@ -309,10 +318,19 @@ async fn post_federation_params(
 }
 
 async fn qr(Extension(state): Extension<MutableState>) -> impl axum::response::IntoResponse {
-    // let client_config = state.read().unwrap().client_config.clone().unwrap();
-    // let connect_info = WsFederationConnect::from(&client_config);
-    // let string = serde_json::to_string(&connect_info).unwrap();
-    let png_bytes: Vec<u8> = qrcode_generator::to_png_to_vec("foo", QrCodeEcc::Low, 1024).unwrap();
+    let state = state.read().unwrap();
+    let path = state.cfg_path.join("client.json");
+    let connection_string: String = match std::fs::File::open(path) {
+        Ok(file) => {
+            let cfg: ClientConfig =
+                serde_json::from_reader(file).expect("Could not parse cfg file.");
+            let connect_info = WsFederationConnect::from(&cfg);
+            serde_json::to_string(&connect_info).expect("should deserialize")
+        }
+        Err(_) => "".into(),
+    };
+    let png_bytes: Vec<u8> =
+        qrcode_generator::to_png_to_vec(connection_string, QrCodeEcc::Low, 1024).unwrap();
     (
         axum::response::Headers([(axum::http::header::CONTENT_TYPE, "image/png")]),
         png_bytes,
@@ -382,8 +400,7 @@ pub async fn run_ui(cfg_path: PathBuf, sender: Sender<UiMessage>, port: u32, pas
         .route("/post_federation_params", post(post_federation_params))
         .route("/add_guardians", get(add_guardians_page))
         .route("/post_guardians", post(post_guardians))
-        // .route("/confirm", get(confirm_page))
-        // .route("/distributed_key_gen", post(distributed_key_gen))
+        .route("/run", get(run_page))
         .route("/qr", get(qr))
         .layer(Extension(state));
 
