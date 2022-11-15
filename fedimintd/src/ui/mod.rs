@@ -98,11 +98,13 @@ async fn add_guardians_page(Extension(state): Extension<MutableState>) -> AddGua
 }
 
 fn parse_name_from_connection_string(connection_string: &String) -> String {
+    tracing::info!("connection_string {:?}", connection_string);
     let parts = connection_string.split(":").collect::<Vec<&str>>();
     parts[2].to_string()
 }
 
 fn parse_cert_from_connection_string(connection_string: &String) -> String {
+    tracing::info!("connection_string {:?}", connection_string);
     let parts = connection_string.split(":").collect::<Vec<&str>>();
     parts[3].to_string()
 }
@@ -120,6 +122,7 @@ async fn post_guardians(
 ) -> Result<Redirect, (StatusCode, String)> {
     let connection_strings: Vec<String> =
         serde_json::from_str(&form.connection_strings).expect("not json");
+    tracing::info!("connection_strings {:?}", connection_strings);
     {
         let mut state = state.write().unwrap();
         let mut guardians = state.guardians.clone();
@@ -150,7 +153,6 @@ async fn post_guardians(
         let denominations = (1..12)
             .map(|amount| Amount::from_sat(10 * amount))
             .collect();
-        let bitcoind_rpc = "127.0.0.1:18443".into();
         let mut task_group = TaskGroup::new();
         tracing::info!("running dkg");
         let msg = RunDkgMessage {
@@ -158,7 +160,10 @@ async fn post_guardians(
             denominations,
             federation_name: state.federation_name.clone(),
             certs: connection_strings,
-            bitcoind_rpc,
+            bitcoind_rpc: state
+                .bitcoind_rpc
+                .clone()
+                .expect("bitcoind rpc should be defined"),
             pk: rustls::PrivateKey(pk_bytes),
             task_group,
             nonce,
@@ -266,7 +271,7 @@ pub struct ParamsForm {
     guardian_name: String,
     federation_name: String,
     ip_addr: String,
-    bitcoin_rpc: String,
+    bitcoind_rpc: String,
     password: String,
     guardians_count: u32,
 }
@@ -303,6 +308,7 @@ async fn post_federation_params(
     state.guardians = guardians;
     state.federation_name = form.federation_name;
     state.password = Some(form.password);
+    state.bitcoind_rpc = Some(form.bitcoind_rpc);
 
     Ok(Redirect::to("/add_guardians".parse().unwrap()))
 }
@@ -328,7 +334,7 @@ struct State {
     server_configs: Option<Vec<(Guardian, ServerConfig)>>,
     client_config: Option<ClientConfig>,
     password: Option<String>,
-    btc_rpc: Option<String>,
+    bitcoind_rpc: Option<String>,
 }
 type MutableState = Arc<RwLock<State>>;
 
@@ -371,7 +377,7 @@ pub async fn run_ui(cfg_path: PathBuf, sender: Sender<UiMessage>, port: u32) {
         sender,
         server_configs: None,
         client_config: None,
-        btc_rpc: None,
+        bitcoind_rpc: None,
         password: None,
     }));
 

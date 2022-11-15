@@ -5,7 +5,7 @@
 <div class="container text-center mt-5">
     <!-- Show Your Federation Name -->
     <h1>Add the Other Guardians' Connection Strings for the {{federation_name}} Federation</h1>
-    <form id="guardians_form">
+    <form id="guardians_form" action="/post_guardians" method="post">
         {% for guardian in guardians %}
         {% if guardian.config_string != "" %}
             <div>{{loop.index0}}</div>
@@ -36,34 +36,12 @@
         navigator.clipboard.writeText(config.value);
     });
 
-    // concat all text inputs into single array then submit array as form
-    const myForm = document.querySelector("#guardians_form");
-    myForm.addEventListener("submit", (e) => {
-        e.preventDefault();
-
-        let connection_strings = Array.from(myForm.querySelectorAll('input[type="text"]')).map(
-            (input) => input.value);
-        console.log("connection strings", connection_strings);
-        const body = new URLSearchParams();
-        body.append("connection_strings", JSON.stringify(connection_strings))
-
-        fetch("/post_guardians", {
-            method: "POST",
-            body,
-            timeout: 100000 
-        }).then((response) => {
-            console.log(response);
-            if (response.ok) {
-                window.location.href = "/confirm";
-            } else {
-                alert("Something went wrong");
-            }
-            window.location.replace("/qr");
-        }).catch(e => {
-            console.error(e)
-            window.location.replace("/qr");
-        });
-    })
+    // make a json vec all connection strings on submit
+    const form = document.querySelector("#guardians_form")
+    form.addEventListener('formdata', async (e) => {
+        let connection_strings = Array.from(form.querySelectorAll('input[type="text"]')).map((input) => input.value);
+        e.formData.set("connection_strings", JSON.stringify(connection_strings))
+    });
 
 </script>
 {% endblock %}
