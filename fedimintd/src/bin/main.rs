@@ -79,6 +79,7 @@ async fn main() -> anyhow::Result<()> {
     let (decrypted, _) = encrypted_read(&key, opts.cfg_path.join(CONFIG_FILE));
     let cfg_string = String::from_utf8(decrypted).expect("is not correctly encoded");
     let cfg: ServerConfig = serde_json::from_str(&cfg_string).expect("could not parse config");
+    tracing::info!("running fedimint {:?}", &cfg);
 
     let db: Database = fedimint_rocksdb::RocksDb::open(opts.cfg_path.join(DB_FILE))
         .expect("Error opening DB")

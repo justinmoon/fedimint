@@ -170,7 +170,7 @@ pub type Result<T> = std::result::Result<T, ApiError>;
 
 #[derive(Debug, Error)]
 pub enum ApiError {
-    #[error("Rpc error: {0}")]
+    #[error("client Rpc error: {0}")]
     RpcError(#[from] JsonRpcError),
     #[error("Error retrieving the transaction: {0}")]
     TransactionError(String),

@@ -131,7 +131,7 @@ async fn post_guardians(
         }
         state.guardians = guardians;
     };
-    let msg = {
+    let (state_sender, msg) = {
         let state = state.read().unwrap();
 
         //
@@ -150,7 +150,7 @@ async fn post_guardians(
         let denominations = (1..12)
             .map(|amount| Amount::from_sat(10 * amount))
             .collect();
-        let bitcoind_rpc = "127.0.0.118443".into();
+        let bitcoind_rpc = "127.0.0.1:18443".into();
         let mut task_group = TaskGroup::new();
         tracing::info!("running dkg");
         let msg = RunDkgMessage {
@@ -172,7 +172,7 @@ async fn post_guardians(
         //     tracing::info!("Canceled");
         //     return Ok(Redirect::to("/post_guardisn".parse().unwrap()));
         // };
-        msg
+        (state.sender.clone(), msg)
     };
     // tokio::task::spawn(async move {
     //     // Tell fedimintd that setup is complete
@@ -185,7 +185,7 @@ async fn post_guardians(
     // let (send, recv) = tokio::sync::oneshot::channel();
     let handle = tokio::runtime::Handle::current();
 
-    let (sender, receive) = tokio::sync::oneshot::channel();
+    let (sender, receive) = tokio::sync::oneshot::channel::<Option<ClientConfig>>();
     std::thread::spawn(move || {
         // futures::executor::block_on(async move {
         tracing::info!("=dkg");
@@ -212,17 +212,29 @@ async fn post_guardians(
                     let client_file =
                         std::fs::File::create(client_path).expect("Could not create cfg file");
                     serde_json::to_writer_pretty(client_file, &client).unwrap();
-                    sender.send("/confirm").unwrap();
+                    state_sender
+                        .send(UiMessage::SetupComplete)
+                        .await
+                        .expect("failed to send over channel");
                 }
                 Err(e) => {
                     tracing::info!("Canceled {:?}", e);
-                    sender.send("/post_guardians").unwrap();
+                    sender.send(None).unwrap();
                 }
             };
         });
     });
-    let url = receive.blocking_recv().unwrap();
-    Ok(Redirect::to(url.parse().unwrap()))
+    // return Ok(Redirect::to("/qr".parse().unwrap()));
+    // match receive.blocking_recv().unwrap() {
+    //     Some(client_config) => {
+    //         let mut state = state.write().unwrap();
+    //         run_fedimint(&mut state);
+    //         state.client_config = Some(client_config);
+    //         Ok(Redirect::to("/qr".parse().unwrap()))
+    //     }
+    //     None => Ok(Redirect::to("/post_guardians".parse().unwrap())),
+    // }
+    Ok(Redirect::to("/qr".parse().unwrap()))
 }
 
 // #[derive(Template)] #[template(path = "confirm.html")]
@@ -296,10 +308,10 @@ async fn post_federation_params(
 }
 
 async fn qr(Extension(state): Extension<MutableState>) -> impl axum::response::IntoResponse {
-    let client_config = state.read().unwrap().client_config.clone().unwrap();
-    let connect_info = WsFederationConnect::from(&client_config);
-    let string = serde_json::to_string(&connect_info).unwrap();
-    let png_bytes: Vec<u8> = qrcode_generator::to_png_to_vec(string, QrCodeEcc::Low, 1024).unwrap();
+    // let client_config = state.read().unwrap().client_config.clone().unwrap();
+    // let connect_info = WsFederationConnect::from(&client_config);
+    // let string = serde_json::to_string(&connect_info).unwrap();
+    let png_bytes: Vec<u8> = qrcode_generator::to_png_to_vec("foo", QrCodeEcc::Low, 1024).unwrap();
     (
         axum::response::Headers([(axum::http::header::CONTENT_TYPE, "image/png")]),
         png_bytes,
@@ -332,7 +344,7 @@ pub struct RunDkgMessage {
     key: LessSafeKey,
 }
 
-// #[derive(Debug)]
+#[derive(Debug)]
 pub enum UiMessage {
     SetupComplete,
     // RunDkg(RunDkgMessage),

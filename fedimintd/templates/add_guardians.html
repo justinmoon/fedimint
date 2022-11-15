@@ -49,7 +49,8 @@
 
         fetch("/post_guardians", {
             method: "POST",
-            body
+            body,
+            timeout: 100000 
         }).then((response) => {
             console.log(response);
             if (response.ok) {
@@ -57,10 +58,10 @@
             } else {
                 alert("Something went wrong");
             }
-            debugger
+            window.location.replace("/qr");
         }).catch(e => {
             console.error(e)
-            debugger
+            window.location.replace("/qr");
         });
     })
 
