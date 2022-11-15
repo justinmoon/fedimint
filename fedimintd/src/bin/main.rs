@@ -67,7 +67,12 @@ async fn main() -> anyhow::Result<()> {
 
     if let Some(ui_port) = opts.ui_port {
         // Spawn UI, wait for it to finish
-        tokio::spawn(run_ui(opts.cfg_path.clone(), sender, ui_port));
+        tokio::spawn(run_ui(
+            opts.cfg_path.clone(),
+            sender,
+            ui_port,
+            opts.password.clone(), // assuming that password is set
+        ));
         receiver
             .recv()
             .await

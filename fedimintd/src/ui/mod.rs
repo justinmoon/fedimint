@@ -145,10 +145,7 @@ async fn post_guardians(
         //     .iter()
         //     .map(|s| parse_cert_from_connection_string(s))
         //     .collect();
-        let key = get_key(
-            state.password.clone().unwrap(),
-            state.cfg_path.join(SALT_FILE),
-        );
+        let key = get_key(state.password.clone(), state.cfg_path.join(SALT_FILE));
         let (pk_bytes, nonce) = encrypted_read(&key, state.cfg_path.join(TLS_PK));
         let denominations = (1..12)
             .map(|amount| Amount::from_sat(10 * amount))
@@ -272,7 +269,6 @@ pub struct ParamsForm {
     federation_name: String,
     ip_addr: String,
     bitcoind_rpc: String,
-    password: String,
     guardians_count: u32,
 }
 
@@ -289,7 +285,7 @@ async fn post_federation_params(
         state.cfg_path.clone(),
         form.ip_addr,
         form.guardian_name.clone(),
-        form.password.clone(),
+        state.password.clone(),
         port,
     );
 
@@ -307,7 +303,6 @@ async fn post_federation_params(
     // update state
     state.guardians = guardians;
     state.federation_name = form.federation_name;
-    state.password = Some(form.password);
     state.bitcoind_rpc = Some(form.bitcoind_rpc);
 
     Ok(Redirect::to("/add_guardians".parse().unwrap()))
@@ -333,7 +328,7 @@ struct State {
     sender: Sender<UiMessage>,
     server_configs: Option<Vec<(Guardian, ServerConfig)>>,
     client_config: Option<ClientConfig>,
-    password: Option<String>,
+    password: String,
     bitcoind_rpc: Option<String>,
 }
 type MutableState = Arc<RwLock<State>>;
@@ -356,7 +351,7 @@ pub enum UiMessage {
     // RunDkg(RunDkgMessage),
 }
 
-pub async fn run_ui(cfg_path: PathBuf, sender: Sender<UiMessage>, port: u32) {
+pub async fn run_ui(cfg_path: PathBuf, sender: Sender<UiMessage>, port: u32, password: String) {
     let mut rng = OsRng;
     let secp = bitcoin::secp256k1::Secp256k1::new();
     let config_string = "".to_string();
@@ -378,7 +373,7 @@ pub async fn run_ui(cfg_path: PathBuf, sender: Sender<UiMessage>, port: u32) {
         server_configs: None,
         client_config: None,
         bitcoind_rpc: None,
-        password: None,
+        password,
     }));
 
     let app = Router::new()
