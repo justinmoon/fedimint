@@ -1,5 +1,5 @@
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock, RwLockWriteGuard};
 
 use askama::Template;
@@ -11,31 +11,44 @@ use axum::{
 };
 use axum_macros::debug_handler;
 use fedimint_api::config::BitcoindRpcCfg;
+use fedimint_api::task::TaskGroup;
+use fedimint_api::Amount;
 use fedimint_core::config::ClientConfig;
 use fedimint_server::config::ServerConfig;
 use http::StatusCode;
 use mint_client::api::WsFederationConnect;
 use qrcode_generator::QrCodeEcc;
 use rand::rngs::OsRng;
+use ring::aead::{LessSafeKey, Nonce};
 use serde::Deserialize;
 use tokio::sync::mpsc::Sender;
+use tokio_rustls::rustls;
 
+use crate::encrypt::{encrypted_read, encrypted_write, get_key, CONFIG_FILE, SALT_FILE, TLS_PK};
 use crate::ui::configgen::configgen;
-use crate::ui::distributedgen::create_cert;
+use crate::ui::distributedgen::{create_cert, run_dkg};
 mod configgen;
 mod distributedgen;
 
-fn run_fedimint(state: &mut RwLockWriteGuard<State>) {
-    let sender = state.sender.clone();
-    tokio::task::spawn(async move {
-        // Tell fedimintd that setup is complete
-        sender
-            .send(UiMessage::SetupComplete)
-            .await
-            .expect("failed to send over channel");
-    });
-    state.running = true;
-}
+// fn run_fedimint(state: &mut RwLockWriteGuard<State>) {
+//     let sender = state.sender.clone();
+//     tokio::task::spawn(async move {
+//         // Tell fedimintd that setup is complete
+//         sender
+//             .send(UiMessage::SetupComplete)
+//             .await
+//             .expect("failed to send over channel");
+//     });
+//     state.running = true;
+// }
+
+// fn run_dkg(state: &mut RwLockWriteGuard<State>, msg: RunDkgMessage) {
+//     let sender = state.sender.clone();
+//     tokio::task::spawn(async move {
+//         // Tell fedimintd that setup is complete
+//         sender.send(msg).await.expect("failed to send over channel");
+//     });
+// }
 
 #[derive(Deserialize, Debug, Clone)]
 #[allow(dead_code)]
@@ -89,10 +102,15 @@ fn parse_name_from_connection_string(connection_string: &String) -> String {
     parts[2].to_string()
 }
 
+fn parse_cert_from_connection_string(connection_string: &String) -> String {
+    let parts = connection_string.split(":").collect::<Vec<&str>>();
+    parts[3].to_string()
+}
+
 #[derive(Deserialize, Debug, Clone)]
 #[allow(dead_code)]
 pub struct GuardiansForm {
-    connection_strings: Vec<String>,
+    connection_strings: String,
 }
 
 #[debug_handler]
@@ -100,37 +118,127 @@ async fn post_guardians(
     Extension(state): Extension<MutableState>,
     Form(form): Form<GuardiansForm>,
 ) -> Result<Redirect, (StatusCode, String)> {
-    let mut state = state.write().unwrap();
+    let connection_strings: Vec<String> =
+        serde_json::from_str(&form.connection_strings).expect("not json");
+    {
+        let mut state = state.write().unwrap();
+        let mut guardians = state.guardians.clone();
+        for (i, connection_string) in connection_strings.clone().into_iter().enumerate() {
+            guardians[i] = Guardian {
+                name: parse_name_from_connection_string(&connection_string),
+                config_string: connection_string,
+            };
+        }
+        state.guardians = guardians;
+    };
+    let msg = {
+        let state = state.read().unwrap();
 
-    let mut guardians = state.guardians.clone();
-    for i in 0..form.connection_strings.len() {
-        let connection_string = form.connection_strings[i].clone();
-        guardians[i] = Guardian {
-            name: parse_name_from_connection_string(&connection_string),
-            config_string: connection_string,
+        //
+        // Actually run DKG
+        //
+
+        // let certs = connection_strings
+        //     .iter()
+        //     .map(|s| parse_cert_from_connection_string(s))
+        //     .collect();
+        let key = get_key(
+            state.password.clone().unwrap(),
+            state.cfg_path.join(SALT_FILE),
+        );
+        let (pk_bytes, nonce) = encrypted_read(&key, state.cfg_path.join(TLS_PK));
+        let denominations = (1..12)
+            .map(|amount| Amount::from_sat(10 * amount))
+            .collect();
+        let bitcoind_rpc = "127.0.0.118443".into();
+        let mut task_group = TaskGroup::new();
+        tracing::info!("running dkg");
+        let msg = RunDkgMessage {
+            dir_out_path: state.cfg_path.clone(),
+            denominations,
+            federation_name: state.federation_name.clone(),
+            certs: connection_strings,
+            bitcoind_rpc,
+            pk: rustls::PrivateKey(pk_bytes),
+            task_group,
+            nonce,
+            key,
         };
-    }
+        // .await
+        // {
+        //     tracing::info!("DKG succeeded");
+        //     v
+        // } else {
+        //     tracing::info!("Canceled");
+        //     return Ok(Redirect::to("/post_guardisn".parse().unwrap()));
+        // };
+        msg
+    };
+    // tokio::task::spawn(async move {
+    //     // Tell fedimintd that setup is complete
+    //     sender.send(msg).await.expect("failed to send over channel");
+    // })
+    // .await
+    // .expect("couldn't send over channel");
 
-    state.guardians = guardians;
+    // tokio::task::spawn(async move {
+    // let (send, recv) = tokio::sync::oneshot::channel();
+    let handle = tokio::runtime::Handle::current();
 
-    Ok(Redirect::to("/confirm".parse().unwrap()))
+    let (sender, receive) = tokio::sync::oneshot::channel();
+    std::thread::spawn(move || {
+        // futures::executor::block_on(async move {
+        tracing::info!("=dkg");
+        handle.block_on(async move {
+            let mut task_group = TaskGroup::new();
+            match run_dkg(
+                &msg.dir_out_path,
+                msg.denominations,
+                msg.federation_name,
+                msg.certs,
+                msg.bitcoind_rpc,
+                msg.pk,
+                &mut task_group,
+            )
+            .await
+            {
+                Ok((server, client)) => {
+                    tracing::info!("DKG succeeded");
+                    let server_path = msg.dir_out_path.join(CONFIG_FILE);
+                    let config_bytes = serde_json::to_string(&server).unwrap().into_bytes();
+                    encrypted_write(config_bytes, &msg.key, msg.nonce, server_path);
+
+                    let client_path: PathBuf = msg.dir_out_path.join("client.json");
+                    let client_file =
+                        std::fs::File::create(client_path).expect("Could not create cfg file");
+                    serde_json::to_writer_pretty(client_file, &client).unwrap();
+                    sender.send("/confirm").unwrap();
+                }
+                Err(e) => {
+                    tracing::info!("Canceled {:?}", e);
+                    sender.send("/post_guardians").unwrap();
+                }
+            };
+        });
+    });
+    let url = receive.blocking_recv().unwrap();
+    Ok(Redirect::to(url.parse().unwrap()))
 }
 
-#[derive(Template)]
-#[template(path = "confirm.html")]
-struct ConfirmTemplate {
-    federation_name: String,
-    guardians: Vec<Guardian>,
-}
+// #[derive(Template)] #[template(path = "confirm.html")]
+// struct ConfirmTemplate {
+//     federation_name: String,
+//     guardians: Vec<Guardian>,
+// }
 
-async fn confirm_page(Extension(state): Extension<MutableState>) -> ConfirmTemplate {
-    let state = state.read().unwrap();
+// async fn confirm_page(Extension(state): Extension<MutableState>) -> ConfirmTemplate {
+//     let state = state.read().unwrap();
 
-    ConfirmTemplate {
-        federation_name: state.federation_name.clone(),
-        guardians: state.guardians.clone(),
-    }
-}
+//     ConfirmTemplate {
+//         federation_name: state.federation_name.clone(),
+//         guardians: state.guardians.clone(),
+//     }
+// }
 
 #[derive(Template)]
 #[template(path = "params.html")]
@@ -158,11 +266,14 @@ async fn post_federation_params(
 ) -> Result<Redirect, (StatusCode, String)> {
     let mut state = state.write().unwrap();
 
+    let port = portpicker::pick_unused_port().expect("No ports free");
+
     let config_string = create_cert(
         state.cfg_path.clone(),
         form.ip_addr,
         form.guardian_name.clone(),
-        form.password,
+        form.password.clone(),
+        port,
     );
 
     let mut guardians = vec![Guardian {
@@ -179,82 +290,10 @@ async fn post_federation_params(
     // update state
     state.guardians = guardians;
     state.federation_name = form.federation_name;
+    state.password = Some(form.password);
 
     Ok(Redirect::to("/add_guardians".parse().unwrap()))
 }
-
-#[derive(Deserialize, Debug, Clone)]
-#[allow(dead_code)]
-pub struct ReceiveConfigsForm {
-    server_config: String,
-    client_config: String,
-}
-
-async fn receive_configs(
-    Extension(state): Extension<MutableState>,
-    Form(form): Form<ReceiveConfigsForm>,
-) -> Result<Redirect, (StatusCode, String)> {
-    let mut state = state.write().unwrap();
-    let server_config: ServerConfig = serde_json::from_str(&form.server_config).unwrap();
-    let client_config: ClientConfig = serde_json::from_str(&form.client_config).unwrap();
-    save_configs(&server_config, &client_config, &state.cfg_path);
-
-    // update state
-    state.client_config = Some(client_config);
-    state.federation_name = server_config.federation_name;
-
-    // run fedimint
-    run_fedimint(&mut state);
-
-    Ok(Redirect::to("/".parse().unwrap()))
-}
-
-fn save_configs(server_config: &ServerConfig, client_config: &ClientConfig, cfg_path: &PathBuf) {
-    // Recursively create config directory if it doesn't exist
-    let parent = cfg_path.parent().unwrap();
-    std::fs::create_dir_all(parent).expect("Failed to create config directory");
-
-    // Save the configs
-    let cfg_file = std::fs::File::create(cfg_path).expect("Could not create cfg file");
-    serde_json::to_writer_pretty(cfg_file, &server_config).unwrap();
-    let client_cfg_path = parent.join("client.json");
-    let client_cfg_file =
-        std::fs::File::create(&client_cfg_path).expect("Could not create cfg file");
-    serde_json::to_writer_pretty(client_cfg_file, &client_config).unwrap();
-}
-
-// #[derive(Template)]
-// #[template(path = "configs.html")]
-// struct DisplayConfigsTemplate {
-//     federation_name: String,
-//     server_configs: Vec<(Guardian, String)>,
-//     client_config: String,
-//     federation_connection_string: String,
-// }
-
-// async fn display_configs(Extension(state): Extension<MutableState>) -> DisplayConfigsTemplate {
-//     let state = state.read().unwrap();
-//     let server_configs = state
-//         .server_configs
-//         .clone()
-//         .unwrap()
-//         .into_iter()
-//         .map(|(guardian, cfg)| (guardian, serde_json::to_string(&cfg).unwrap()))
-//         .collect();
-//     let federation_connection_string = match state.client_config.clone() {
-//         Some(client_config) => {
-//             let connect_info = WsFederationConnect::from(&client_config);
-//             serde_json::to_string(&connect_info).unwrap()
-//         }
-//         None => "".into(),
-//     };
-//     DisplayConfigsTemplate {
-//         federation_name: state.federation_name.clone(),
-//         server_configs,
-//         client_config: serde_json::to_string(&state.client_config.as_ref().unwrap()).unwrap(),
-//         federation_connection_string,
-//     }
-// }
 
 async fn qr(Extension(state): Extension<MutableState>) -> impl axum::response::IntoResponse {
     let client_config = state.read().unwrap().client_config.clone().unwrap();
@@ -267,7 +306,6 @@ async fn qr(Extension(state): Extension<MutableState>) -> impl axum::response::I
     )
 }
 
-#[derive(Debug)]
 struct State {
     federation_name: String,
     guardians: Vec<Guardian>,
@@ -277,13 +315,27 @@ struct State {
     sender: Sender<UiMessage>,
     server_configs: Option<Vec<(Guardian, ServerConfig)>>,
     client_config: Option<ClientConfig>,
+    password: Option<String>,
     btc_rpc: Option<String>,
 }
 type MutableState = Arc<RwLock<State>>;
 
-#[derive(Debug)]
+pub struct RunDkgMessage {
+    dir_out_path: PathBuf,
+    denominations: Vec<Amount>,
+    federation_name: String,
+    certs: Vec<String>,
+    bitcoind_rpc: String,
+    pk: rustls::PrivateKey,
+    task_group: TaskGroup,
+    nonce: Nonce,
+    key: LessSafeKey,
+}
+
+// #[derive(Debug)]
 pub enum UiMessage {
     SetupComplete,
+    // RunDkg(RunDkgMessage),
 }
 
 pub async fn run_ui(cfg_path: PathBuf, sender: Sender<UiMessage>, port: u32) {
@@ -308,6 +360,7 @@ pub async fn run_ui(cfg_path: PathBuf, sender: Sender<UiMessage>, port: u32) {
         server_configs: None,
         client_config: None,
         btc_rpc: None,
+        password: None,
     }));
 
     let app = Router::new()
@@ -316,8 +369,8 @@ pub async fn run_ui(cfg_path: PathBuf, sender: Sender<UiMessage>, port: u32) {
         .route("/post_federation_params", post(post_federation_params))
         .route("/add_guardians", get(add_guardians_page))
         .route("/post_guardians", post(post_guardians))
-        .route("/confirm", get(confirm_page))
-        //.route("/distributed_key_gen", post(distributed_key_gen))
+        // .route("/confirm", get(confirm_page))
+        // .route("/distributed_key_gen", post(distributed_key_gen))
         .route("/qr", get(qr))
         .layer(Extension(state));
 

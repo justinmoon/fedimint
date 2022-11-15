@@ -52,13 +52,13 @@ pub fn create_cert(
     address: String,
     guardian_name: String,
     password: String,
+    port: u16,
 ) -> String {
-    const BASE_PORT: u16 = 17240;
     let salt: [u8; 16] = rand::random();
     println!("dir_out_path: {:?}", dir_out_path);
     fs::write(dir_out_path.join(SALT_FILE), hex::encode(salt)).expect("write error");
     let key = get_key(password, dir_out_path.join(SALT_FILE));
-    gen_tls(&dir_out_path, address, BASE_PORT, guardian_name, &key)
+    gen_tls(&dir_out_path, address, port, guardian_name, &key)
 }
 
 // #[tokio::main]
@@ -121,7 +121,7 @@ pub fn create_cert(
 //     }
 // }
 
-async fn run_dkg(
+pub async fn run_dkg(
     dir_out_path: &Path,
     denominations: Vec<Amount>,
     federation_name: String,
@@ -171,6 +171,7 @@ async fn run_dkg(
 }
 
 fn parse_peer_params(url: String) -> PeerServerParams {
+    tracing::info!("peer params: {:?}", url);
     let split: Vec<&str> = url.split(':').collect();
     assert_eq!(split.len(), 4, "Cannot parse cert string");
     let base_port = split[1].parse().expect("could not parse base port");
@@ -193,6 +194,7 @@ fn gen_tls(
     let (cert, pk) = fedimint_server::config::gen_cert_and_key(&name).expect("TLS gen failed");
     encrypted_write(pk.0, key, zero_nonce(), dir_out_path.join(TLS_PK));
 
+    tracing::info!("server name: {:?}", name);
     rustls::ServerName::try_from(name.as_str()).expect("Valid DNS name");
     // TODO Base64 encode name, hash fingerprint cert_string
     let cert_url = format!("{}:{}:{}:{}", address, base_port, name, hex::encode(cert.0));

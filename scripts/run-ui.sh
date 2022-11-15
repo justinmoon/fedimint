@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-export FM_FED_SIZE=${1:-3}
+export FM_FED_SIZE=${1:-2}
 # clear out federation startup configs folder
 rm -r $PWD/fed-ui
 mkdir $PWD/fed-ui

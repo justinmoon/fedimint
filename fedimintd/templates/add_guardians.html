@@ -8,6 +8,7 @@
     <form id="guardians_form">
         {% for guardian in guardians %}
         {% if guardian.config_string != "" %}
+            <div>{{loop.index0}}</div>
         <div class="input-group mt-3">
             <input type="text" class="form-control" id="my_connection_string" value="{{guardian.config_string}}"
                 readonly>
@@ -39,16 +40,16 @@
     const myForm = document.querySelector("#guardians_form");
     myForm.addEventListener("submit", (e) => {
         e.preventDefault();
-        let connections_strings = Array.from(myForm.querySelectorAll('input[type="text"]')).map(
-            (input) => input.value);
 
-        // TODO: this throws the error, axum needs it as form data matching the template form 
+        let connection_strings = Array.from(myForm.querySelectorAll('input[type="text"]')).map(
+            (input) => input.value);
+        console.log("connection strings", connection_strings);
+        const body = new URLSearchParams();
+        body.append("connection_strings", JSON.stringify(connection_strings))
+
         fetch("/post_guardians", {
             method: "POST",
-            headers: {
-                "Content-Type": "application/x-www-form-urlencoded"
-            },
-            body: JSON.stringify(connections_strings)
+            body
         }).then((response) => {
             console.log(response);
             if (response.ok) {
@@ -56,6 +57,10 @@
             } else {
                 alert("Something went wrong");
             }
+            debugger
+        }).catch(e => {
+            console.error(e)
+            debugger
         });
     })
 
