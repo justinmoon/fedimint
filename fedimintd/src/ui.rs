@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock, RwLockWriteGuard};
+use std::path::PathBuf;
+use std::sync::{Arc, RwLock};
 
 use askama::Template;
 use axum::extract::{Extension, Form};
@@ -10,25 +10,19 @@ use axum::{
     Router,
 };
 use axum_macros::debug_handler;
-use fedimint_api::config::BitcoindRpcCfg;
 use fedimint_api::task::TaskGroup;
 use fedimint_api::Amount;
 use fedimint_core::config::ClientConfig;
-use fedimint_server::config::ServerConfig;
 use http::StatusCode;
 use mint_client::api::WsFederationConnect;
 use qrcode_generator::QrCodeEcc;
-use rand::rngs::OsRng;
 use ring::aead::{LessSafeKey, Nonce};
 use serde::Deserialize;
 use tokio::sync::mpsc::Sender;
 use tokio_rustls::rustls;
 
+use crate::distributedgen::{create_cert, run_dkg};
 use crate::encrypt::{encrypted_read, encrypted_write, get_key, CONFIG_FILE, SALT_FILE, TLS_PK};
-use crate::ui::configgen::configgen;
-use crate::ui::distributedgen::{create_cert, run_dkg};
-mod configgen;
-mod distributedgen;
 
 // fn run_fedimint(state: &mut RwLockWriteGuard<State>) {
 //     let sender = state.sender.clone();
@@ -61,7 +55,7 @@ pub struct Guardian {
 #[template(path = "home.html")]
 struct HomeTemplate {}
 
-async fn home_page(Extension(state): Extension<MutableState>) -> HomeTemplate {
+async fn home_page(Extension(_): Extension<MutableState>) -> HomeTemplate {
     HomeTemplate {}
 }
 
@@ -112,11 +106,11 @@ fn parse_name_from_connection_string(connection_string: &String) -> String {
     parts[2].to_string()
 }
 
-fn parse_cert_from_connection_string(connection_string: &String) -> String {
-    tracing::info!("connection_string {:?}", connection_string);
-    let parts = connection_string.split(":").collect::<Vec<&str>>();
-    parts[3].to_string()
-}
+// fn parse_cert_from_connection_string(connection_string: &String) -> String {
+//     tracing::info!("connection_string {:?}", connection_string);
+//     let parts = connection_string.split(":").collect::<Vec<&str>>();
+//     parts[3].to_string()
+// }
 
 #[derive(Deserialize, Debug, Clone)]
 #[allow(dead_code)]
@@ -143,48 +137,40 @@ async fn post_guardians(
         }
         state.guardians = guardians;
     };
-    let (state_sender, msg) = {
-        let state = state.read().unwrap();
+    // let (state_sender, msg) = {
+    let state = state.read().unwrap();
 
-        //
-        // Actually run DKG
-        //
-
-        // let certs = connection_strings
-        //     .iter()
-        //     .map(|s| parse_cert_from_connection_string(s))
-        //     .collect();
-        let key = get_key(state.password.clone(), state.cfg_path.join(SALT_FILE));
-        let (pk_bytes, nonce) = encrypted_read(&key, state.cfg_path.join(TLS_PK));
-        let denominations = (1..12)
-            .map(|amount| Amount::from_sat(10 * amount))
-            .collect();
-        let mut task_group = TaskGroup::new();
-        tracing::info!("running dkg");
-        let msg = RunDkgMessage {
-            dir_out_path: state.cfg_path.clone(),
-            denominations,
-            federation_name: state.federation_name.clone(),
-            certs: connection_strings,
-            bitcoind_rpc: state
-                .bitcoind_rpc
-                .clone()
-                .expect("bitcoind rpc should be defined"),
-            pk: rustls::PrivateKey(pk_bytes),
-            task_group,
-            nonce,
-            key,
-        };
-        // .await
-        // {
-        //     tracing::info!("DKG succeeded");
-        //     v
-        // } else {
-        //     tracing::info!("Canceled");
-        //     return Ok(Redirect::to("/post_guardisn".parse().unwrap()));
-        // };
-        (state.sender.clone(), msg)
+    // Actually run DKG
+    let key = get_key(state.password.clone(), state.cfg_path.join(SALT_FILE));
+    let (pk_bytes, nonce) = encrypted_read(&key, state.cfg_path.join(TLS_PK));
+    let denominations = (1..12)
+        .map(|amount| Amount::from_sat(10 * amount))
+        .collect();
+    tracing::info!("running dkg");
+    let msg = RunDkgMessage {
+        dir_out_path: state.cfg_path.clone(),
+        denominations,
+        federation_name: state.federation_name.clone(),
+        certs: connection_strings,
+        bitcoind_rpc: state
+            .bitcoind_rpc
+            .clone()
+            .expect("bitcoind rpc should be defined"),
+        pk: rustls::PrivateKey(pk_bytes),
+        nonce,
+        key,
     };
+    let state_sender = state.sender.clone();
+    // .await
+    // {
+    //     tracing::info!("DKG succeeded");
+    //     v
+    // } else {
+    //     tracing::info!("Canceled");
+    //     return Ok(Redirect::to("/post_guardisn".parse().unwrap()));
+    // };
+    //     (state.sender.clone(), msg)
+    // };
     // tokio::task::spawn(async move {
     //     // Tell fedimintd that setup is complete
     //     sender.send(msg).await.expect("failed to send over channel");
@@ -196,10 +182,9 @@ async fn post_guardians(
     // let (send, recv) = tokio::sync::oneshot::channel();
     let handle = tokio::runtime::Handle::current();
 
-    let (sender, receive) = tokio::sync::oneshot::channel::<Option<ClientConfig>>();
+    // let (sender, receive) = tokio::sync::oneshot::channel::<Option<ClientConfig>>();
     std::thread::spawn(move || {
         // futures::executor::block_on(async move {
-        tracing::info!("=dkg");
         handle.block_on(async move {
             let mut task_group = TaskGroup::new();
             match run_dkg(
@@ -230,7 +215,7 @@ async fn post_guardians(
                 }
                 Err(e) => {
                     tracing::info!("Canceled {:?}", e);
-                    sender.send(None).unwrap();
+                    // sender.send(None).unwrap();
                 }
             };
         });
@@ -340,12 +325,8 @@ async fn qr(Extension(state): Extension<MutableState>) -> impl axum::response::I
 struct State {
     federation_name: String,
     guardians: Vec<Guardian>,
-    running: bool,
     cfg_path: PathBuf,
-    config_string: String,
     sender: Sender<UiMessage>,
-    server_configs: Option<Vec<(Guardian, ServerConfig)>>,
-    client_config: Option<ClientConfig>,
     password: String,
     bitcoind_rpc: Option<String>,
 }
@@ -358,7 +339,6 @@ pub struct RunDkgMessage {
     certs: Vec<String>,
     bitcoind_rpc: String,
     pk: rustls::PrivateKey,
-    task_group: TaskGroup,
     nonce: Nonce,
     key: LessSafeKey,
 }
@@ -370,8 +350,6 @@ pub enum UiMessage {
 }
 
 pub async fn run_ui(cfg_path: PathBuf, sender: Sender<UiMessage>, port: u32, password: String) {
-    let mut rng = OsRng;
-    let secp = bitcoin::secp256k1::Secp256k1::new();
     let config_string = "".to_string();
     let guardians = vec![Guardian {
         config_string: config_string.clone(),
@@ -384,12 +362,8 @@ pub async fn run_ui(cfg_path: PathBuf, sender: Sender<UiMessage>, port: u32, pas
     let state = Arc::new(RwLock::new(State {
         federation_name,
         guardians,
-        running: false,
         cfg_path,
-        config_string,
         sender,
-        server_configs: None,
-        client_config: None,
         bitcoind_rpc: None,
         password,
     }));
