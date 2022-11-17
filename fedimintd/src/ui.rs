@@ -233,21 +233,6 @@ async fn post_guardians(
     Ok(Redirect::to("/run".parse().unwrap()))
 }
 
-// #[derive(Template)] #[template(path = "confirm.html")]
-// struct ConfirmTemplate {
-//     federation_name: String,
-//     guardians: Vec<Guardian>,
-// }
-
-// async fn confirm_page(Extension(state): Extension<MutableState>) -> ConfirmTemplate {
-//     let state = state.read().unwrap();
-
-//     ConfirmTemplate {
-//         federation_name: state.federation_name.clone(),
-//         guardians: state.guardians.clone(),
-//     }
-// }
-
 #[derive(Template)]
 #[template(path = "params.html")]
 struct UrlConnection {}
