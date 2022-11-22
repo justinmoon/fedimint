@@ -19,6 +19,7 @@ use qrcode_generator::QrCodeEcc;
 use ring::aead::{LessSafeKey, Nonce};
 use serde::Deserialize;
 use tokio::sync::mpsc::Sender;
+use tokio::sync::Mutex;
 use tokio_rustls::rustls;
 
 use crate::distributedgen::{create_cert, run_dkg};
@@ -67,7 +68,7 @@ struct RunTemplate {
 }
 
 async fn run_page(Extension(state): Extension<MutableState>) -> RunTemplate {
-    let state = state.read().unwrap();
+    let state = state.lock().await;
     let path = state.cfg_path.join("client.json");
     let connection_string: String = match std::fs::File::open(path) {
         Ok(file) => {
@@ -93,7 +94,7 @@ struct AddGuardiansTemplate {
 }
 
 async fn add_guardians_page(Extension(state): Extension<MutableState>) -> AddGuardiansTemplate {
-    let state = state.read().unwrap();
+    let state = state.lock().await;
     AddGuardiansTemplate {
         federation_name: state.federation_name.clone(),
         guardians: state.guardians.clone(),
@@ -127,7 +128,7 @@ async fn post_guardians(
         serde_json::from_str(&form.connection_strings).expect("not json");
     tracing::info!("connection_strings {:?}", connection_strings);
     {
-        let mut state = state.write().unwrap();
+        let mut state = state.lock().await;
         let mut guardians = state.guardians.clone();
         for (i, connection_string) in connection_strings.clone().into_iter().enumerate() {
             guardians[i] = Guardian {
@@ -138,7 +139,7 @@ async fn post_guardians(
         state.guardians = guardians;
     };
     // let (state_sender, msg) = {
-    let state = state.read().unwrap();
+    let state = state.lock().await;
 
     // Actually run DKG
     let key = get_key(state.password.clone(), state.cfg_path.join(SALT_FILE));
@@ -183,43 +184,44 @@ async fn post_guardians(
     let handle = tokio::runtime::Handle::current();
 
     // let (sender, receive) = tokio::sync::oneshot::channel::<Option<ClientConfig>>();
-    std::thread::spawn(move || {
-        // futures::executor::block_on(async move {
-        handle.block_on(async move {
-            let mut task_group = TaskGroup::new();
-            match run_dkg(
-                &msg.dir_out_path,
-                msg.denominations,
-                msg.federation_name,
-                msg.certs,
-                msg.bitcoind_rpc,
-                msg.pk,
-                &mut task_group,
-            )
-            .await
-            {
-                Ok((server, client)) => {
-                    tracing::info!("DKG succeeded");
-                    let server_path = msg.dir_out_path.join(CONFIG_FILE);
-                    let config_bytes = serde_json::to_string(&server).unwrap().into_bytes();
-                    encrypted_write(config_bytes, &msg.key, msg.nonce, server_path);
+    // std::thread::spawn(move || {
+    // futures::executor::block_on(async move {
+    // handle.block_on(async move {
+    tokio::task::spawn_local(async move {
+        let mut task_group = TaskGroup::new();
+        match run_dkg(
+            &msg.dir_out_path,
+            msg.denominations,
+            msg.federation_name,
+            msg.certs,
+            msg.bitcoind_rpc,
+            msg.pk,
+            &mut task_group,
+        )
+        .await
+        {
+            Ok((server, client)) => {
+                tracing::info!("DKG succeeded");
+                let server_path = msg.dir_out_path.join(CONFIG_FILE);
+                let config_bytes = serde_json::to_string(&server).unwrap().into_bytes();
+                encrypted_write(config_bytes, &msg.key, msg.nonce, server_path);
 
-                    let client_path: PathBuf = msg.dir_out_path.join("client.json");
-                    let client_file =
-                        std::fs::File::create(client_path).expect("Could not create cfg file");
-                    serde_json::to_writer_pretty(client_file, &client).unwrap();
-                    state_sender
-                        .send(UiMessage::SetupComplete)
-                        .await
-                        .expect("failed to send over channel");
-                }
-                Err(e) => {
-                    tracing::info!("Canceled {:?}", e);
-                    // sender.send(None).unwrap();
-                }
-            };
-        });
+                let client_path: PathBuf = msg.dir_out_path.join("client.json");
+                let client_file =
+                    std::fs::File::create(client_path).expect("Could not create cfg file");
+                serde_json::to_writer_pretty(client_file, &client).unwrap();
+                state_sender
+                    .send(UiMessage::SetupComplete)
+                    .await
+                    .expect("failed to send over channel");
+            }
+            Err(e) => {
+                tracing::info!("Canceled {:?}", e);
+                // sender.send(None).unwrap();
+            }
+        };
     });
+    // });
     // return Ok(Redirect::to("/qr".parse().unwrap()));
     // match receive.blocking_recv().unwrap() {
     //     Some(client_config) => {
@@ -256,7 +258,7 @@ async fn post_federation_params(
     Extension(state): Extension<MutableState>,
     Form(form): Form<ParamsForm>,
 ) -> Result<Redirect, (StatusCode, String)> {
-    let mut state = state.write().unwrap();
+    let mut state = state.lock().await;
 
     let port = portpicker::pick_unused_port().expect("No ports free");
 
@@ -288,7 +290,7 @@ async fn post_federation_params(
 }
 
 async fn qr(Extension(state): Extension<MutableState>) -> impl axum::response::IntoResponse {
-    let state = state.read().unwrap();
+    let state = state.lock().await;
     let path = state.cfg_path.join("client.json");
     let connection_string: String = match std::fs::File::open(path) {
         Ok(file) => {
@@ -315,7 +317,7 @@ struct State {
     password: String,
     bitcoind_rpc: Option<String>,
 }
-type MutableState = Arc<RwLock<State>>;
+type MutableState = Arc<Mutex<State>>;
 
 pub struct RunDkgMessage {
     dir_out_path: PathBuf,
@@ -344,7 +346,7 @@ pub async fn run_ui(cfg_path: PathBuf, sender: Sender<UiMessage>, port: u32, pas
     // Default federation name
     let federation_name = "Cypherpunk".into();
 
-    let state = Arc::new(RwLock::new(State {
+    let state = Arc::new(Mutex::new(State {
         federation_name,
         guardians,
         cfg_path,
