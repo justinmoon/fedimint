@@ -24,7 +24,7 @@ async fn test_gateway_authentication() -> Result<()> {
     let Fixtures {
         gateway,
         mut task_group,
-    } = fixtures(cfg)?;
+    } = fixtures(cfg).await?;
 
     // Run gateway in an isolate thread, so we dont block the test thread
     task_group

@@ -417,7 +417,8 @@ impl GatewayTest {
             sender,
             receiver,
             TaskGroup::new(),
-        );
+        )
+        .await;
 
         let client = Arc::new(
             client_builder
