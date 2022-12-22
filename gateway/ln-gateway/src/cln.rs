@@ -91,7 +91,7 @@ impl LnRpc for Mutex<cln_rpc::ClnRpc> {
         &self,
         invoice: lightning_invoice::Invoice,
         max_delay: u64,
-        max_fee: Amount,
+        max_fee_percent: f64,
     ) -> Result<Preimage, LightningError> {
         debug!("Attempting to pay invoice");
 
@@ -103,13 +103,13 @@ impl LnRpc for Mutex<cln_rpc::ClnRpc> {
                 amount_msat: None,
                 label: None,
                 riskfactor: None,
-                maxfeepercent: None,
+                maxfeepercent: Some(max_fee_percent),
                 retry_for: None,
                 maxdelay: Some(max_delay as u16),
                 exemptfee: None,
                 localinvreqid: None,
                 exclude: None,
-                maxfee: Some(cln_rpc::primitives::Amount::from_msat(max_fee.milli_sat)),
+                maxfee: None,
                 description: None,
             }))
             .await;

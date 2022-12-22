@@ -163,7 +163,11 @@ impl GatewayActor {
         payment_params: &PaymentParameters,
     ) -> Result<Preimage> {
         match ln_rpc
-            .pay(invoice, payment_params.max_delay, payment_params.max_fee())
+            .pay(
+                invoice,
+                payment_params.max_delay,
+                payment_params.max_fee_percent(),
+            )
             .await
         {
             Ok(preimage) => {

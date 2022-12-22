@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use bitcoin::secp256k1::PublicKey;
-use fedimint_api::Amount;
 use fedimint_ln::contracts::Preimage;
 use ln_gateway::ln::{LightningError, LnRpc};
 use tokio::sync::Mutex;
@@ -43,7 +42,7 @@ impl LnRpc for LnRpcAdapter {
         &self,
         invoice: lightning_invoice::Invoice,
         max_delay: u64,
-        max_fee: Amount,
+        max_fee_percent: f64,
     ) -> Result<Preimage, LightningError> {
         self.fail_invoices
             .lock()
@@ -58,6 +57,6 @@ impl LnRpc for LnRpcAdapter {
             }
         }
         self.fail_invoices.lock().await.remove(&invoice);
-        self.client.pay(invoice, max_delay, max_fee).await
+        self.client.pay(invoice, max_delay, max_fee_percent).await
     }
 }

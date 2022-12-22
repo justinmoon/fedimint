@@ -179,8 +179,10 @@ impl AsRef<ClientConfig> for UserClientConfig {
 }
 
 impl PaymentParameters {
-    pub fn max_fee(&self) -> Amount {
-        self.max_send_amount - self.invoice_amount
+    // FIXME: change to absolute fee to avoid rounding errors
+    pub fn max_fee_percent(&self) -> f64 {
+        let max_absolute_fee = self.max_send_amount - self.invoice_amount;
+        (max_absolute_fee.milli_sat as f64) / (self.invoice_amount.milli_sat as f64)
     }
 }
 
