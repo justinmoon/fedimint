@@ -40,7 +40,7 @@ pub fn decrypt<'c>(ciphertext: &'c mut [u8], key: &LessSafeKey) -> Result<&'c [u
         Aad::empty(),
         encrypted_bytes,
     )
-    .map_err(|_| anyhow::format_err!("Decryption failed due to unspecified aead error"))?;
+    .map_err(|e| anyhow::format_err!("Decryption failed due to unspecified aead error {:?}", e))?;
 
     Ok(&encrypted_bytes[..encrypted_bytes.len() - key.algorithm().tag_len()])
 }
