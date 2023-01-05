@@ -158,7 +158,6 @@ async fn post_guardians(
             tracing::info!("Running DKG");
             let mut task_group = TaskGroup::new();
             match run_dkg(
-                // FIXME: pass these in from fedimintd cli
                 params.bind_p2p,
                 params.bind_api,
                 &dir_out_path,

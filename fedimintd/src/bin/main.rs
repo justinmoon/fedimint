@@ -103,6 +103,7 @@ async fn main() -> anyhow::Result<()> {
                 .await
                 .expect("failed to receive setup message")
             {
+                fedimint_api::task::sleep(std::time::Duration::from_secs(10)).await;
                 break;
             }
         }
