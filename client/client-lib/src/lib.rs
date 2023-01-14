@@ -283,6 +283,34 @@ impl<T: AsRef<ClientConfig> + Clone> Client<T> {
         secret.into_root_secret()
     }
 
+    /// Fetches the client secret from the database or generates a new one if none is present
+    #[allow(dead_code)]
+    pub async fn get_client_secret(&self) -> ClientSecret {
+        let mut tx = self
+            .context
+            .db
+            .begin_transaction(ModuleDecoderRegistry::default())
+            .await;
+        let client_secret = tx.get_value(&ClientSecretKey).await.expect("DB error");
+        let secret = if let Some(client_secret) = client_secret {
+            client_secret
+        } else {
+            let secret: ClientSecret = thread_rng().gen();
+            let no_replacement = tx
+                .insert_entry(&ClientSecretKey, &secret)
+                .await
+                .expect("DB error")
+                .is_none();
+            assert!(
+                no_replacement,
+                "We would have overwritten our secret key, aborting!"
+            );
+            secret
+        };
+        tx.commit_tx().await.expect("db failure");
+        secret
+    }
+
     pub async fn peg_in<R: RngCore + CryptoRng>(
         &self,
         txout_proof: TxOutProof,
@@ -1299,6 +1327,9 @@ impl ClientSecret {
     fn into_root_secret(self) -> DerivableSecret {
         const FEDIMINT_CLIENT_NONCE: &[u8] = b"Fedimint Client Salt";
         DerivableSecret::new_root(&self.0, FEDIMINT_CLIENT_NONCE)
+    }
+    pub fn entropy(&self) -> [u8; 64] {
+        self.0
     }
 }
 
