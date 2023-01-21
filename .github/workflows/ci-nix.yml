@@ -21,7 +21,7 @@ on:
 jobs:
   lint:
     name: "Lint"
-    runs-on: ubuntu-22.04
+    runs-on: buildjet-2vcpu-ubuntu-2004
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v3
@@ -62,7 +62,7 @@ jobs:
             timeout: 60
             run-tests: true
           - host: macos
-            runs-on: macos-12
+            runs-on: self-hosted
             build-in-pr: false
             # TODO: Too slow; see https://github.com/actions/runner-images/issues/1336
             timeout: 60
@@ -205,11 +205,11 @@ jobs:
           - wasm32-unknown-unknown
         include:
           - host: linux
-            runs-on: ubuntu-22.04
+            runs-on: buildjet-4vcpu-ubuntu-2004
             build-in-pr: true
             timeout: 20
           - host: macos
-            runs-on: macos-12
+            runs-on: self-hosted
             build-in-pr: false
             # TODO: Too slow; see https://github.com/actions/runner-images/issues/1336
             timeout: 60
