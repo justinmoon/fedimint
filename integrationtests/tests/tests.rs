@@ -589,8 +589,7 @@ async fn lightning_gateway_pays_internal_invoice() -> Result<()> {
             .get_contract_account(contract_id)
             .await
             .unwrap();
-        assert_eq!(contract_account.amount, sats(1010));
-        // 1% LN fee
+        assert_eq!(contract_account.amount, sats(1000));
         debug!(
             "Sending User created outgoing contract: {:?}",
             contract_account
@@ -651,8 +650,8 @@ async fn lightning_gateway_pays_internal_invoice() -> Result<()> {
             .unwrap();
         debug!("User fetched funds paid to incoming contract");
 
-        user.assert_total_notes(sats(2000 - 1010)).await; // user sent a 1000 sat + 10 sat fee invoice
-        gateway.user.assert_total_notes(sats(2010)).await; // gateway routed internally and earned fee
+        user.assert_total_notes(sats(2000 - 1000)).await; // user sent a 1000 sat + 10 sat fee invoice
+        gateway.user.assert_total_notes(sats(2000)).await; // gateway routed internally and earned fee
         receiving_user.assert_total_notes(sats(1000)).await; // this user received the 1000 sat invoice
 
         if !lightning.is_shared() {
@@ -688,7 +687,7 @@ async fn lightning_gateway_pays_outgoing_invoice() -> Result<()> {
         let ln_client = user.client.ln_client();
         let contract_account = ln_client.get_contract_account(contract_id).await;
 
-        assert_eq!(contract_account.unwrap().amount, sats(1010)); // 1% LN fee
+        assert_eq!(contract_account.unwrap().amount, sats(1000)); // 0% LN fee
 
         user.client
             .await_outgoing_contract_acceptance(outpoint)
@@ -711,8 +710,8 @@ async fn lightning_gateway_pays_outgoing_invoice() -> Result<()> {
             .await_outgoing_contract_claimed(contract_id, claim_outpoint)
             .await
             .unwrap();
-        user.assert_total_notes(sats(2000 - 1010)).await;
-        gateway.user.assert_total_notes(sats(1010)).await;
+        user.assert_total_notes(sats(2000 - 1000)).await;
+        gateway.user.assert_total_notes(sats(1000)).await;
 
         tokio::time::sleep(Duration::from_millis(500)).await; // FIXME need to wait for listfunds to update
         if !lightning.is_shared() {
@@ -762,8 +761,7 @@ async fn lightning_gateway_claims_refund_for_internal_invoice() -> Result<()> {
             .get_contract_account(contract_id)
             .await
             .unwrap();
-        assert_eq!(contract_account.amount, sats(1010));
-        // 1% LN fee
+        assert_eq!(contract_account.amount, sats(1000));
         debug!(
             "Sending User created outgoing contract: {:?}",
             contract_account
@@ -974,7 +972,7 @@ async fn lightning_gateway_cannot_claim_invalid_preimage() -> Result<()> {
     lightning_test(2, |fed, user, bitcoin, gateway, lightning| async move {
         let invoice = lightning.invoice(sats(1000), None).await.unwrap();
 
-        fed.mine_and_mint(&user, &*bitcoin, sats(1010)).await; // 1% LN fee
+        fed.mine_and_mint(&user, &*bitcoin, sats(1000)).await;
         let (contract_id, _) = user
             .client
             .fund_outgoing_ln_contract(invoice, rng())
@@ -1003,7 +1001,7 @@ async fn lightning_gateway_can_abort_payment_to_return_user_funds() -> Result<()
     lightning_test(2, |fed, user, bitcoin, gateway, lightning| async move {
         let invoice = lightning.invoice(sats(1000), None).await.unwrap();
 
-        fed.mine_and_mint(&user, &*bitcoin, sats(1010)).await; // 1% LN fee
+        fed.mine_and_mint(&user, &*bitcoin, sats(1000)).await;
         let (contract_id, _) = user
             .client
             .fund_outgoing_ln_contract(invoice, rng())
@@ -1038,7 +1036,7 @@ async fn lightning_gateway_can_abort_payment_to_return_user_funds() -> Result<()
             .unwrap();
         fed.run_consensus_epochs(2).await;
         user.client.fetch_notes(outpoint).await.unwrap();
-        assert_eq!(user.total_notes().await, sats(1010));
+        assert_eq!(user.total_notes().await, sats(1000));
         assert_eq!(fed.max_balance_sheet(), 0);
     })
     .await

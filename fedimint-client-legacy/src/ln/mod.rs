@@ -89,15 +89,12 @@ impl LnClient {
         timelock: u32,
         mut rng: impl RngCore + CryptoRng + 'a,
     ) -> Result<LightningOutput> {
-        let contract_amount = {
-            let invoice_amount_msat = invoice
+        // Don't add extra fee to outgoing contract
+        let contract_amount = Amount::from_msats(
+            invoice
                 .amount_milli_satoshis()
-                .ok_or(LnClientError::MissingInvoiceAmount)?;
-            // TODO: better define fee handling
-            // Add 1% fee margin
-            let contract_amount_msat = invoice_amount_msat + (invoice_amount_msat / 100);
-            Amount::from_msats(contract_amount_msat)
-        };
+                .ok_or(LnClientError::MissingInvoiceAmount)?,
+        );
 
         let user_sk = bitcoin::KeyPair::new(&self.context.secp, &mut rng);
 
@@ -550,7 +547,7 @@ mod tests {
         assert_eq!(contract_acc.contract.gateway_key, gateway.mint_pub_key);
         // TODO: test that the client has its key
 
-        let expected_amount_msat = invoice_amt_msat + (invoice_amt_msat / 100);
+        let expected_amount_msat = invoice_amt_msat;
         let expected_amount = Amount::from_msats(expected_amount_msat);
         assert_eq!(contract_acc.amount, expected_amount);
 
