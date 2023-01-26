@@ -481,13 +481,16 @@ pub trait ServerModule: Debug + Sized {
         input: &'a Self::Input,
     ) -> Result<InputMeta, ModuleError>;
 
-    /// Try to spend a transaction input. On success all necessary updates will be part of the
-    /// database `batch`. On failure (e.g. double spend) the batch is reset and the operation will
+    /// Try to spend a fedimint transaction input. On success all necessary updates will be part of the
+    /// database transaction. On failure (e.g. double spend) the batch is reset and the operation will
     /// take no effect.
     ///
     /// This function may only be called after `begin_consensus_epoch` and before
     /// `end_consensus_epoch`. Data is only written to the database once all transaction have been
     /// processed.
+    ///
+    /// Always call `validate_input` to check the input is still valid. Something might have changed
+    /// since it was checked during transaction submission.
     async fn apply_input<'a, 'b, 'c>(
         &'a self,
         interconnect: &'a dyn ModuleInterconect,
@@ -516,6 +519,9 @@ pub trait ServerModule: Debug + Sized {
     /// This function may only be called after `begin_consensus_epoch` and before
     /// `end_consensus_epoch`. Data is only written to the database once all transactions have been
     /// processed.
+    ///
+    /// Always call `validate_output` to check the input is still valid. Something might have changed
+    /// since it was checked during transaction submission.
     async fn apply_output<'a, 'b>(
         &'a self,
         dbtx: &mut DatabaseTransaction<'b>,
