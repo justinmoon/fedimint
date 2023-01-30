@@ -1,4 +1,5 @@
 use clap::Subcommand;
+use fedimint_core::core::LEGACY_HARDCODED_INSTANCE_ID_POOL;
 use fedimint_core::{Amount, OutPoint, TransactionId};
 use mint_client::{Client, UserClientConfig};
 use stabilitypool::api::SideResponse;
@@ -152,7 +153,7 @@ pub(crate) async fn handle_command(
         .config()
         .0
         .modules
-        .get(&3)
+        .get(&LEGACY_HARDCODED_INSTANCE_ID_POOL)
         .expect("missing pool config")
         .cast::<PoolConfigClient>()
         .unwrap();

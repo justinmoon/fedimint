@@ -19,6 +19,7 @@ use ln_gateway::Gateway;
 use mint_client::modules::ln::{LightningClientGen, LightningModuleTypes};
 use mint_client::modules::mint::{MintClientGen, MintModuleTypes};
 use mint_client::modules::wallet::{WalletClientGen, WalletModuleTypes};
+use stabilitypool::PoolConfigGenerator;
 use tracing::{error, info};
 use url::Url;
 
@@ -147,6 +148,7 @@ async fn main() -> Result<(), anyhow::Error> {
         DynClientModuleGen::from(WalletClientGen),
         DynClientModuleGen::from(MintClientGen),
         DynClientModuleGen::from(LightningClientGen),
+        DynClientModuleGen::from(PoolConfigGenerator),
     ]);
 
     // Create gateway instance

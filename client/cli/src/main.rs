@@ -41,9 +41,10 @@ use mint_client::utils::{
 use mint_client::{Client, UserClientConfig};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use stabilitypool::PoolConfigGenerator;
 use url::Url;
 
-mod stabilitypool;
+pub mod stabilitypoolcli;
 
 #[derive(Serialize)]
 #[serde(rename_all(serialize = "snake_case"))]
@@ -145,7 +146,7 @@ enum CliOutput {
         count: u64,
     },
 
-    Pool(stabilitypool::PoolCliOutput),
+    Pool(stabilitypoolcli::PoolCliOutput),
 }
 
 impl fmt::Display for CliOutput {
@@ -391,7 +392,7 @@ enum Command {
     EpochCount,
 
     #[clap(subcommand)]
-    Pool(stabilitypool::PoolCommand),
+    Pool(stabilitypoolcli::PoolCommand),
 }
 
 trait ErrorHandler<T, E> {
@@ -452,6 +453,7 @@ async fn main() {
             DynClientModuleGen::from(WalletClientGen),
             DynClientModuleGen::from(MintClientGen),
             DynClientModuleGen::from(LightningClientGen),
+            DynClientModuleGen::from(PoolConfigGenerator),
         ]);
 
         let cli = Cli::parse();
@@ -854,7 +856,7 @@ async fn handle_command(
             let count = client.context().api.fetch_epoch_count().await?;
             Ok(CliOutput::EpochCount { count })
         }
-        Command::Pool(cmd) => stabilitypool::handle_command(cmd, client, rng)
+        Command::Pool(cmd) => stabilitypoolcli::handle_command(cmd, client, rng)
             .await
             .map(CliOutput::Pool),
     }
