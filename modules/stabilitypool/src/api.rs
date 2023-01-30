@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
-use fedimint_core::db::DatabaseTransaction;
+use fedimint_core::core::ModuleInstanceId;
+use fedimint_core::db::ModuleDatabaseTransaction;
 use fedimint_core::module::{api_endpoint, ApiEndpoint, ApiError};
 use futures::StreamExt;
 
@@ -14,53 +15,53 @@ pub fn endpoints() -> Vec<ApiEndpoint<StabilityPool>> {
         // Get outcome of given `epoch_id`.
         api_endpoint! {
             "/epoch",
-            async |_module: &StabilityPool, dbtx, epoch_id: u64| -> EpochOutcome {
-                epoch_outcome(dbtx, epoch_id).await
+            async |_module: &StabilityPool, context, epoch_id: u64| -> EpochOutcome {
+                epoch_outcome(context.dbtx(), epoch_id).await
             }
         },
         // Get the `epoch_id` that the federation will accept user actions for.
         api_endpoint! {
             "/epoch_next",
-            async |_module: &StabilityPool, dbtx, _request: ()| -> u64 {
-                Ok(epoch::EpochState::from_db(dbtx).await.staging_epoch_id())
+            async |_module: &StabilityPool, context, _request: ()| -> u64 {
+                Ok(epoch::EpochState::from_db(context.dbtx()).await.staging_epoch_id())
             }
         },
         api_endpoint! {
             "/epoch_last_settled",
-            async |_module: &StabilityPool, dbtx, _request: ()| -> Option<u64> {
-                Ok(epoch::EpochState::from_db(dbtx).await.latest_settled)
+            async |_module: &StabilityPool, context, _request: ()| -> Option<u64> {
+                Ok(epoch::EpochState::from_db(context.dbtx()).await.latest_settled)
             }
         },
         api_endpoint! {
             "/account",
-            async |_module: &StabilityPool, dbtx, request: secp256k1_zkp::XOnlyPublicKey| -> BalanceResponse {
-                Ok(account(dbtx, request).await)
+            async |_module: &StabilityPool, context, request: secp256k1_zkp::XOnlyPublicKey| -> BalanceResponse {
+                Ok(account(context.dbtx(), request).await)
             }
         },
         api_endpoint! {
             "/action",
-            async |_module: &StabilityPool, dbtx, request: secp256k1_zkp::XOnlyPublicKey| -> ActionStaged {
-                db::get(dbtx, &db::ActionStagedKey(request)).await
+            async |_module: &StabilityPool, context, request: secp256k1_zkp::XOnlyPublicKey| -> ActionStaged {
+                db::get(context.dbtx(), &db::ActionStagedKey(request)).await
                     .ok_or(ApiError::not_found(format!("no action staged for account {}", request)))
             }
         },
         api_endpoint! {
             "/action_propose",
-            async |module: &StabilityPool, dbtx, request: ActionProposed| -> () {
-                propose_action(dbtx, &module.proposed_db, request).await
+            async |module: &StabilityPool, context, request: ActionProposed| -> () {
+                propose_action(context.dbtx(), &module.proposed_db, request).await
             }
         },
         api_endpoint! {
             "/state",
-            async |_module: &StabilityPool, dbtx, _request: ()| -> State {
-                Ok(state(dbtx).await)
+            async |_module: &StabilityPool, context, _request: ()| -> State {
+                Ok(state(context.dbtx()).await)
             }
         },
     ]
 }
 
 pub async fn epoch_outcome(
-    dbtx: &mut DatabaseTransaction<'_>,
+    dbtx: &mut ModuleDatabaseTransaction<'_, ModuleInstanceId>,
     epoch_id: u64,
 ) -> Result<EpochOutcome, ApiError> {
     db::get(dbtx, &db::EpochOutcomeKey(epoch_id))
@@ -93,7 +94,7 @@ pub enum SideResponse {
 }
 
 pub async fn account(
-    dbtx: &mut DatabaseTransaction<'_>,
+    dbtx: &mut ModuleDatabaseTransaction<'_, ModuleInstanceId>,
     account_id: secp256k1_zkp::XOnlyPublicKey,
 ) -> BalanceResponse {
     let epoch_state = EpochState::from_db(dbtx).await;
@@ -155,7 +156,7 @@ pub async fn account(
 }
 
 pub async fn propose_action(
-    dbtx: &mut DatabaseTransaction<'_>,
+    dbtx: &mut ModuleDatabaseTransaction<'_, ModuleInstanceId>,
     proposed_db: &ActionProposedDb,
     request: ActionProposed,
 ) -> Result<(), ApiError> {
@@ -206,7 +207,7 @@ pub struct StateEpoch {
     pub outcome: Option<EpochOutcome>,
 }
 
-pub async fn state(dbtx: &mut DatabaseTransaction<'_>) -> State {
+pub async fn state(dbtx: &mut ModuleDatabaseTransaction<'_, ModuleInstanceId>) -> State {
     let epoch_state = EpochState::from_db(dbtx).await;
 
     let previous_epoch_id = epoch_state.latest_ended.unwrap_or(0);
@@ -219,10 +220,7 @@ pub async fn state(dbtx: &mut DatabaseTransaction<'_>) -> State {
     let accounts: BTreeMap<bitcoin::XOnlyPublicKey, AccountBalance> = dbtx
         .find_by_prefix(&db::AccountBalanceKeyPrefix)
         .await
-        .map(|res| {
-            let (key, value) = res.unwrap();
-            (key.0, value)
-        })
+        .map(|(key, value)| (key.0, value))
         .collect::<BTreeMap<_, _>>()
         .await;
     // .await
@@ -233,7 +231,6 @@ pub async fn state(dbtx: &mut DatabaseTransaction<'_>) -> State {
     let staged = dbtx
         .find_by_prefix(&db::ActionStagedKeyPrefix)
         .await
-        .map(|r| r.expect("DB error"))
         .map(|(_, action)| (action.account_id(), action))
         .collect::<BTreeMap<_, _>>()
         .await;

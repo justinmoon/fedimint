@@ -43,6 +43,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use url::Url;
 
+mod stabilitypool;
+
 #[derive(Serialize)]
 #[serde(rename_all(serialize = "snake_case"))]
 #[serde(untagged)]
@@ -142,6 +144,8 @@ enum CliOutput {
     EpochCount {
         count: u64,
     },
+
+    Pool(stabilitypool::PoolCliOutput),
 }
 
 impl fmt::Display for CliOutput {
@@ -385,6 +389,9 @@ enum Command {
 
     /// Gets the current epoch count
     EpochCount,
+
+    #[clap(subcommand)]
+    Pool(stabilitypool::PoolCommand),
 }
 
 trait ErrorHandler<T, E> {
@@ -847,5 +854,8 @@ async fn handle_command(
             let count = client.context().api.fetch_epoch_count().await?;
             Ok(CliOutput::EpochCount { count })
         }
+        Command::Pool(cmd) => stabilitypool::handle_command(cmd, client, rng)
+            .await
+            .map(CliOutput::Pool),
     }
 }

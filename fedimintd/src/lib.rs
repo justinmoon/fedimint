@@ -4,6 +4,7 @@ use fedimint_core::module::ServerModuleGen;
 use fedimint_core::{Amount, Tiered};
 use fedimint_mint_server::{MintGen, MintGenParams};
 use fedimint_wallet_server::{WalletGen, WalletGenParams};
+use stabilitypool::{PoolConfigGenParams, PoolConfigGenerator};
 
 mod ui;
 
@@ -37,5 +38,6 @@ pub fn attach_default_module_gen_params(
                     .cloned()
                     .collect(),
             },
-        );
+        )
+        .attach_config_gen_params(PoolConfigGenerator::kind(), PoolConfigGenParams::default());
 }
