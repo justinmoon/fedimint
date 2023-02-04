@@ -1,3 +1,4 @@
+use std::env;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -165,6 +166,9 @@ async fn post_guardians(
         state_copy.lock().await.dkg_state = None;
     }
 
+    let p2p_bind = env::var("P2P_BIND").unwrap().parse().unwrap();
+    let api_bind = env::var("API_BIND").unwrap().parse().unwrap();
+
     let mut dkg_task_group = state.task_group.make_subgroup().await;
     state.dkg_task_group = Some(dkg_task_group.clone());
     let module_gens = state.module_gens.clone();
@@ -175,8 +179,8 @@ async fn post_guardians(
 
             state_copy.lock().await.dkg_state = Some(DkgState::Running);
             let maybe_config = run_dkg(
-                params.bind_p2p,
-                params.bind_api,
+                p2p_bind,
+                api_bind,
                 &dir_out_path,
                 params.federation_name,
                 connection_strings,
@@ -253,14 +257,6 @@ pub struct ParamsForm {
     guardian_name: String,
     /// Federation name, same for all peers
     federation_name: String,
-    /// Our API address for clients to connect to us
-    api_url: Url,
-    /// Our external address for communicating with our peers
-    p2p_url: Url,
-    /// Address we bind to for exposing the API
-    bind_api: SocketAddr,
-    /// Address we bind to for federation communication
-    bind_p2p: SocketAddr,
     /// How many participants in federation consensus
     guardians_count: u32,
     /// Which bitcoin network the federation is using
@@ -281,10 +277,15 @@ async fn post_federation_params(
         return Err(format_err!("{:?} does not exist!", state.data_dir).into());
     }
 
+    let p2p_url = env::var("P2P_URL").unwrap().parse().unwrap();
+    let api_url = env::var("API_URL").unwrap().parse().unwrap();
+    let p2p_bind = env::var("P2P_BIND").unwrap().parse().unwrap();
+    let api_bind = env::var("API_BIND").unwrap().parse().unwrap();
+
     let tls_connect_string = create_cert(
         state.data_dir.clone(),
-        form.p2p_url.clone(),
-        form.api_url.clone(),
+        p2p_url,
+        api_url,
         form.guardian_name.clone(),
         Some(state.password.clone()),
     )?;
@@ -293,8 +294,8 @@ async fn post_federation_params(
     state.params = Some(FederationParameters {
         federation_name: form.federation_name,
         num_guardians: form.guardians_count,
-        bind_api: form.bind_api,
-        bind_p2p: form.bind_p2p,
+        api_bind,
+        p2p_bind,
         guardian: Guardian {
             name: form.guardian_name,
             tls_connect_string,
@@ -347,8 +348,8 @@ struct FederationParameters {
     num_guardians: u32,
     finality_delay: u32,
     network: Network,
-    bind_api: SocketAddr,
-    bind_p2p: SocketAddr,
+    api_bind: SocketAddr,
+    p2p_bind: SocketAddr,
 }
 
 struct State {
