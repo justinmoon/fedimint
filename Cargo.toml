@@ -26,6 +26,7 @@ members = [
     "modules/fedimint-wallet",
     "integrationtests",
     "fedimint-build",
+    "ui/webimint/webimint",
 ]
 resolver = "2"
 
