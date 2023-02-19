@@ -43,7 +43,7 @@ pub struct GatewayOpts {
 
     /// Public URL to a Gateway Lightning rpc service
     #[arg(long = "lnrpc-addr", env = "FM_GATEWAY_LIGHTNING_ADDR")]
-    pub lnrpc_addr: Url,
+    pub lnrpc_addr: Option<Url>,
 }
 
 // Fedimint Gateway Binary
@@ -74,7 +74,7 @@ async fn main() -> Result<(), anyhow::Error> {
     } = GatewayOpts::parse();
 
     info!(
-        "Starting gateway with these configs \n data directory: {:?},\n listen: {},\n api address: {},\n lnrpc address: {} ",
+        "Starting gateway with these configs \n data directory: {:?},\n listen: {},\n api address: {},\n lnrpc address: {:?} ",
         data_dir, listen, api_addr, lnrpc_addr
     );
 
@@ -85,8 +85,13 @@ async fn main() -> Result<(), anyhow::Error> {
     // Create task group for controlled shutdown of the gateway
     let task_group = TaskGroup::new();
 
-    // Create a lightning rpc client
-    let lnrpc: DynLnRpcClient = NetworkLnRpcClient::new(lnrpc_addr).await?.into();
+    let lnrpc = if let Some(lnrpc_addr) = lnrpc_addr {
+        // Create a lightning rpc client
+        let lnrpc: DynLnRpcClient = NetworkLnRpcClient::new(lnrpc_addr).await?.into();
+        lnrpc
+    } else {
+        panic!("No lightning node provided")
+    };
 
     // Create module decoder registry
     let decoders = ModuleDecoderRegistry::from_iter([
