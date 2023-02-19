@@ -21,7 +21,7 @@ futures = "0.3.24"
 itertools = "0.10.5"
 lazy_static = "1.4.0"
 lightning-invoice = "0.21.0"
-ln-gateway = { path = "../gateway/ln-gateway" }
+gateway = { path = "../gateway/gateway" }
 lightning = "0.0.113"
 fedimint-server = { path = "../fedimint-server", features = ["telemetry"] }
 fedimint-bitcoind = { path = "../fedimint-bitcoind" }

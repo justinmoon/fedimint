@@ -1218,9 +1218,9 @@ dependencies = [
  "fedimint-server",
  "fedimint-wallet",
  "futures",
+ "gateway",
  "lightning",
  "lightning-invoice",
- "ln-gateway",
  "mint-client",
  "rand",
  "secp256k1-zkp",
@@ -1250,12 +1250,12 @@ dependencies = [
  "fedimint-wallet",
  "fedimintd",
  "futures",
+ "gateway",
  "hbbft",
  "itertools",
  "lazy_static",
  "lightning",
  "lightning-invoice",
- "ln-gateway",
  "mint-client",
  "rand",
  "serde",
@@ -1545,6 +1545,42 @@ dependencies = [
 ]
 
 [[package]]
+name = "gateway"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
+ "axum-macros",
+ "bitcoin",
+ "bitcoin_hashes",
+ "clap",
+ "cln-plugin",
+ "cln-rpc",
+ "fedimint-build",
+ "fedimint-core",
+ "fedimint-rocksdb",
+ "fedimint-server",
+ "futures",
+ "lightning-invoice",
+ "mint-client",
+ "prost",
+ "rand",
+ "reqwest",
+ "secp256k1",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tonic-build",
+ "tower-http",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "gateway-cli"
 version = "0.1.0"
 dependencies = [
@@ -1557,7 +1593,7 @@ dependencies = [
  "fedimint-build",
  "fedimint-core",
  "fedimint-server",
- "ln-gateway",
+ "gateway",
  "mint-client",
  "reqwest",
  "rpassword",
@@ -1580,8 +1616,8 @@ dependencies = [
  "fedimint-mint",
  "fedimint-server",
  "fedimint-testing",
+ "gateway",
  "lightning-invoice",
- "ln-gateway",
  "mint-client",
  "portpicker",
  "rand",
@@ -2341,42 +2377,6 @@ name = "linux-raw-sys"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f051f77a7c8e6957c0696eac88f26b0117e54f52d3fc682ab19397a8812846a4"
-
-[[package]]
-name = "ln-gateway"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "axum",
- "axum-macros",
- "bitcoin",
- "bitcoin_hashes",
- "clap",
- "cln-plugin",
- "cln-rpc",
- "fedimint-build",
- "fedimint-core",
- "fedimint-rocksdb",
- "fedimint-server",
- "futures",
- "lightning-invoice",
- "mint-client",
- "prost",
- "rand",
- "reqwest",
- "secp256k1",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tokio-stream",
- "tonic",
- "tonic-build",
- "tower-http",
- "tracing",
- "url",
-]
 
 [[package]]
 name = "lock_api"

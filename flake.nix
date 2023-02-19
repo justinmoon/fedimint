@@ -535,16 +535,16 @@
             "fedimint-dbtool"
             "fedimint-rocksdb"
             "fedimint-server"
-            "gateway/ln-gateway"
+            "gateway/gateway"
             "modules"
           ];
         };
 
-        ln-gateway-pkgs = pkgsBuild {
-          name = "ln-gateway-pkgs";
+        gateway-pkgs = pkgsBuild {
+          name = "gateway-pkgs";
 
           pkgs = {
-            ln-gateway = { };
+            gateway = { };
             gateway-cli = { };
             gateway-tests = { };
           };
@@ -563,7 +563,7 @@
             "fedimint-rocksdb"
             "fedimint-server"
             "fedimint-build"
-            "gateway/ln-gateway"
+            "gateway/gateway"
             "gateway/cli"
             "modules"
           ];
@@ -645,7 +645,7 @@
         outputsPackages = {
           default = fedimint-pkgs;
 
-          inherit fedimint-pkgs client-pkgs ln-gateway-pkgs;
+          inherit fedimint-pkgs client-pkgs gateway-pkgs;
 
         };
         packages = outputsWorkspace //
@@ -730,16 +730,16 @@
                 };
               };
 
-              ln-gateway =
+              gateway =
                 let
                   entrypointScript =
                     pkgs.writeShellScriptBin "entrypoint" ''
-                      exec bash "${./misc/ln-gateway-container-entrypoint.sh}" "$@"
+                      exec bash "${./misc/gateway-container-entrypoint.sh}" "$@"
                     '';
                 in
                 pkgs.dockerTools.buildLayeredImage {
-                  name = "ln-gateway";
-                  contents = [ ln-gateway-pkgs pkgs.bash pkgs.coreutils ];
+                  name = "gateway";
+                  contents = [ gateway-pkgs pkgs.bash pkgs.coreutils ];
                   config = {
                     Cmd = [ ]; # entrypoint will handle empty vs non-empty cmd
                     Entrypoint = [
@@ -752,7 +752,7 @@
                   enableFakechroot = true;
                 };
 
-              ln-gateway-clightning =
+              gateway-clightning =
                 let
                   # Will be placed in `/config-example.cfg` by `fakeRootCommands` below
                   config-example = pkgs.writeText "config-example.conf" ''
@@ -767,7 +767,7 @@
                     rpc-file-mode=0660
                     log-timestamps=false
 
-                    plugin=${ln-gateway-pkgs}/bin/ln_gateway
+                    plugin=${gateway-pkgs}/bin/gateway
                     fedimint-cfg=/var/fedimint/fedimint-gw
 
                     announce-addr=104.244.73.68:9735
@@ -779,11 +779,11 @@
                   '';
                 in
                 pkgs.dockerTools.buildLayeredImage {
-                  name = "ln-gateway-clightning";
-                  contents = [ ln-gateway-pkgs clightning-dev pkgs.bash pkgs.coreutils ];
+                  name = "gateway-clightning";
+                  contents = [ gateway-pkgs clightning-dev pkgs.bash pkgs.coreutils ];
                   config = {
                     Cmd = [
-                      "${ln-gateway-pkgs}/bin/ln_gateway"
+                      "${gateway-pkgs}/bin/gateway"
                     ];
                     ExposedPorts = {
                       "${builtins.toString 9735}/tcp" = { };

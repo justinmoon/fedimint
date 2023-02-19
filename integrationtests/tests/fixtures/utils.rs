@@ -3,12 +3,12 @@ use std::sync::Arc;
 
 use anyhow::anyhow;
 use async_trait::async_trait;
-use ln_gateway::gatewaylnrpc::{
+use gateway::gatewaylnrpc::{
     CompleteHtlcsRequest, CompleteHtlcsResponse, GetPubKeyResponse, GetRouteHintsResponse,
     PayInvoiceRequest, PayInvoiceResponse, SubscribeInterceptHtlcsRequest,
 };
-use ln_gateway::lnrpc_client::{DynLnRpcClient, HtlcStream, ILnRpcClient};
-use ln_gateway::LnGatewayError;
+use gateway::lnrpc_client::{DynLnRpcClient, HtlcStream, ILnRpcClient};
+use gateway::LnGatewayError;
 use tokio::sync::Mutex;
 
 /// A proxy for the underlying LnRpc which can be used to add behavoir to it
@@ -45,15 +45,15 @@ impl LnRpcAdapter {
 
 #[async_trait]
 impl ILnRpcClient for LnRpcAdapter {
-    async fn pubkey(&self) -> ln_gateway::Result<GetPubKeyResponse> {
+    async fn pubkey(&self) -> gateway::Result<GetPubKeyResponse> {
         self.client.pubkey().await
     }
 
-    async fn routehints(&self) -> ln_gateway::Result<GetRouteHintsResponse> {
+    async fn routehints(&self) -> gateway::Result<GetRouteHintsResponse> {
         self.client.routehints().await
     }
 
-    async fn pay(&self, invoice: PayInvoiceRequest) -> ln_gateway::Result<PayInvoiceResponse> {
+    async fn pay(&self, invoice: PayInvoiceRequest) -> gateway::Result<PayInvoiceResponse> {
         self.fail_invoices
             .lock()
             .await
@@ -73,14 +73,14 @@ impl ILnRpcClient for LnRpcAdapter {
     async fn subscribe_htlcs<'a>(
         &self,
         subscription: SubscribeInterceptHtlcsRequest,
-    ) -> ln_gateway::Result<HtlcStream<'a>> {
+    ) -> gateway::Result<HtlcStream<'a>> {
         self.client.subscribe_htlcs(subscription).await
     }
 
     async fn complete_htlc(
         &self,
         complete: CompleteHtlcsRequest,
-    ) -> ln_gateway::Result<CompleteHtlcsResponse> {
+    ) -> gateway::Result<CompleteHtlcsResponse> {
         self.client.complete_htlc(complete).await
     }
 }

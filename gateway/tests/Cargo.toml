@@ -20,7 +20,7 @@ fedimint-testing = { path = "../../fedimint-testing" }
 fedimint-mint = { path = "../../modules/fedimint-mint" }
 fedimint-server = { path = "../../fedimint-server" }
 lightning-invoice = "0.21.0"
-ln-gateway = { path = "../ln-gateway" }
+gateway = { path = "../gateway" }
 mint-client = { path = "../../client/client-lib" }
 portpicker = "0.1.1"
 rand = "0.8"

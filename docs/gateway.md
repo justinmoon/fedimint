@@ -31,9 +31,9 @@ A webserver daemon that runs all the business logic of a gateway. Think of this 
 
 A Lightning extension / plugin service that provides all the necessary Lightning functionalities the gateway webserver daemon.
 
-- Specification for such an extension and how it interfaces with **gatewayd** is defined in [gatewaylnrpc.proto](../gateway/ln-gateway/proto/gatewaylnrpc.proto) gRPC spec. [Read more about gRPCs here](https://grpc.io/docs/what-is-grpc/introduction/).
+- Specification for such an extension and how it interfaces with **gatewayd** is defined in [gatewaylnrpc.proto](../gateway/gateway/proto/gatewaylnrpc.proto) gRPC spec. [Read more about gRPCs here](https://grpc.io/docs/what-is-grpc/introduction/).
 - The extension usually runs alongside a lightning node, or within the node as a plugin! It works specifically for that lightning node implementation
-  - We have implemented [gateway-cln-extension](../gateway/ln-gateway/src/bin/cln_extension.rs) that works with for CLN nodes
+  - We have implemented [gateway-cln-extension](../gateway/gateway/src/bin/cln_extension.rs) that works with for CLN nodes
   - **TODO:** help us implement a similar extension for [LND](https://github.com/lightningnetwork/lnd) nodes
   - **TODO:** help us implement a similar extension for [Eclair](https://github.com/ACINQ/eclair) nodes
   - **TODO:** help us implement a similar extension for [LDK](https://github.com/lightningdevkit/ldk-node) nodes
@@ -42,8 +42,8 @@ A Lightning extension / plugin service that provides all the necessary Lightning
 
 > **Note**
 >
-> We are currenly transitioning from a monolith `ln_gateway` extension that runs all the gateway business logic inside of a cln extension.
-> `ln_gateway` is equivalent to `Gatewayd` and `gateway-cln-extension` packaged into the same binary to run inside a CLN node as a plugin.
+> We are currenly transitioning from a monolith `gateway` extension that runs all the gateway business logic inside of a cln extension.
+> `gateway` is equivalent to `Gatewayd` and `gateway-cln-extension` packaged into the same binary to run inside a CLN node as a plugin.
 
 ---
 
@@ -90,11 +90,11 @@ As described in [Running Fedimint for dev testing](./dev-running.md#using-the-ga
 
 ### Developing gateway-lnrpc-extension
 
-- See and contribute to [gateway-cln-extension](../gateway/ln-gateway/src/bin/cln_extension.rs)
+- See and contribute to [gateway-cln-extension](../gateway/gateway/src/bin/cln_extension.rs)
 - Help add support to other node implementations by building [gateway-lnrpc-extensions](#gateway-lnrpc-extension) for them. You can parent your brand-new extension in this directory, or in your own repository and we will link to it in this open documentation
 - Contributions are highly welcome!
 
-### Developing [gatewayd](../gateway/ln-gateway/src/bin/gatewayd.rs), [gateway-cli](../gateway/cli/) and more towards [fedimint-ln](../modules/fedimint-ln/) module
+### Developing [gatewayd](../gateway/gateway/src/bin/gatewayd.rs), [gateway-cli](../gateway/cli/) and more towards [fedimint-ln](../modules/fedimint-ln/) module
 
 - Contributions are highly welcome!
 
@@ -104,7 +104,7 @@ As described in [Running Fedimint for dev testing](./dev-running.md#using-the-ga
 
 ### Deploy a gateway-lnrpc-extension
 
-- [gateway-cln-extension](../gateway/ln-gateway/src/bin/cln_extension.rs): **TODO:** Add docs here
+- [gateway-cln-extension](../gateway/gateway/src/bin/cln_extension.rs): **TODO:** Add docs here
 - other _gateway-lnrpc-extension_:  **TODO:** Add docs here
 
 ### Configure and deploy gatewayd

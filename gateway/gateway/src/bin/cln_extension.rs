@@ -15,12 +15,10 @@ use cln_rpc::model;
 use cln_rpc::primitives::ShortChannelId;
 use fedimint_core::task::TaskGroup;
 use fedimint_core::Amount;
-use ln_gateway::gatewaylnrpc::complete_htlcs_request::{Action, Cancel, Settle};
-use ln_gateway::gatewaylnrpc::gateway_lightning_server::{
-    GatewayLightning, GatewayLightningServer,
-};
-use ln_gateway::gatewaylnrpc::get_route_hints_response::{RouteHint, RouteHintHop};
-use ln_gateway::gatewaylnrpc::{
+use gateway::gatewaylnrpc::complete_htlcs_request::{Action, Cancel, Settle};
+use gateway::gatewaylnrpc::gateway_lightning_server::{GatewayLightning, GatewayLightningServer};
+use gateway::gatewaylnrpc::get_route_hints_response::{RouteHint, RouteHintHop};
+use gateway::gatewaylnrpc::{
     CompleteHtlcsRequest, CompleteHtlcsResponse, EmptyRequest, GetPubKeyResponse,
     GetRouteHintsResponse, PayInvoiceRequest, PayInvoiceResponse, SubscribeInterceptHtlcsRequest,
     SubscribeInterceptHtlcsResponse,
@@ -43,7 +41,7 @@ pub struct ClnExtensionOpts {
 }
 
 // Note: Once this binary is stable, we should be able to remove current
-// 'ln_gateway' Use CLN_PLUGIN_LOG=<log-level> to enable debug logging from
+// 'gateway' Use CLN_PLUGIN_LOG=<log-level> to enable debug logging from
 // within cln-plugin
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
