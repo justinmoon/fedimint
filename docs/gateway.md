@@ -94,7 +94,7 @@ As described in [Running Fedimint for dev testing](./dev-running.md#using-the-ga
 - Help add support to other node implementations by building [gateway-lnrpc-extensions](#gateway-lnrpc-extension) for them. You can parent your brand-new extension in this directory, or in your own repository and we will link to it in this open documentation
 - Contributions are highly welcome!
 
-### Developing [gatewayd](../gateway/ln-gateway/src/bin/ln_gateway.rs), [gateway-cli](../gateway/cli/) and more towards [fedimint-ln](../modules/fedimint-ln/) module
+### Developing [gatewayd](../gateway/ln-gateway/src/bin/gatewayd.rs), [gateway-cli](../gateway/cli/) and more towards [fedimint-ln](../modules/fedimint-ln/) module
 
 - Contributions are highly welcome!
 
