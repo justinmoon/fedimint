@@ -285,6 +285,7 @@
             electrs
             clightning-dev
             jq
+            lnd
             netcat
             perl
             procps
