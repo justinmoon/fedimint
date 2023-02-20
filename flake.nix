@@ -211,6 +211,7 @@
           bc
           bitcoind
           clightning-dev
+          lnd
           jq
           netcat
           perl
