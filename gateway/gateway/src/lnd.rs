@@ -1,11 +1,18 @@
 use std::fmt;
 
 use async_trait::async_trait;
+use bitcoin_hashes::{sha256, Hash};
+use futures::TryStreamExt;
 use secp256k1::PublicKey;
+use tokio::sync::Mutex;
+// FIXME: is this the right one?
+use tokio_stream::StreamExt;
+use tonic::Streaming;
 use tonic_openssl_lnd::lnrpc::{GetInfoRequest, SendRequest};
 use tonic_openssl_lnd::LndClient;
-use tracing::info;
+use tracing::{error, info};
 
+use crate::gatewaylnrpc::SubscribeInterceptHtlcsResponse;
 use crate::GatewayError;
 // use tracing::instrument;
 use crate::{
@@ -20,7 +27,23 @@ use crate::{
 /// Wrapper that implements Debug
 /// (can't impl Debug on LndClient because it has members which don't impl
 /// Debug)
-pub struct GatewayLndClient(pub LndClient);
+pub struct GatewayLndClient {
+    pub lnd_client: LndClient,
+    pub complete_htlc_sender: Mutex<
+        Option<
+            tokio::sync::mpsc::Sender<tonic_openssl_lnd::routerrpc::ForwardHtlcInterceptResponse>,
+        >,
+    >,
+}
+
+impl GatewayLndClient {
+    pub fn new(lnd_client: LndClient) -> Self {
+        Self {
+            lnd_client,
+            complete_htlc_sender: Mutex::new(None),
+        }
+    }
+}
 
 impl fmt::Debug for GatewayLndClient {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -32,7 +55,7 @@ impl fmt::Debug for GatewayLndClient {
 impl ILnRpcClient for GatewayLndClient {
     async fn pubkey(&self) -> crate::Result<GetPubKeyResponse> {
         let info = self
-            .0
+            .lnd_client
             .clone()
             .lightning()
             .get_info(GetInfoRequest {})
@@ -56,7 +79,7 @@ impl ILnRpcClient for GatewayLndClient {
     // FIXME: rename this "invoice" parameter
     async fn pay(&self, invoice: PayInvoiceRequest) -> crate::Result<PayInvoiceResponse> {
         let send_response = self
-            .0
+            .lnd_client
             .clone()
             .lightning()
             .send_payment_sync(SendRequest {
@@ -81,7 +104,55 @@ impl ILnRpcClient for GatewayLndClient {
         &self,
         _subscription: SubscribeInterceptHtlcsRequest,
     ) -> crate::Result<HtlcStream<'a>> {
-        Ok(Box::pin(futures::stream::iter(vec![])))
+        let (tx, rx) = tokio::sync::mpsc::channel::<
+            tonic_openssl_lnd::routerrpc::ForwardHtlcInterceptResponse,
+        >(1024);
+        let stream = tokio_stream::wrappers::ReceiverStream::new(rx);
+
+        // save sender to state
+        {
+            let mut state = self.complete_htlc_sender.lock().await;
+            *state = Some(tx);
+        }
+
+        // TODO: filter out htlcs here?
+
+        // let htlc_stream: Streaming<
+        //     std::result::Result<SubscribeInterceptHtlcsResponse, tonic::Status>,
+        // > = self
+        let htlc_stream = self
+            .lnd_client
+            .clone()
+            .router()
+            .htlc_interceptor(stream)
+            .await
+            .expect("Failed to call subscribe_invoices")
+            // .into_inner();
+            .into_inner()
+            .map(|xx| match xx {
+                Ok(x) => Ok(SubscribeInterceptHtlcsResponse {
+                    payment_hash: x.payment_hash.clone(),
+                    outgoing_amount_msat: x.outgoing_amount_msat,
+                    intercepted_htlc_id: sha256::Hash::hash(&x.payment_hash).to_vec(),
+                    ..Default::default()
+                }),
+                // Err(e) => Err(tonic::Status::internal("fixme")),
+                Err(e) => {
+                    error!("htlc stream error {e:?}");
+                    Err(tonic::Status::internal("fixme"))
+                }
+            });
+        // .collect();
+
+        // .and_then(|x| SubscribeInterceptHtlcsResponse {
+        //     payment_hash: x.pay,
+        // });
+        // .map(|x| {
+        //     // foo
+        //     unimplemented!()
+        // });
+
+        Ok(Box::pin(htlc_stream))
     }
 
     async fn complete_htlc(

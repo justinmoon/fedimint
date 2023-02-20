@@ -123,6 +123,7 @@ impl GatewayActor {
                         None
                     }
                 } {
+                    panic!("{}", format!("INTERCEPTED {payment_hash:?}"));
                     if subscription.is_shutting_down() {
                         info!("Shutting down HTLC subscription");
                         break;

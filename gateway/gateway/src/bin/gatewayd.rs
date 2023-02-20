@@ -119,7 +119,7 @@ async fn main() -> Result<(), anyhow::Error> {
             tonic_openssl_lnd::connect(lnd_rpc_host, lnd_rpc_port, lnd_tls_cert, lnd_macaroon)
                 .await
                 .expect("failed to connect");
-        let gateway_client = GatewayLndClient(client);
+        let gateway_client = GatewayLndClient::new(client);
         DynLnRpcClient::new(Arc::new(gateway_client))
     } else {
         error!("No lightning node provided. For CLN set FM_GATEWAY_LIGHTNING_ADDR for CLN. For LND set FM_LND_RPC_HOST, FM_LND_RPC_PORT, FM_LND_TLS_CERT, and FM_LND_MACAROON");
