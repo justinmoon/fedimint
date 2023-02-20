@@ -195,6 +195,7 @@ pub async fn fixtures(num_peers: u16) -> anyhow::Result<Fixtures> {
             .expect("Could not create bitcoinrpc");
             let bitcoin = RealBitcoinTest::new(&bitcoin_rpc_url);
 
+            // FIXME: these are wrong now
             let socket_gateway = PathBuf::from(dir.clone()).join("ln1/regtest/lightning-rpc");
             let socket_other = PathBuf::from(dir.clone()).join("ln2/regtest/lightning-rpc");
             let lightning =

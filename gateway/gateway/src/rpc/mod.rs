@@ -18,7 +18,7 @@ use tokio::sync::{mpsc, oneshot};
 use tracing::error;
 
 use crate::cln::HtlcAccepted;
-use crate::{LnGatewayError, Result};
+use crate::{GatewayError, Result};
 
 #[derive(Debug, Clone)]
 pub struct GatewayRpcSender {
@@ -50,7 +50,7 @@ impl GatewayRpcSender {
         receiver
             .await
             .unwrap_or_else(|_| {
-                Err(LnGatewayError::Other(anyhow!(
+                Err(GatewayError::Other(anyhow!(
                     "Failed to receive response over channel"
                 )))
             })

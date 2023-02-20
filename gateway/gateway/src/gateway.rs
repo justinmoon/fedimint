@@ -29,7 +29,7 @@ use crate::rpc::{
     GatewayInfo, GatewayRequest, GatewayRpcSender, InfoPayload, ReceivePaymentPayload,
     RestorePayload, WithdrawPayload,
 };
-use crate::{LnGatewayError, Result};
+use crate::{GatewayError, Result};
 
 const ROUTE_HINT_RETRIES: usize = 10;
 const ROUTE_HINT_RETRY_SLEEP: Duration = Duration::from_secs(2);
@@ -56,6 +56,7 @@ impl Gateway {
         task_group: TaskGroup,
     ) -> Self {
         // Create message channels for the webserver
+        // FIXME: why instantiate sender / receiver here?
         let (sender, receiver) = mpsc::channel::<GatewayRequest>(100);
 
         // Source route hints form the LN node
@@ -81,6 +82,7 @@ impl Gateway {
             tokio::time::sleep(ROUTE_HINT_RETRY_SLEEP).await;
         };
 
+        info!("fetched route hints {:?}", route_hints);
         let gw = Self {
             lnrpc,
             actors: Mutex::new(HashMap::new()),
@@ -95,6 +97,7 @@ impl Gateway {
 
         gw.load_federation_actors(decoders, module_gens, route_hints)
             .await;
+        info!("loaded actors");
 
         gw
     }
@@ -139,7 +142,7 @@ impl Gateway {
             .await
             .get(&federation_id.to_string())
             .cloned()
-            .ok_or(LnGatewayError::UnknownFederation)
+            .ok_or(GatewayError::UnknownFederation)
     }
 
     pub async fn connect_federation(
@@ -170,12 +173,12 @@ impl Gateway {
         route_hints: Vec<RouteHint>,
     ) -> Result<()> {
         let connect: WsClientConnectInfo = serde_json::from_str(&payload.connect).map_err(|e| {
-            LnGatewayError::Other(anyhow::anyhow!("Invalid federation member string {}", e))
+            GatewayError::Other(anyhow::anyhow!("Invalid federation member string {}", e))
         })?;
 
         let GetPubKeyResponse { pub_key } = self.lnrpc.pubkey().await?;
         let node_pub_key = PublicKey::from_slice(&pub_key)
-            .map_err(|e| LnGatewayError::Other(anyhow!("Invalid node pubkey {}", e)))?;
+            .map_err(|e| GatewayError::Other(anyhow!("Invalid node pubkey {}", e)))?;
 
         // The gateway deterministically assigns a channel id (u64) to each federation
         // connected. TODO: explicitly handle the case where the channel id
@@ -231,7 +234,7 @@ impl Gateway {
     /// Handles an intercepted HTLC that might be an incoming payment we are
     /// receiving on behalf of a federation user.
     async fn handle_receive_payment(&self, _payload: ReceivePaymentPayload) -> Result<Preimage> {
-        Err(LnGatewayError::Other(anyhow::anyhow!(
+        Err(GatewayError::Other(anyhow::anyhow!(
             "Not implemented: handle_receive_payment"
         )))
     }
@@ -318,6 +321,7 @@ impl Gateway {
             }
         })
         .await;
+        info!("Spawned gateway webserver");
 
         // TODO: try to drive forward outgoing and incoming payments that were
         // interrupted
@@ -332,7 +336,7 @@ impl Gateway {
 
             // Handle messages from webserver and plugin
             while let Ok(msg) = self.receiver.try_recv() {
-                tracing::trace!("Gateway received message {:?}", msg);
+                tracing::info!("Gateway received message {:?}", msg);
                 match msg {
                     GatewayRequest::Info(inner) => {
                         inner.handle(|payload| self.handle_get_info(payload)).await;

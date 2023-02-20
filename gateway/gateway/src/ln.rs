@@ -17,8 +17,10 @@ pub trait LnRpc: Send + Sync + 'static {
     ) -> Result<Preimage, LightningError>;
 
     /// List peer channels that should be used as route hints in invoices
+    /// FIXME: why is this an anyhow error and the others aren't?
     async fn route_hints(&self) -> Result<Vec<RouteHint>, anyhow::Error>;
 }
 
+// TODO: turn this into an enum ... include lnd
 #[derive(Debug)]
 pub struct LightningError(pub Option<i32>);

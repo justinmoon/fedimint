@@ -12,7 +12,8 @@ source ./scripts/build.sh $FM_FED_SIZE
 POLL_INTERVAL=1
 
 # Start bitcoind and wait for it to become ready
-bitcoind -regtest -fallbackfee=0.0004 -txindex -server -rpcuser=bitcoin -rpcpassword=bitcoin -datadir=$FM_BTC_DIR &
+# TODO: save bitcoin.conf to a file
+bitcoind -datadir=$FM_BTC_DIR &
 echo $! >> $FM_PID_FILE
 
 export FM_BITCOIND_RPC="http://bitcoin:bitcoin@127.0.0.1:18443"
@@ -29,9 +30,10 @@ else
 fi
 
 # Start lightning nodes
-lightningd $LIGHTNING_FLAGS --network regtest --bitcoin-rpcuser=bitcoin --bitcoin-rpcpassword=bitcoin --lightning-dir=$FM_LN1_DIR --addr=127.0.0.1:9000 --plugin=$FM_BIN_DIR/gateway-cln-extension &
+lightningd $LIGHTNING_FLAGS --network regtest --bitcoin-rpcuser=bitcoin --bitcoin-rpcpassword=bitcoin --lightning-dir=$FM_CLN_DIR --addr=127.0.0.1:9000 --plugin=$FM_BIN_DIR/gateway-cln-extension &
 echo $! >> $FM_PID_FILE
-lightningd $LIGHTNING_FLAGS --network regtest --bitcoin-rpcuser=bitcoin --bitcoin-rpcpassword=bitcoin --lightning-dir=$FM_LN2_DIR --addr=127.0.0.1:9001 &
+lnd --lnddir=$FM_LND_DIR &
+# lnd --noseedbackup --lnddir=$FM_LND_DIR &
 echo $! >> $FM_PID_FILE
 await_cln_rpc
 

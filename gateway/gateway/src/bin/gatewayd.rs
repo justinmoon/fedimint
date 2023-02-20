@@ -1,5 +1,7 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::process::exit;
+use std::sync::Arc;
 
 use clap::Parser;
 use fedimint_core::config::ModuleGenRegistry;
@@ -13,6 +15,7 @@ use fedimint_core::task::TaskGroup;
 use fedimint_server::logging::TracingSetup;
 use gateway::client::{DynGatewayClientBuilder, RocksDbFactory, StandardGatewayClientBuilder};
 use gateway::gateway::Gateway;
+use gateway::lnd::GatewayLndClient;
 use gateway::lnrpc_client::{DynLnRpcClient, NetworkLnRpcClient};
 use mint_client::modules::ln::common::LightningDecoder;
 use mint_client::modules::ln::LightningGen;
@@ -44,6 +47,22 @@ pub struct GatewayOpts {
     /// Public URL to a Gateway Lightning rpc service
     #[arg(long = "lnrpc-addr", env = "FM_GATEWAY_LIGHTNING_ADDR")]
     pub lnrpc_addr: Option<Url>,
+
+    /// LND RPC host
+    #[arg(long = "lnd-rpc-host", env = "FM_LND_RPC_HOST")]
+    pub lnd_rpc_host: Option<String>,
+
+    /// LND RPC port
+    #[arg(long = "lnd-rpc-port", env = "FM_LND_RPC_PORT")]
+    pub lnd_rpc_port: Option<u32>,
+
+    /// LND TLS cert file path
+    #[arg(long = "lnd-tls-cert", env = "FM_LND_TLS_CERT")]
+    pub lnd_tls_cert: Option<String>,
+
+    /// LND macaroon file path
+    #[arg(long = "lnd-macaroon", env = "FM_LND_MACAROON")]
+    pub lnd_macaroon: Option<String>,
 }
 
 // Fedimint Gateway Binary
@@ -71,6 +90,10 @@ async fn main() -> Result<(), anyhow::Error> {
         api_addr,
         lnrpc_addr,
         password,
+        lnd_rpc_host,
+        lnd_rpc_port,
+        lnd_tls_cert,
+        lnd_macaroon,
     } = GatewayOpts::parse();
 
     info!(
@@ -89,8 +112,18 @@ async fn main() -> Result<(), anyhow::Error> {
         // Create a lightning rpc client
         let lnrpc: DynLnRpcClient = NetworkLnRpcClient::new(lnrpc_addr).await?.into();
         lnrpc
+    } else if let (Some(lnd_rpc_host), Some(lnd_rpc_port), Some(lnd_tls_cert), Some(lnd_macaroon)) =
+        (lnd_rpc_host, lnd_rpc_port, lnd_tls_cert, lnd_macaroon)
+    {
+        let client =
+            tonic_openssl_lnd::connect(lnd_rpc_host, lnd_rpc_port, lnd_tls_cert, lnd_macaroon)
+                .await
+                .expect("failed to connect");
+        let gateway_client = GatewayLndClient(client);
+        DynLnRpcClient::new(Arc::new(gateway_client))
     } else {
-        panic!("No lightning node provided")
+        error!("No lightning node provided. For CLN set FM_GATEWAY_LIGHTNING_ADDR for CLN. For LND set FM_LND_RPC_HOST, FM_LND_RPC_PORT, FM_LND_TLS_CERT, and FM_LND_MACAROON");
+        exit(1);
     };
 
     // Create module decoder registry

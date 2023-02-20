@@ -5,7 +5,7 @@ set -euo pipefail
 
 cargo build ${CARGO_PROFILE:+--profile ${CARGO_PROFILE}} --bin gateway
 
-$FM_LN1 plugin stop gateway &> /dev/null || true
-$FM_LN1 -k plugin subcommand=start plugin=$FM_BIN_DIR/gateway fedimint-cfg=$FM_CFG_DIR &> /dev/null
+$FM_CLN plugin stop gateway &> /dev/null || true
+$FM_CLN -k plugin subcommand=start plugin=$FM_BIN_DIR/gateway fedimint-cfg=$FM_CFG_DIR &> /dev/null
 
 echo "Gateway plugin reloaded"

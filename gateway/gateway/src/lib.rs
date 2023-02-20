@@ -4,6 +4,7 @@ pub mod cln;
 pub mod config;
 pub mod gateway;
 pub mod ln;
+pub mod lnd;
 pub mod lnrpc_client;
 pub mod rpc;
 pub mod types;
@@ -25,12 +26,16 @@ use tracing::error;
 use crate::ln::LightningError;
 use crate::rpc::ReceivePaymentPayload;
 
-pub type Result<T> = std::result::Result<T, LnGatewayError>;
+pub type Result<T> = std::result::Result<T, GatewayError>;
 
 #[derive(Debug, Error)]
-pub enum LnGatewayError {
+pub enum GatewayError {
     #[error("Federation client operation error: {0:?}")]
     ClientError(#[from] ClientError),
+    #[error("LND rpc error {0}")]
+    RpcError(tonic_openssl_lnd::LndClientError),
+    #[error("No preimage")]
+    NoPreimage,
     #[error("Lightning rpc operation error: {0:?}")]
     LnRpcError(#[from] tonic::Status),
     #[error("Our LN node could not route the payment: {0:?}")]
@@ -43,7 +48,7 @@ pub enum LnGatewayError {
     Other(#[from] anyhow::Error),
 }
 
-impl IntoResponse for LnGatewayError {
+impl IntoResponse for GatewayError {
     fn into_response(self) -> Response {
         let mut err = Cow::<'static, str>::Owned(format!("{self:?}")).into_response();
         *err.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
