@@ -33,7 +33,7 @@ pub enum GatewayError {
     #[error("Federation client operation error: {0:?}")]
     ClientError(#[from] ClientError),
     #[error("LND rpc error {0}")]
-    RpcError(tonic_openssl_lnd::LndClientError),
+    RpcError(tonic_lnd::LndClientError),
     #[error("No preimage")]
     NoPreimage,
     #[error("Lightning rpc operation error: {0:?}")]

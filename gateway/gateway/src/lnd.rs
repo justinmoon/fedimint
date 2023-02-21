@@ -1,10 +1,11 @@
 use std::fmt;
 
+use anyhow::anyhow;
 use async_trait::async_trait;
 use secp256k1::PublicKey;
-use tonic_openssl_lnd::lnrpc::{GetInfoRequest, SendRequest};
-use tonic_openssl_lnd::LndClient;
-use tracing::info;
+use tonic_lnd::lnrpc::{GetInfoRequest, SendRequest};
+use tonic_lnd::{connect, LndClient};
+use tracing::{error, info};
 
 use crate::GatewayError;
 // use tracing::instrument;
@@ -20,7 +21,25 @@ use crate::{
 /// Wrapper that implements Debug
 /// (can't impl Debug on LndClient because it has members which don't impl
 /// Debug)
-pub struct GatewayLndClient(pub LndClient);
+pub struct GatewayLndClient {
+    client: LndClient,
+}
+
+impl GatewayLndClient {
+    pub async fn new(
+        host: String,
+        port: u32,
+        tls_cert: String,
+        macaroon: String,
+    ) -> crate::Result<Self> {
+        let client = connect(host, port, macaroon, tls_cert).await.map_err(|e| {
+            error!("Failed to connect to lnrpc server: {:?}", e);
+            GatewayError::Other(anyhow!("Failed to connect to lnrpc server"))
+        })?;
+
+        Ok(Self { client })
+    }
+}
 
 impl fmt::Debug for GatewayLndClient {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -31,9 +50,9 @@ impl fmt::Debug for GatewayLndClient {
 #[async_trait]
 impl ILnRpcClient for GatewayLndClient {
     async fn pubkey(&self) -> crate::Result<GetPubKeyResponse> {
-        let info = self
-            .0
-            .clone()
+        let mut client = self.client.clone();
+
+        let info = client
             .lightning()
             .get_info(GetInfoRequest {})
             .await
@@ -55,9 +74,9 @@ impl ILnRpcClient for GatewayLndClient {
 
     // FIXME: rename this "invoice" parameter
     async fn pay(&self, invoice: PayInvoiceRequest) -> crate::Result<PayInvoiceResponse> {
-        let send_response = self
-            .0
-            .clone()
+        let mut client = self.client.clone();
+
+        let send_response = client
             .lightning()
             .send_payment_sync(SendRequest {
                 payment_request: invoice.invoice.to_string(),
