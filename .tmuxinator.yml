@@ -19,11 +19,30 @@ windows:
             - sleep 1 # wait for bitcoind
             - source scripts/tmux-user-shell.sh
   - fedimint:
+      layout: tiled
       panes:
         # TODO: 4 panes ... one for each guardian
-        - federation:
+        - fed0:
           - sleep 1 # wait for bitcoind
-          - ./scripts/start-fed.sh
+          - export ID=0
+          - sh scripts/start-fed.sh
+          # - ( ($FM_BIN_DIR/fedimintd $FM_CFG_DIR/server-$ID 2>&1 & echo $! >&3 ) 3>>$FM_PID_FILE | sed -e "s/^/mint $ID: /" ) &
+        - fed1:
+          - sleep 1 # wait for bitcoind
+          - export ID=1
+          - export RUST_LOG=trace
+          - sh scripts/start-fed.sh
+          # - ( ($FM_BIN_DIR/fedimintd $FM_CFG_DIR/server-$ID 2>&1 & echo $! >&3 ) 3>>$FM_PID_FILE | sed -e "s/^/mint $ID: /" ) &
+        - fed2:
+          - sleep 1 # wait for bitcoind
+          - export ID=2
+          - sh scripts/start-fed.sh
+          # - ( ($FM_BIN_DIR/fedimintd $FM_CFG_DIR/server-$ID 2>&1 & echo $! >&3 ) 3>>$FM_PID_FILE | sed -e "s/^/mint $ID: /" ) &
+        - fed3:
+          - sleep 1 # wait for bitcoind
+          - export ID=3
+          - sh scripts/start-fed.sh
+          # - ( ($FM_BIN_DIR/fedimintd $FM_CFG_DIR/server-$ID 2>&1 & echo $! >&3 ) 3>>$FM_PID_FILE | sed -e "s/^/mint $ID: /" ) &
   - lightning:
       layout: tiled
       panes:
