@@ -1,7 +1,6 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::process::exit;
-use std::sync::Arc;
 
 use clap::Parser;
 use fedimint_core::config::ModuleGenRegistry;
@@ -108,19 +107,15 @@ async fn main() -> Result<(), anyhow::Error> {
     // Create task group for controlled shutdown of the gateway
     let task_group = TaskGroup::new();
 
-    let lnrpc = if let Some(lnrpc_addr) = lnrpc_addr {
-        // Create a lightning rpc client
-        let lnrpc: DynLnRpcClient = NetworkLnRpcClient::new(lnrpc_addr).await?.into();
-        lnrpc
+    // Create a lightning rpc client
+    let lnrpc: DynLnRpcClient = if let Some(lnrpc_addr) = lnrpc_addr {
+        NetworkLnRpcClient::new(lnrpc_addr).await?.into()
     } else if let (Some(lnd_rpc_host), Some(lnd_rpc_port), Some(lnd_tls_cert), Some(lnd_macaroon)) =
         (lnd_rpc_host, lnd_rpc_port, lnd_tls_cert, lnd_macaroon)
     {
-        let client =
-            tonic_openssl_lnd::connect(lnd_rpc_host, lnd_rpc_port, lnd_tls_cert, lnd_macaroon)
-                .await
-                .expect("failed to connect");
-        let gateway_client = GatewayLndClient(client);
-        DynLnRpcClient::new(Arc::new(gateway_client))
+        GatewayLndClient::new(lnd_rpc_host, lnd_rpc_port, lnd_tls_cert, lnd_macaroon)
+            .await?
+            .into()
     } else {
         error!("No lightning node provided. For CLN set FM_GATEWAY_LIGHTNING_ADDR for CLN. For LND set FM_LND_RPC_HOST, FM_LND_RPC_PORT, FM_LND_TLS_CERT, and FM_LND_MACAROON");
         exit(1);

@@ -1642,7 +1642,7 @@ dependencies = [
  "tokio-stream",
  "tonic 0.8.3",
  "tonic-build 0.8.4",
- "tonic_openssl_lnd",
+ "tonic_lnd",
  "tower-http",
  "tracing",
  "url",
@@ -4407,9 +4407,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "tonic_openssl_lnd"
-version = "0.2.0"
-source = "git+https://github.com/justinmoon/tonic_openssl_lnd?rev=68b97570#68b9757073ee0022f66095db47198cca9b025cf6"
+name = "tonic_lnd"
+version = "0.5.0"
+source = "git+https://github.com/okjodom/tonic_lnd?branch=routerrpc-feature#1d8175e720d20edb8a2a6f66ea2cd876a216e208"
 dependencies = [
  "hex",
  "hyper",
