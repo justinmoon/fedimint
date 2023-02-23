@@ -1,7 +1,6 @@
 pub mod actor;
 pub mod client;
 pub mod cln;
-pub mod config;
 pub mod lnrpc_client;
 pub mod rpc;
 pub mod types;
