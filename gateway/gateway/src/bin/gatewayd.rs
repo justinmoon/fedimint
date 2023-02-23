@@ -113,9 +113,15 @@ async fn main() -> Result<(), anyhow::Error> {
     } else if let (Some(lnd_rpc_host), Some(lnd_rpc_port), Some(lnd_tls_cert), Some(lnd_macaroon)) =
         (lnd_rpc_host, lnd_rpc_port, lnd_tls_cert, lnd_macaroon)
     {
-        GatewayLndClient::new(lnd_rpc_host, lnd_rpc_port, lnd_tls_cert, lnd_macaroon)
-            .await?
-            .into()
+        GatewayLndClient::new(
+            lnd_rpc_host,
+            lnd_rpc_port,
+            lnd_tls_cert,
+            lnd_macaroon,
+            task_group.clone(),
+        )
+        .await?
+        .into()
     } else {
         error!("No lightning node provided. For CLN set FM_GATEWAY_LIGHTNING_ADDR for CLN. For LND set FM_LND_RPC_HOST, FM_LND_RPC_PORT, FM_LND_TLS_CERT, and FM_LND_MACAROON");
         exit(1);
