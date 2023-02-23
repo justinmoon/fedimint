@@ -26,11 +26,11 @@ use fedimint_core::api::WsClientConnectInfo;
 use fedimint_core::config::FederationId;
 use fedimint_server::logging::TracingSetup;
 use fixtures::{fixtures, Fixtures};
-use ln_gateway::rpc::rpc_client::{Error, Response, RpcClient};
-use ln_gateway::rpc::{
+use gateway::rpc::rpc_client::{Error, Response, RpcClient};
+use gateway::rpc::{
     BalancePayload, ConnectFedPayload, DepositAddressPayload, DepositPayload, WithdrawPayload,
 };
-use ln_gateway::utils::retry;
+use gateway::utils::retry;
 use url::Url;
 
 #[tokio::test(flavor = "multi_thread")]

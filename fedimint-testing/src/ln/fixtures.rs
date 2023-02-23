@@ -7,13 +7,13 @@ use bitcoin::secp256k1::{PublicKey, SecretKey};
 use bitcoin::{secp256k1, KeyPair};
 use fedimint_core::Amount;
 use futures::stream;
-use lightning::ln::PaymentSecret;
-use lightning_invoice::{Currency, Invoice, InvoiceBuilder, SignedRawInvoice, DEFAULT_EXPIRY_TIME};
-use ln_gateway::gatewaylnrpc::{
+use gateway::gatewaylnrpc::{
     self, CompleteHtlcsRequest, CompleteHtlcsResponse, GetPubKeyResponse, GetRouteHintsResponse,
     PayInvoiceRequest, PayInvoiceResponse, SubscribeInterceptHtlcsRequest,
 };
-use ln_gateway::lnrpc_client::{HtlcStream, ILnRpcClient};
+use gateway::lnrpc_client::{HtlcStream, ILnRpcClient};
+use lightning::ln::PaymentSecret;
+use lightning_invoice::{Currency, Invoice, InvoiceBuilder, SignedRawInvoice, DEFAULT_EXPIRY_TIME};
 use mint_client::modules::ln::contracts::Preimage;
 use rand::rngs::OsRng;
 
@@ -78,19 +78,19 @@ impl LightningTest for FakeLightningTest {
 
 #[async_trait]
 impl ILnRpcClient for FakeLightningTest {
-    async fn pubkey(&self) -> ln_gateway::Result<GetPubKeyResponse> {
+    async fn pubkey(&self) -> gateway::Result<GetPubKeyResponse> {
         Ok(GetPubKeyResponse {
             pub_key: self.gateway_node_pub_key.serialize().to_vec(),
         })
     }
 
-    async fn routehints(&self) -> ln_gateway::Result<GetRouteHintsResponse> {
+    async fn routehints(&self) -> gateway::Result<GetRouteHintsResponse> {
         Ok(GetRouteHintsResponse {
             route_hints: vec![gatewaylnrpc::get_route_hints_response::RouteHint { hops: vec![] }],
         })
     }
 
-    async fn pay(&self, invoice: PayInvoiceRequest) -> ln_gateway::Result<PayInvoiceResponse> {
+    async fn pay(&self, invoice: PayInvoiceRequest) -> gateway::Result<PayInvoiceResponse> {
         let signed = invoice.invoice.parse::<SignedRawInvoice>().unwrap();
         *self.amount_sent.lock().unwrap() += Invoice::from_signed(signed)
             .unwrap()
@@ -105,14 +105,14 @@ impl ILnRpcClient for FakeLightningTest {
     async fn subscribe_htlcs<'a>(
         &self,
         _subscription: SubscribeInterceptHtlcsRequest,
-    ) -> ln_gateway::Result<HtlcStream<'a>> {
+    ) -> gateway::Result<HtlcStream<'a>> {
         Ok(Box::pin(stream::iter(vec![])))
     }
 
     async fn complete_htlc(
         &self,
         _complete: CompleteHtlcsRequest,
-    ) -> ln_gateway::Result<CompleteHtlcsResponse> {
+    ) -> gateway::Result<CompleteHtlcsResponse> {
         Ok(CompleteHtlcsResponse {})
     }
 }

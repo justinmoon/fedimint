@@ -1,15 +1,15 @@
 [package]
-name = "ln-gateway"
+name = "gateway"
 version = "0.1.0"
 authors = ["The Fedimint Developers"]
 edition = "2021"
-description = "ln-gateway is a core lightning plugin which allows a Lightning node operator to receive or pay Lightning invoices on behalf of fedimint users."
+description = "Gateway is a Fedimint federation extension service which allows Lightning node operator to receive or pay Lightning invoices on behalf of users in the federations"
 license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
-name = "ln_gateway"
+name = "gateway"
 path = "src/lib.rs"
 
 [[bin]]
