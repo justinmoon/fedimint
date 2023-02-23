@@ -1,3 +1,4 @@
+use std::array::TryFromSliceError;
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
@@ -11,20 +12,18 @@ use secp256k1::PublicKey;
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic_lnd::lnrpc::{GetInfoRequest, SendRequest};
-use tonic_lnd::routerrpc::ForwardHtlcInterceptResponse;
+use tonic_lnd::routerrpc::{CircuitKey, ForwardHtlcInterceptResponse};
 use tonic_lnd::{connect, LndClient};
 use tracing::{error, info};
 
-use crate::GatewayError;
-// use tracing::instrument;
-use crate::{
-    gatewaylnrpc::{
-        self, CompleteHtlcsRequest, CompleteHtlcsResponse, GetPubKeyResponse,
-        GetRouteHintsResponse, PayInvoiceRequest, PayInvoiceResponse,
-        SubscribeInterceptHtlcsRequest, SubscribeInterceptHtlcsResponse,
-    },
-    lnrpc_client::{HtlcStream, ILnRpcClient},
+use crate::gatewaylnrpc::complete_htlcs_request::{Action, Cancel, Settle};
+use crate::gatewaylnrpc::{
+    self, CompleteHtlcsRequest, CompleteHtlcsResponse, GetPubKeyResponse, GetRouteHintsResponse,
+    PayInvoiceRequest, PayInvoiceResponse, SubscribeInterceptHtlcsRequest,
+    SubscribeInterceptHtlcsResponse,
 };
+use crate::lnrpc_client::{HtlcStream, ILnRpcClient};
+use crate::GatewayError;
 
 type HtlcOutcomeSender = oneshot::Sender<ForwardHtlcInterceptResponse>;
 
@@ -229,13 +228,87 @@ impl ILnRpcClient for GatewayLndClient {
 
     async fn complete_htlc(
         &self,
-        _outcome: CompleteHtlcsRequest,
+        outcome: CompleteHtlcsRequest,
     ) -> crate::Result<CompleteHtlcsResponse> {
-        todo!()
+        let CompleteHtlcsRequest {
+            action,
+            intercepted_htlc_id,
+        } = outcome;
+
+        let hash = match sha256::Hash::from_slice(&intercepted_htlc_id) {
+            Ok(hash) => hash,
+            Err(e) => {
+                error!("Invalid intercepted_htlc_id: {:?}", e);
+                return Err(tonic::Status::invalid_argument(e.to_string()));
+            }
+        };
+
+        info!("Completing htlc with reference, {:?}", hash);
+
+        if let Some(outcome) = self.outcomes.lock().await.remove(&hash) {
+            // Translate action request into a cln rpc response for `htlc_accepted` event
+            let htlca_res = match action {
+                Some(Action::Settle(Settle { preimage })) => {
+                    let assert_pk: Result<[u8; 32], TryFromSliceError> =
+                        preimage.as_slice().try_into();
+                    if let Ok(pk) = assert_pk {
+                        // serde_json::json!({ "result": "resolve",
+                        // "payment_key": pk.to_hex() })
+                        // TODO: Specify a failure code and message
+                        ForwardHtlcInterceptResponse {
+                            incoming_circuit_key: key,
+                            action: 0,
+                            preimage: pk,
+                            failure_message: vec![],
+                            failure_code: 0,
+                        }
+                    } else {
+                        cancel_intercepted_htlc(None)
+                    }
+                }
+                Some(Action::Cancel(Cancel { reason: _ })) => {
+                    // TODO: Translate the reason into a BOLT 4 failure message
+                    // See: https://github.com/lightning/bolts/blob/master/04-onion-routing.md#failure-messages
+                    cancel_intercepted_htlc(None)
+                }
+                None => {
+                    error!("No action specified for intercepted htlc id: {:?}", hash);
+                    return Err(tonic::Status::internal(
+                        "No action specified on this intercepted htlc",
+                    ));
+                }
+            };
+
+            // Send translated response to the HTLC interceptor for submission to the cln
+            // rpc
+            match outcome.send(htlca_res) {
+                Ok(_) => {
+                    return Ok(CompleteHtlcsResponse {});
+                }
+                Err(e) => {
+                    error!(
+                        "Failed to send htlc_accepted response to interceptor: {:?}",
+                        e
+                    );
+                    return Err(tonic::Status::internal(
+                        "Failed to send htlc_accepted outcome to interceptor",
+                    ));
+                }
+            };
+        } else {
+            error!(
+                "No interceptor reference found for this processed htlc with id: {:?}",
+                intercepted_htlc_id
+            );
+            // TODO: Use error codes to signal the gateway to take reactionary actions
+            return Err(tonic::Status::internal(
+                "No interceptor reference found for this processed htlc. Potential loss of funds",
+            ));
+        }
     }
 }
 
-fn cancel_intercepted_htlc(key: Option) -> ForwardHtlcInterceptResponse {
+fn cancel_intercepted_htlc(key: Option<CircuitKey>) -> ForwardHtlcInterceptResponse {
     // TODO: Specify a failure code and message
     ForwardHtlcInterceptResponse {
         incoming_circuit_key: key,
