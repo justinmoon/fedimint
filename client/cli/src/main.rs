@@ -282,7 +282,7 @@ enum Command {
     WaitBlockHeight { height: u64 },
 
     /// Decode connection info into its JSON representation
-    DecodeConnectInfo { connect_info: String },
+    DecodeConnectInfo { connect_info: WsClientConnectInfo },
 
     /// Config enabling client to establish websocket connection to federation
     ConnectInfo,
@@ -628,19 +628,10 @@ async fn handle_command(
                 connect_info: (info),
             })
         }
-        Command::DecodeConnectInfo { connect_info } => {
-            match WsClientConnectInfo::from_str(&connect_info) {
-                Ok(connect_info) => Ok(CliOutput::DecodeConnectInfo {
-                    urls: connect_info.urls,
-                    id: connect_info.id,
-                }),
-                Err(e) => Err(CliError::from(
-                    CliErrorKind::GeneralFederationError,
-                    "failed to decode connect info",
-                    Some(e.into()),
-                )),
-            }
-        }
+        Command::DecodeConnectInfo { connect_info } => Ok(CliOutput::DecodeConnectInfo {
+            urls: connect_info.urls,
+            id: connect_info.id,
+        }),
         Command::JoinFederation { .. } => {
             unreachable!()
         }
