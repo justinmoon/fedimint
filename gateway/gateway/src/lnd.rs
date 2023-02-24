@@ -1,15 +1,13 @@
-use std::array::TryFromSliceError;
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
-use std::time::Duration;
 
 use anyhow::anyhow;
 use async_trait::async_trait;
 use bitcoin_hashes::{sha256, Hash};
 use fedimint_core::task::TaskGroup;
 use secp256k1::PublicKey;
-use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio::sync::{mpsc, Mutex};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic_lnd::lnrpc::{GetInfoRequest, SendRequest};
 use tonic_lnd::routerrpc::{CircuitKey, ForwardHtlcInterceptResponse};
@@ -25,11 +23,9 @@ use crate::gatewaylnrpc::{
 use crate::lnrpc_client::{HtlcStream, ILnRpcClient};
 use crate::GatewayError;
 
-type HtlcOutcomeSender = oneshot::Sender<ForwardHtlcInterceptResponse>;
-
 pub struct GatewayLndClient {
     client: LndClient,
-    outcomes: Arc<Mutex<HashMap<sha256::Hash, HtlcOutcomeSender>>>,
+    outcomes: Arc<Mutex<HashMap<sha256::Hash, Arc<mpsc::Sender<ForwardHtlcInterceptResponse>>>>>,
     task_group: TaskGroup,
 }
 
@@ -149,64 +145,52 @@ impl ILnRpcClient for GatewayLndClient {
                 None
             }
         } {
-            let response: Option<ForwardHtlcInterceptResponse> = if htlc.outgoing_requested_chan_id
-                != scid
-            {
-                // Pass through: This HTLC doesn't belong to the current subscription
-                // Forward it to the next interceptor or next node
-                Some(ForwardHtlcInterceptResponse {
-                    incoming_circuit_key: htlc.incoming_circuit_key,
-                    action: 2,
-                    preimage: vec![],
-                    failure_message: vec![],
-                    failure_code: 0,
-                })
-            } else {
-                // This has a chance of collision since payment_hashes are not guaranteed to be
-                // unique TODO: generate unique id for each intercepted HTLC
-                let intercepted_htlc_id = sha256::Hash::hash(&htlc.onion_blob);
+            let response: Option<ForwardHtlcInterceptResponse> =
+                if htlc.outgoing_requested_chan_id != scid {
+                    // Pass through: This HTLC doesn't belong to the current subscription
+                    // Forward it to the next interceptor or next node
+                    Some(ForwardHtlcInterceptResponse {
+                        incoming_circuit_key: htlc.incoming_circuit_key,
+                        action: 2,
+                        preimage: vec![],
+                        failure_message: vec![],
+                        failure_code: 0,
+                    })
+                } else {
+                    // This has a chance of collision since payment_hashes are not guaranteed to be
+                    // unique TODO: generate unique id for each intercepted HTLC
+                    let intercepted_htlc_id = sha256::Hash::hash(&htlc.onion_blob);
 
-                // Intercept: This HTLC belongs to the current subscription
-                // Send it to the gatewayd for processing
-                let intercept = SubscribeInterceptHtlcsResponse {
-                    payment_hash: htlc.payment_hash,
-                    incoming_amount_msat: htlc.incoming_amount_msat,
-                    outgoing_amount_msat: htlc.outgoing_amount_msat,
-                    incoming_expiry: htlc.incoming_expiry,
-                    short_channel_id: scid,
-                    intercepted_htlc_id: intercepted_htlc_id.into_inner().to_vec(),
-                };
+                    // Intercept: This HTLC belongs to the current subscription
+                    // Send it to the gatewayd for processing
+                    let intercept = SubscribeInterceptHtlcsResponse {
+                        payment_hash: htlc.payment_hash,
+                        incoming_amount_msat: htlc.incoming_amount_msat,
+                        outgoing_amount_msat: htlc.outgoing_amount_msat,
+                        incoming_expiry: htlc.incoming_expiry,
+                        short_channel_id: scid,
+                        intercepted_htlc_id: intercepted_htlc_id.into_inner().to_vec(),
+                    };
 
-                match gwd_tx.send(Ok(intercept)).await {
-                    Ok(_) => {
-                        // Open a channel to receive the outcome of the HTLC processing
-                        let (sender, receiver) = oneshot::channel::<ForwardHtlcInterceptResponse>();
-                        self.outcomes
-                            .lock()
-                            .await
-                            .insert(intercepted_htlc_id, sender);
+                    match gwd_tx.send(Ok(intercept)).await {
+                        Ok(_) => {
+                            // Open a channel to receive the outcome of the HTLC processing
+                            // let (sender, receiver) =
+                            // oneshot::channel::<ForwardHtlcInterceptResponse>();
+                            self.outcomes
+                                .lock()
+                                .await
+                                .insert(intercepted_htlc_id, Arc::new(lnd_tx.clone()));
 
-                        // If the gateway does not respond within the HTLC expiry,
-                        // Automatically respond with a failure message.
-                        return tokio::time::timeout(Duration::from_secs(30), async {
-                            receiver.await.unwrap_or_else(|e| {
-                                error!("Failed to receive outcome of intercepted htlc: {:?}", e);
-                                Some(cancel_intercepted_htlc(htlc.incoming_circuit_key))
-                            })
-                        })
-                        .await
-                        .unwrap_or_else(|e| {
-                            error!("await_htlc_processing error {:?}", e);
+                            None
+                        }
+                        Err(e) => {
+                            error!("Failed to send HTLC to gatewayd for processing: {:?}", e);
+                            // Request LND to cancel the HTLC
                             Some(cancel_intercepted_htlc(htlc.incoming_circuit_key))
-                        });
+                        }
                     }
-                    Err(e) => {
-                        error!("Failed to send HTLC to gatewayd for processing: {:?}", e);
-                        // Request LND to cancel the HTLC
-                        Some(cancel_intercepted_htlc(htlc.incoming_circuit_key))
-                    }
-                }
-            };
+                };
 
             if response.is_some() {
                 match lnd_tx.send(response.unwrap()).await {
@@ -239,7 +223,9 @@ impl ILnRpcClient for GatewayLndClient {
             Ok(hash) => hash,
             Err(e) => {
                 error!("Invalid intercepted_htlc_id: {:?}", e);
-                return Err(tonic::Status::invalid_argument(e.to_string()));
+                return Err(GatewayError::LnRpcError(tonic::Status::invalid_argument(
+                    e.to_string(),
+                )));
             }
         };
 
@@ -249,21 +235,13 @@ impl ILnRpcClient for GatewayLndClient {
             // Translate action request into a cln rpc response for `htlc_accepted` event
             let htlca_res = match action {
                 Some(Action::Settle(Settle { preimage })) => {
-                    let assert_pk: Result<[u8; 32], TryFromSliceError> =
-                        preimage.as_slice().try_into();
-                    if let Ok(pk) = assert_pk {
-                        // serde_json::json!({ "result": "resolve",
-                        // "payment_key": pk.to_hex() })
-                        // TODO: Specify a failure code and message
-                        ForwardHtlcInterceptResponse {
-                            incoming_circuit_key: key,
-                            action: 0,
-                            preimage: pk,
-                            failure_message: vec![],
-                            failure_code: 0,
-                        }
-                    } else {
-                        cancel_intercepted_htlc(None)
+                    // FIXME: Specify a failure code and message, use proper incoming circuit key
+                    ForwardHtlcInterceptResponse {
+                        incoming_circuit_key: None,
+                        action: 0,
+                        preimage,
+                        failure_message: vec![],
+                        failure_code: 0,
                     }
                 }
                 Some(Action::Cancel(Cancel { reason: _ })) => {
@@ -273,15 +251,15 @@ impl ILnRpcClient for GatewayLndClient {
                 }
                 None => {
                     error!("No action specified for intercepted htlc id: {:?}", hash);
-                    return Err(tonic::Status::internal(
+                    return Err(GatewayError::LnRpcError(tonic::Status::internal(
                         "No action specified on this intercepted htlc",
-                    ));
+                    )));
                 }
             };
 
             // Send translated response to the HTLC interceptor for submission to the cln
             // rpc
-            match outcome.send(htlca_res) {
+            match outcome.send(htlca_res).await {
                 Ok(_) => {
                     return Ok(CompleteHtlcsResponse {});
                 }
@@ -290,9 +268,9 @@ impl ILnRpcClient for GatewayLndClient {
                         "Failed to send htlc_accepted response to interceptor: {:?}",
                         e
                     );
-                    return Err(tonic::Status::internal(
+                    return Err(GatewayError::LnRpcError(tonic::Status::internal(
                         "Failed to send htlc_accepted outcome to interceptor",
-                    ));
+                    )));
                 }
             };
         } else {
@@ -301,9 +279,9 @@ impl ILnRpcClient for GatewayLndClient {
                 intercepted_htlc_id
             );
             // TODO: Use error codes to signal the gateway to take reactionary actions
-            return Err(tonic::Status::internal(
+            return Err(GatewayError::LnRpcError(tonic::Status::internal(
                 "No interceptor reference found for this processed htlc. Potential loss of funds",
-            ));
+            )));
         }
     }
 }
