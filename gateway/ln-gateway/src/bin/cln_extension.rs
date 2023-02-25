@@ -49,7 +49,7 @@ pub struct ClnExtensionOpts {
 async fn main() -> Result<(), anyhow::Error> {
     let tg = TaskGroup::new();
 
-    let (service, listen, plugin) = ClnRpcService::new(tg.clone())
+    let (service, listen, plugin) = ClnRpcService::new()
         .await
         .expect("Failed to create cln rpc service");
 
@@ -58,28 +58,14 @@ async fn main() -> Result<(), anyhow::Error> {
         listen
     );
 
-    // FIXME: better variable names
-    let handle = tg.make_handle();
-    let shutdown_rx = handle.make_shutdown_rx();
-
     Server::builder()
         .add_service(GatewayLightningServer::new(service))
         .serve_with_shutdown(listen, async {
             // Wait for a shutdown signal received from the controlling task group
-            // The plugin will be shutdown when this callback returns
-            tokio::select! {
-                // task group requested shutdown (e.g. via "shutdown" core-lightning notification)
-                _ = shutdown_rx.await => {
-                    std::fs::write("/Users/justin/fedi/fedimint/1.txt", "done").unwrap();
-                }
-                // plugin encountered error and is exiting, so we kill the task group
-                _ = plugin.join() => {
-                    std::fs::write("/Users/justin/fedi/fedimint/2.txt", "done").unwrap();
-                    // shuts down task group
-                    // FIXME: should we shutdown_join)_all?
-                    tg.shutdown().await;
-                }
-            };
+            // shutdown whether or not we receive an error
+            let _ = plugin.join().await;
+            std::fs::write("/Users/justin/fedi/fedimint/2.txt", "done").unwrap();
+            tg.shutdown().await;
         })
         .await
         .map_err(|e| ClnExtensionError::Error(anyhow!("Failed to start server, {:?}", e)))?;
@@ -131,14 +117,12 @@ pub struct ClnRpcClient {}
 pub struct ClnRpcService {
     socket: PathBuf,
     interceptor: Arc<ClnHtlcInterceptor>,
-    task_group: TaskGroup,
 }
 
 impl ClnRpcService {
     pub async fn new(
-        task_group: TaskGroup,
     ) -> Result<(Self, SocketAddr, Plugin<Arc<ClnHtlcInterceptor>>), ClnExtensionError> {
-        let interceptor = Arc::new(ClnHtlcInterceptor::new(task_group.clone()));
+        let interceptor = Arc::new(ClnHtlcInterceptor::new());
 
         if let Some(plugin) = Builder::new(stdin(), stdout())
             .option(options::ConfigOption::new(
@@ -170,12 +154,8 @@ impl ClnRpcService {
             .subscribe(
                 "shutdown",
                 |plugin: Plugin<Arc<ClnHtlcInterceptor>>, _: serde_json::Value| async move {
-                    info!("Received shutdown event ... gracefully shutting down the plugin");
-                    let handle = tokio::spawn(async move {
-                        plugin.state().shutdown().await;
-                        Ok(())
-                    });
-                    handle.await?
+                    info!("Received shutdown event ... requesting plugin shutdown");
+                    plugin.shutdown()
                 },
             )
             .dynamic() // Allow reloading the plugin
@@ -206,7 +186,6 @@ impl ClnRpcService {
             Ok((
                 Self {
                     socket,
-                    task_group,
                     interceptor,
                 },
                 listen,
@@ -533,20 +512,14 @@ type HtlcOutcomeSender = oneshot::Sender<serde_json::Value>;
 pub struct ClnHtlcInterceptor {
     subscriptions: Arc<Mutex<HashMap<u64, HtlcSubscriptionSender>>>,
     pub outcomes: Arc<Mutex<HashMap<sha256::Hash, HtlcOutcomeSender>>>,
-    task_group: TaskGroup,
 }
 
 impl ClnHtlcInterceptor {
-    fn new(task_group: TaskGroup) -> Self {
+    fn new() -> Self {
         Self {
             subscriptions: Arc::new(Mutex::new(HashMap::new())),
             outcomes: Arc::new(Mutex::new(HashMap::new())),
-            task_group,
         }
-    }
-
-    async fn shutdown(&self) {
-        self.task_group.shutdown().await;
     }
 
     async fn intercept_htlc(&self, payload: HtlcAccepted) -> serde_json::Value {
