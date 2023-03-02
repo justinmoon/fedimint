@@ -125,6 +125,7 @@ impl ILnRpcClient for GatewayLndClient {
         // Channel to send intercepted htlc to gatewayd for processing
         let (gwd_tx, gwd_rx) =
             mpsc::channel::<Result<SubscribeInterceptHtlcsResponse, tonic::Status>>(channel_size);
+        return Ok(Box::pin(ReceiverStream::new(gwd_rx)));
 
         info!("subscribing");
         let scid = subscription.short_channel_id.clone();
