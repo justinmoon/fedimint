@@ -18,6 +18,30 @@ function open_channel() {
     until [[ $($FM_CLN listpeers | jq -e -r ".peers[] | select(.id == \"$FM_LND_PUB_KEY\") | .channels[0].state") = "CHANNELD_NORMAL" ]]; do sleep $POLL_INTERVAL; done
 }
 
+function open_channels() {
+    FM_LND_PUB_KEY=$($FM_LND getinfo | jq -r ".identity_pubkey")
+
+    # between CLN 1 and LND
+    echo "open channel cln1 -> lnd"
+    LN_ADDR="$($FM_CLN newaddr | jq -e -r '.bech32')"
+    $FM_BTC_CLIENT sendtoaddress $LN_ADDR 1
+    mine_blocks 10
+    $FM_CLN connect $FM_LND_PUB_KEY@127.0.0.1:9734
+    until $FM_CLN -k fundchannel id=$FM_LND_PUB_KEY amount=0.1btc push_msat=5000000000; do sleep $POLL_INTERVAL; done
+    mine_blocks 10
+    until [[ $($FM_CLN listpeers | jq -e -r ".peers[] | select(.id == \"$FM_LND_PUB_KEY\") | .channels[0].state") = "CHANNELD_NORMAL" ]]; do sleep $POLL_INTERVAL; done
+
+    # between CLN 2 and LND
+    echo "open channel cln2 -> lnd"
+    LN_ADDR="$($FM_CLN2 newaddr | jq -e -r '.bech32')"
+    $FM_BTC_CLIENT sendtoaddress $LN_ADDR 1
+    mine_blocks 10
+    $FM_CLN2 connect $FM_LND_PUB_KEY@127.0.0.1:9734
+    until $FM_CLN2 -k fundchannel id=$FM_LND_PUB_KEY amount=0.1btc push_msat=5000000000; do sleep $POLL_INTERVAL; done
+    mine_blocks 10
+    until [[ $($FM_CLN2 listpeers | jq -e -r ".peers[] | select(.id == \"$FM_LND_PUB_KEY\") | .channels[0].state") = "CHANNELD_NORMAL" ]]; do sleep $POLL_INTERVAL; done
+}
+
 function await_bitcoin_rpc() {
     until $FM_BTC_CLIENT getblockchaininfo 1>/dev/null 2>/dev/null ; do
         >&2 echo "Bitcoind rpc not ready yet. Waiting ..."
@@ -27,6 +51,10 @@ function await_bitcoin_rpc() {
 
 function await_cln_start() {
     until [ -e "$FM_CLN_DIR/regtest/lightning-rpc" ]; do
+        >&2 echo "CLN gateway not ready yet. Waiting ..."
+        sleep "$POLL_INTERVAL"
+    done
+    until [ -e "$FM_CLN2_DIR/regtest/lightning-rpc" ]; do
         >&2 echo "CLN gateway not ready yet. Waiting ..."
         sleep "$POLL_INTERVAL"
     done
@@ -86,7 +114,10 @@ function await_cln_block_processing() {
 
 # Function for killing processes stored in FM_PID_FILE
 function kill_fedimint_processes {
-  $FM_CLN plugin stop "gateway-cln-extension" 2>/dev/null || true;
+  # FIXME: $FM_LN1 doesn't exist anymore
+  # $FM_CLN plugin stop "gateway-cln-extension" 2>/dev/null || true;
+  $FM_CLN1 stop || true;
+  $FM_CLN2 stop || true;
 
   # shellcheck disable=SC2046
   kill $(cat $FM_PID_FILE | sed '1!G;h;$!d') 2>/dev/null #sed reverses the order here
@@ -106,9 +137,7 @@ function start_gatewayd() {
   export FM_GATEWAY_DATA_DIR=$FM_TEST_DIR/gw2
   export FM_GATEWAY_LISTEN_ADDR="127.0.0.1:18175"
   export FM_GATEWAY_API_ADDR="http://127.0.0.1:18175"
-  export FM_LND_RPC_ADDR="http://localhost:11009"
-  export FM_LND_TLS_CERT=$FM_LND_DIR/tls.cert
-  export FM_LND_MACAROON=$FM_LND_DIR/data/chain/bitcoin/regtest/admin.macaroon
+
   $FM_BIN_DIR/gatewayd &
   echo $! >> $FM_PID_FILE
 

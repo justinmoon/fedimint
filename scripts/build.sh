@@ -34,6 +34,7 @@ export FM_TEST_DIR=$FM_TMP_DIR
 export FM_BIN_DIR="$SRC_DIR/target/debug"
 export FM_PID_FILE="$FM_TMP_DIR/.pid"
 export FM_CLN_DIR="$FM_TEST_DIR/cln"
+export FM_CLN2_DIR="$FM_TEST_DIR/cln2"
 export FM_LND_DIR="$FM_TEST_DIR/lnd"
 export FM_BTC_DIR="$FM_TEST_DIR/bitcoin"
 export FM_CFG_DIR="$FM_TEST_DIR/cfg"
@@ -83,10 +84,16 @@ export FM_GATEWAY_PASSWORD="theresnosecondbest"
 export FM_CLN_EXTENSION_LISTEN_ADDRESS="0.0.0.0:8177"
 export FM_GATEWAY_LIGHTNING_ADDR="http://localhost:8177"
 
+# LND
+export FM_LND_RPC_ADDR="http://localhost:11009"
+export FM_LND_TLS_CERT=$FM_LND_DIR/tls.cert
+export FM_LND_MACAROON=$FM_LND_DIR/data/chain/bitcoin/regtest/admin.macaroon
+
 mkdir -p $FM_GATEWAY_DATA_DIR
 
 # Define clients
 export FM_CLN="lightning-cli --network regtest --lightning-dir=$FM_CLN_DIR"
+export FM_CLN2="lightning-cli --network regtest --lightning-dir=$FM_CLN2_DIR"
 export FM_LND="lncli -n regtest --lnddir=$FM_LND_DIR --rpcserver=localhost:11009"
 export FM_BTC_CLIENT="bitcoin-cli -regtest -rpcuser=bitcoin -rpcpassword=bitcoin"
 export FM_MINT_CLIENT="$FM_BIN_DIR/fedimint-cli --workdir $FM_CFG_DIR"
