@@ -199,28 +199,17 @@ function start_bitcoind() {
 }
 
 function start_lightningd() {
-  echo "starting lightningd"
-  await_bitcoin_rpc
-  # if we're running developer build, enable some flags to make it lightningd run faster
-  if [[ "$(lightningd --bitcoin-cli "$(which false)" --dev-no-plugin-checksum 2>&1 )" =~ .*"--dev-no-plugin-checksum: unrecognized option".* ]]; then
-    LIGHTNING_FLAGS=""
-  else
-    LIGHTNING_FLAGS="--dev-fast-gossip --dev-bitcoind-poll=1"
-  fi
-  lightningd $LIGHTNING_FLAGS --lightning-dir=$FM_CLN_DIR --plugin=$FM_BIN_DIR/gateway-cln-extension &
+  $FM_BIN_DIR/fixtures lightningd
   echo $! >> $FM_PID_FILE
-  echo "started lightningd"
 }
 
 function start_lnd() {
-  echo "starting lnd"
-  await_bitcoin_rpc
-  lnd --lnddir=$FM_LND_DIR &
+  $FM_BIN_DIR/fixtures lnd
   echo $! >> $FM_PID_FILE
-  echo "started lnd"
 }
 
 function start_gatewayd() {
+  $FM_BIN_DIR/fixtures lnd
   echo "starting gatewayd"
   await_fedimint_block_sync
   $FM_BIN_DIR/gatewayd &
@@ -230,19 +219,13 @@ function start_gatewayd() {
 }
 
 function start_electrs() {
-  echo "starting electrs"
-  await_bitcoin_rpc
-  electrs --conf-dir "$FM_ELECTRS_DIR" --db-dir "$FM_ELECTRS_DIR" --daemon-dir "$FM_BTC_DIR" &
+  $FM_BIN_DIR/fixtures electrs
   echo $! >> $FM_PID_FILE
-  echo "started electrs"
 }
 
 function start_esplora() {
-  echo "starting esplora"
-  await_bitcoin_rpc
-  esplora --cookie "bitcoin:bitcoin" --network "regtest" --daemon-dir "$FM_BTC_DIR" --http-addr "127.0.0.1:50002" --daemon-rpc-addr "127.0.0.1:18443" --monitoring-addr "127.0.0.1:50003" --db-dir "$FM_TEST_DIR/esplora" &
+  $FM_BIN_DIR/fixtures esplora
   echo $! >> $FM_PID_FILE
-  echo "started esplora"
 }
 
 function start_federation() {
