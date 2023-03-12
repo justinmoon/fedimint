@@ -209,11 +209,9 @@ function start_lnd() {
 }
 
 function start_gatewayd() {
-  $FM_BIN_DIR/fixtures lnd
   echo "starting gatewayd"
   await_fedimint_block_sync
-  $FM_BIN_DIR/gatewayd &
-  echo $! >> $FM_PID_FILE
+  $FM_BIN_DIR/fixtures gatewayd &
   gw_connect_fed
   echo "started gatewayd"
 }
