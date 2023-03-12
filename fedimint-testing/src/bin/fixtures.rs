@@ -88,10 +88,10 @@ async fn run_lightningd() -> anyhow::Result<()> {
 
     // spawn lightningd
     let mut lightningd = Command::new("lightningd")
-        .arg("--dev-fast-gossip")
-        .arg("--dev-bitcoind-poll=1")
         .arg(format!("--lightning-dir={cln_dir}"))
         .arg(format!("--plugin={bin_dir}/gateway-cln-extension"))
+        .arg("--dev-fast-gossip")
+        .arg("--dev-bitcoind-poll=1")
         .spawn()
         .expect("failed to spawn lightningd");
     info!("lightningd started");
