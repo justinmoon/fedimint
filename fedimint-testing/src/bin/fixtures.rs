@@ -3,12 +3,26 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bitcoincore_rpc::{Client as BitcoinClient, RpcApi};
+use clap::{Parser, Subcommand};
 use fedimint_core::task::{sleep, TaskGroup};
 use fedimint_logging::TracingSetup;
 use tokio::process::Command;
 use tokio::sync::Mutex;
 use tracing::{error, info, trace};
 use url::Url;
+
+#[derive(Subcommand)]
+enum Cmd {
+    Bitcoind,
+    Daemons,
+}
+
+#[derive(Parser)]
+#[command(version)]
+struct Args {
+    #[clap(subcommand)]
+    command: Cmd,
+}
 
 #[derive(Default, Clone)]
 struct State {
@@ -132,12 +146,7 @@ async fn run_lnd(state: MutableState) -> anyhow::Result<()> {
     Ok(())
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    TracingSetup::default().init()?;
-
-    let state = MutableState::new();
-
+async fn daemons(state: MutableState) -> anyhow::Result<()> {
     let mut root_task_group = TaskGroup::new();
     root_task_group.install_kill_handler();
 
@@ -165,6 +174,21 @@ async fn main() -> anyhow::Result<()> {
         .await;
 
     root_task_group.join_all(None).await?;
+
+    Ok(())
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    TracingSetup::default().init()?;
+
+    let state = MutableState::new();
+
+    let args = Args::parse();
+    match args.command {
+        Cmd::Bitcoind => run_bitcoind(state).await.expect("bitcoind failed"),
+        Cmd::Daemons => daemons(state).await.expect("bitcoind failed"),
+    }
 
     Ok(())
 }
