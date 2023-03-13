@@ -303,6 +303,7 @@ fn fedimintd_env(id: usize) -> HashMap<String, String> {
     let p2p_port = base_port + (id * 10);
     let api_port = base_port + (id * 10) + 1;
     let ui_port = base_port + (id * 10) + 2;
+    let cfg_dir = env::var("FM_CFG_DIR").unwrap();
     HashMap::from_iter([
         ("FM_BIND_P2P".into(), format!("127.0.0.1:{p2p_port}")),
         (
@@ -312,29 +313,26 @@ fn fedimintd_env(id: usize) -> HashMap<String, String> {
         ("FM_BIND_API".into(), format!("127.0.0.1:{api_port}")),
         ("FM_API_URL".into(), format!("ws://127.0.0.1:{api_port}")),
         ("FM_LISTEN_UI".into(), format!("127.0.0.1:{ui_port}")),
-        // TODO: rebase and fill this in ...
-        // ("FM_FEDIMINT_DATA_DIR", format!("127.0.0.1:{ui_port}")),
+        (
+            "FM_FEDIMINT_DATA_DIR".into(),
+            format!("{cfg_dir}/server-{id}"),
+        ),
         ("FM_PASSWORD".into(), format!("pass{id}")),
     ])
 }
 
-async fn create_tls(id: usize, _sender: Sender<String>) -> anyhow::Result<()> {
-    // TODO: get cert from stdout or config file?
-
+async fn create_tls(id: usize, sender: Sender<String>) -> anyhow::Result<()> {
+    // set env vars
     let bin_dir = env::var("FM_BIN_DIR").unwrap();
-    let cfg_dir = env::var("FM_CFG_DIR").unwrap();
-    // FIXME: in another PR I have a bash variable for this
-    let out_dir = format!("{cfg_dir}/server-{id}");
     let server_name = format!("Server-{id}");
-
-    // create out-dir
-    fs::create_dir(&out_dir).await?;
-
     let env_vars = fedimintd_env(id);
     let p2p_url = env_vars.get("FM_P2P_URL").unwrap();
     let api_url = env_vars.get("FM_API_URL").unwrap();
+    let out_dir = env_vars.get("FM_FEDIMINT_DATA_DIR").unwrap();
+    let cert_path = format!("{out_dir}/tls-cert");
 
-    // TODO: await_fedimint_block_sync()
+    // create out-dir
+    fs::create_dir(&out_dir).await?;
 
     info!("creating TLS certs created for started {server_name} in {out_dir}");
     let mut task = Command::new(format!("{bin_dir}/distributedgen"))
@@ -352,12 +350,56 @@ async fn create_tls(id: usize, _sender: Sender<String>) -> anyhow::Result<()> {
     info!("TLS certs created for started {server_name}");
 
     // TODO: read TLS cert from disk and return if over channel
+    let cert = fs::read_to_string(cert_path)
+        .await
+        .expect("couldn't read cert from disk");
+    sender
+        .send(cert)
+        .await
+        .expect("failed to send cert over channel");
 
     Ok(())
 }
 
-async fn run_distributedgen(id: usize) -> anyhow::Result<()> {
-    info!("todo... generate keys for {id}");
+async fn run_distributedgen(id: usize, certs: Vec<String>) -> anyhow::Result<()> {
+    let certs = certs.join(",");
+    let bin_dir = env::var("FM_BIN_DIR").unwrap();
+    let cfg_dir = env::var("FM_CFG_DIR").unwrap();
+    let server_name = format!("Server-{id}");
+
+    let env_vars = fedimintd_env(id);
+    let bind_p2p = env_vars.get("FM_BIND_P2P").unwrap();
+    let bind_api = env_vars.get("FM_BIND_API").unwrap();
+    let out_dir = env_vars.get("FM_FEDIMINT_DATA_DIR").unwrap();
+
+    info!("creating TLS certs created for started {server_name} in {out_dir}");
+    let mut task = Command::new(format!("{bin_dir}/distributedgen"))
+        .envs(fedimintd_env(id))
+        .arg("run")
+        .arg(format!("--bind-p2p={bind_p2p}"))
+        .arg(format!("--bind-api={bind_api}"))
+        .arg(format!("--out-dir={out_dir}"))
+        .arg(format!("--certs={certs}"))
+        .spawn()
+        .unwrap_or_else(|e| panic!("DKG failed for for {server_name} {e:?}"));
+    record_pid(&task).await?;
+
+    task.wait().await?;
+    info!("DKG created for started {server_name}");
+
+    // copy configs to config directory
+    fs::rename(
+        format!("{out_dir}/client-connect"),
+        format!("{cfg_dir}/client-connect"),
+    )
+    .await?;
+    fs::rename(
+        format!("{out_dir}/client.json"),
+        format!("{cfg_dir}/client.json"),
+    )
+    .await?;
+    info!("copied client configs");
+
     Ok(())
 }
 
@@ -370,7 +412,7 @@ async fn run_dkg(servers: usize) -> anyhow::Result<()> {
     // let mut certs = vec![];
 
     // generate TLS certs
-    let (sender, mut _receiver): (Sender<String>, Receiver<String>) = mpsc::channel(1000);
+    let (sender, mut receiver): (Sender<String>, Receiver<String>) = mpsc::channel(1000);
     for id in 0..servers {
         let sender = sender.clone();
         task_group
@@ -387,27 +429,28 @@ async fn run_dkg(servers: usize) -> anyhow::Result<()> {
     task_group.join_all(None).await?;
     info!("Generated TLS certs");
 
-    // // collect TLS certs
-    // let mut certs = vec![];
-    // while certs.len() < servers {
-    //     let cert = receiver
-    //         .recv()
-    //         .await
-    //         .expect("couldn't receive cert over channel");
-    //     certs.push(cert)
-    // }
-    // let cert_string = certs.join(",");
-    // info!("Collected TLS certs");
+    // collect TLS certs
+    let mut certs = vec![];
+    while certs.len() < servers {
+        let cert = receiver
+            .recv()
+            .await
+            .expect("couldn't receive cert over channel");
+        certs.push(cert)
+    }
+    let certs_string = certs.join(",");
+    info!("Collected TLS certs: {certs_string}");
 
     // generate keys
     let mut task_group = root_task_group.make_subgroup().await;
     for id in 0..servers {
+        let certs = certs.clone();
         task_group
             .spawn(
                 format!("create TLS certs for server {id}"),
                 move |_| async move {
                     info!("generating keys for server {}", id);
-                    run_distributedgen(id)
+                    run_distributedgen(id, certs)
                         .await
                         .expect("run_distributedgen failed");
                     info!("generating keys for server {}", id);
