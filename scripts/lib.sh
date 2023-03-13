@@ -143,15 +143,9 @@ function run_dkg() {
   # Generate federation configs
   BASE_PORT=$((8173 + 10000))
   CERTS=""
+  $FM_BIN_DIR/fixtures dkg $FM_FED_SIZE
   for ((ID=0; ID<FM_FED_SIZE; ID++));
   do
-    echo "making dir"
-    mkdir $FM_CFG_DIR/server-$ID
-    FED_PORT=$(echo "$BASE_PORT + $ID * 10" | bc -l)
-    API_PORT=$(echo "$BASE_PORT + $ID * 10 + 1" | bc -l)
-    export FM_PASSWORD="pass$ID"
-    echo "making creating cert for port $FED_PORT $API_PORT"
-    RUST_BACKTRACE=1 $FM_BIN_DIR/distributedgen create-cert --p2p-url ws://127.0.0.1:$FED_PORT --api-url ws://127.0.0.1:$API_PORT --out-dir $FM_CFG_DIR/server-$ID --name "Server-$ID"
     CERTS="$CERTS,$(cat $FM_CFG_DIR/server-$ID/tls-cert)"
   done
   CERTS=${CERTS:1}

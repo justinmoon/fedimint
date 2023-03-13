@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::env;
 use std::io::Write;
 use std::path::PathBuf;
@@ -17,9 +18,10 @@ use fedimint_wallet_client::config::WalletClientConfig;
 use fedimint_wallet_client::WalletClientGen;
 use mint_client::modules::mint::MintClientGen;
 use mint_client::{module_decode_stubs, Client, UserClient, UserClientConfig};
-use tokio::fs::OpenOptions;
+use tokio::fs::{self, OpenOptions};
 use tokio::io::AsyncWriteExt;
 use tokio::process::{Child, Command};
+use tokio::sync::mpsc::{self, Receiver, Sender};
 use tracing::{error, info, trace};
 use url::Url;
 
@@ -32,6 +34,7 @@ enum Cmd {
     Electrs,
     Esplora,
     Daemons,
+    Dkg { servers: usize },
     Fedimintd { id: usize },
     Gatewayd,
     Federation { start_id: usize, stop_id: usize },
@@ -236,18 +239,16 @@ async fn run_esplora() -> anyhow::Result<()> {
 
 async fn run_fedimintd(id: usize) -> anyhow::Result<()> {
     // wait for bitcoin RPC to be ready ...
-    await_bitcoin_rpc("electrs").await?;
-
-    // set password env var
-    let password = format!("pass{id}");
+    await_bitcoin_rpc("fedimintd").await?;
 
     let bin_dir = env::var("FM_BIN_DIR").unwrap();
     let cfg_dir = env::var("FM_CFG_DIR").unwrap();
 
     // spawn fedimintd
     let mut fedimintd = Command::new(format!("{bin_dir}/fedimintd"))
+        // TODO: $FM_FEDIMINTD_DATA_DIR
         .arg(format!("{cfg_dir}/server-{id}"))
-        .env("FM_PASSWORD", password)
+        .envs(fedimintd_env(id))
         .spawn()
         .expect("failed to spawn fedimintd");
     record_pid(&fedimintd).await?;
@@ -297,6 +298,130 @@ async fn run_federation(start_id: usize, stop_id: usize) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn fedimintd_env(id: usize) -> HashMap<String, String> {
+    let base_port = 8173 + 10000;
+    let p2p_port = base_port + (id * 10);
+    let api_port = base_port + (id * 10) + 1;
+    let ui_port = base_port + (id * 10) + 2;
+    HashMap::from_iter([
+        ("FM_BIND_P2P".into(), format!("127.0.0.1:{p2p_port}")),
+        (
+            "FM_P2P_URL".into(),
+            format!("fedimint://127.0.0.1:{p2p_port}"),
+        ),
+        ("FM_BIND_API".into(), format!("127.0.0.1:{api_port}")),
+        ("FM_API_URL".into(), format!("ws://127.0.0.1:{api_port}")),
+        ("FM_LISTEN_UI".into(), format!("127.0.0.1:{ui_port}")),
+        // TODO: rebase and fill this in ...
+        // ("FM_FEDIMINT_DATA_DIR", format!("127.0.0.1:{ui_port}")),
+        ("FM_PASSWORD".into(), format!("pass{id}")),
+    ])
+}
+
+async fn create_tls(id: usize, _sender: Sender<String>) -> anyhow::Result<()> {
+    // TODO: get cert from stdout or config file?
+
+    let bin_dir = env::var("FM_BIN_DIR").unwrap();
+    let cfg_dir = env::var("FM_CFG_DIR").unwrap();
+    // FIXME: in another PR I have a bash variable for this
+    let out_dir = format!("{cfg_dir}/server-{id}");
+    let server_name = format!("Server-{id}");
+
+    // create out-dir
+    fs::create_dir(&out_dir).await?;
+
+    let env_vars = fedimintd_env(id);
+    let p2p_url = env_vars.get("FM_P2P_URL").unwrap();
+    let api_url = env_vars.get("FM_API_URL").unwrap();
+
+    // TODO: await_fedimint_block_sync()
+
+    info!("creating TLS certs created for started {server_name} in {out_dir}");
+    let mut task = Command::new(format!("{bin_dir}/distributedgen"))
+        .envs(fedimintd_env(id))
+        .arg("create-cert")
+        .arg(format!("--p2p-url={p2p_url}"))
+        .arg(format!("--api-url={api_url}"))
+        .arg(format!("--out-dir={out_dir}"))
+        .arg(format!("--name={server_name}"))
+        .spawn()
+        .unwrap_or_else(|e| panic!("failed to spawn create TLS certs for {server_name} {e:?}"));
+    record_pid(&task).await?;
+
+    task.wait().await?;
+    info!("TLS certs created for started {server_name}");
+
+    // TODO: read TLS cert from disk and return if over channel
+
+    Ok(())
+}
+
+async fn run_distributedgen(id: usize) -> anyhow::Result<()> {
+    info!("todo... generate keys for {id}");
+    Ok(())
+}
+
+async fn run_dkg(servers: usize) -> anyhow::Result<()> {
+    let root_task_group = TaskGroup::new();
+    root_task_group.install_kill_handler();
+    let mut task_group = root_task_group.make_subgroup().await;
+
+    // let base_port = 8173 + 10000;
+    // let mut certs = vec![];
+
+    // generate TLS certs
+    let (sender, mut _receiver): (Sender<String>, Receiver<String>) = mpsc::channel(1000);
+    for id in 0..servers {
+        let sender = sender.clone();
+        task_group
+            .spawn(
+                format!("create TLS certs for server {id}"),
+                move |_| async move {
+                    info!("generating certs for server {}", id);
+                    create_tls(id, sender).await.expect("create_tls failed");
+                    info!("generating certs for server {}", id);
+                },
+            )
+            .await;
+    }
+    task_group.join_all(None).await?;
+    info!("Generated TLS certs");
+
+    // // collect TLS certs
+    // let mut certs = vec![];
+    // while certs.len() < servers {
+    //     let cert = receiver
+    //         .recv()
+    //         .await
+    //         .expect("couldn't receive cert over channel");
+    //     certs.push(cert)
+    // }
+    // let cert_string = certs.join(",");
+    // info!("Collected TLS certs");
+
+    // generate keys
+    let mut task_group = root_task_group.make_subgroup().await;
+    for id in 0..servers {
+        task_group
+            .spawn(
+                format!("create TLS certs for server {id}"),
+                move |_| async move {
+                    info!("generating keys for server {}", id);
+                    run_distributedgen(id)
+                        .await
+                        .expect("run_distributedgen failed");
+                    info!("generating keys for server {}", id);
+                },
+            )
+            .await;
+    }
+
+    task_group.join_all(None).await?;
+    info!("DKG complete");
+
+    Ok(())
+}
+
 async fn daemons() -> anyhow::Result<()> {
     let mut root_task_group = TaskGroup::new();
     root_task_group.install_kill_handler();
@@ -321,13 +446,13 @@ async fn daemons() -> anyhow::Result<()> {
 
     root_task_group
         .spawn("electrs", move |_| async move {
-            run_lnd().await.expect("electrs failed")
+            run_electrs().await.expect("electrs failed")
         })
         .await;
 
     root_task_group
         .spawn("esplora", move |_| async move {
-            run_lnd().await.expect("esplora failed")
+            run_esplora().await.expect("esplora failed")
         })
         .await;
 
@@ -348,8 +473,9 @@ async fn main() -> anyhow::Result<()> {
         Cmd::Lnd => run_lnd().await.expect("lnd failed"),
         Cmd::Electrs => run_electrs().await.expect("electrs failed"),
         Cmd::Esplora => run_esplora().await.expect("esplora failed"),
-        Cmd::Fedimintd { id } => run_fedimintd(id).await.expect("fedimitn failed"),
+        Cmd::Fedimintd { id } => run_fedimintd(id).await.expect("fedimint failed"),
         Cmd::Gatewayd => run_gatewayd().await.expect("gatewayd failed"),
+        Cmd::Dkg { servers } => run_dkg(servers).await.expect("dkg failed"),
         Cmd::Federation { start_id, stop_id } => run_federation(start_id, stop_id)
             .await
             .expect("esplora failed"),
