@@ -131,7 +131,7 @@ enum CliOutput {
 
     Backup,
 
-    Pool(stabilitypool::PoolOutput),
+    Pool(stabilitypoolcli::PoolCliOutput),
 }
 
 impl fmt::Display for CliOutput {
@@ -747,7 +747,7 @@ async fn handle_command(
                 Some(e.into()),
             )),
         },
-        Command::Pool(cmd) => stabilitypool::handle_command(cmd, client, rng)
+        Command::Pool(cmd) => stabilitypoolcli::handle_command(cmd, client, rng)
             .await
             .map(CliOutput::Pool),
     }

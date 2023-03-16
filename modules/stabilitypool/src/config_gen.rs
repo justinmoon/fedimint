@@ -2,13 +2,16 @@ use std::collections::BTreeMap;
 use std::ffi::OsString;
 
 use async_trait::async_trait;
+use fedimint_client::module::gen::ClientModuleGen;
+use fedimint_client::module::ClientModule;
+use fedimint_client::sm::{DynState, OperationId, State, StateTransition};
 use fedimint_core::config::{
     ConfigGenParams, DkgResult, ModuleConfigResponse, ModuleGenParams, ServerModuleConfig,
     TypedServerModuleConfig, TypedServerModuleConsensusConfig,
 };
-use fedimint_core::core::{Decoder, ModuleInstanceId, ModuleKind};
+use fedimint_core::core::{Decoder, IntoDynInstance, ModuleInstanceId, ModuleKind};
 use fedimint_core::db::{Database, DatabaseVersion, ModuleDatabaseTransaction};
-use fedimint_core::encoding::Encodable;
+use fedimint_core::encoding::{Decodable, Encodable};
 use fedimint_core::module::__reexports::serde_json;
 use fedimint_core::module::{
     CommonModuleGen, CoreConsensusVersion, ExtendsCommonModuleGen, ModuleCommon,
@@ -16,7 +19,7 @@ use fedimint_core::module::{
 };
 use fedimint_core::server::DynServerModule;
 use fedimint_core::task::TaskGroup;
-use fedimint_core::{NumPeers, PeerId};
+use fedimint_core::{apply, async_trait_maybe_send, NumPeers, PeerId};
 use serde::{Deserialize, Serialize};
 
 use crate::common::StabilityPoolModuleTypes;
@@ -24,7 +27,7 @@ use crate::config::{
     EpochConfig, OracleConfig, PoolConfig, PoolConfigClient, PoolConfigConsensus, PoolConfigPrivate,
 };
 use crate::stability_core::CollateralRatio;
-use crate::{StabilityPool, KIND};
+use crate::{PoolConsensusItem, PoolInput, PoolOutput, PoolOutputOutcome, StabilityPool, KIND};
 
 // The default global max feerate.
 // TODO: Have this actually in config.
@@ -81,11 +84,71 @@ impl CommonModuleGen for PoolCommonGen {
     }
 }
 
+pub struct PoolModuleTypes;
+
+impl ModuleCommon for PoolModuleTypes {
+    type Input = PoolInput;
+    type Output = PoolOutput;
+    type OutputOutcome = PoolOutputOutcome;
+    type ConsensusItem = PoolConsensusItem;
+}
+
+#[derive(Debug)]
+pub struct PoolClientModule {}
+
+impl ClientModule for PoolClientModule {
+    type Common = PoolModuleTypes;
+    type ModuleStateMachineContext = ();
+    type GlobalStateMachineContext = ();
+    type States = PoolClientStates;
+
+    fn context(&self) -> Self::ModuleStateMachineContext {
+        unimplemented!()
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Decodable, Encodable)]
+pub enum PoolClientStates {}
+
+impl IntoDynInstance for PoolClientStates {
+    type DynType = DynState<()>;
+
+    fn into_dyn(self, instance_id: ModuleInstanceId) -> Self::DynType {
+        DynState::from_typed(instance_id, self)
+    }
+}
+
+impl State<()> for PoolClientStates {
+    type ModuleContext = ();
+
+    fn transitions(
+        &self,
+        _context: &Self::ModuleContext,
+        _global_context: &(),
+    ) -> Vec<StateTransition<Self>> {
+        unimplemented!()
+    }
+
+    fn operation_id(&self) -> OperationId {
+        unimplemented!()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct PoolConfigGenerator;
 
 impl ExtendsCommonModuleGen for PoolConfigGenerator {
     type Common = PoolCommonGen;
+}
+
+#[apply(async_trait_maybe_send!)]
+impl ClientModuleGen for PoolConfigGenerator {
+    type Module = PoolClientModule;
+    type Config = PoolConfigClient;
+
+    async fn init(&self, _cfg: Self::Config, _db: Database) -> anyhow::Result<Self::Module> {
+        unimplemented!()
+    }
 }
 
 #[async_trait]

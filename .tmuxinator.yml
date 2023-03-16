@@ -2,6 +2,7 @@ name: fedimint-dev
 root: .
 socket_name: fedimint-dev
 pre_window:
+  - export RUST_BACKTRACE=1
   - source .tmpenv
   - alias lightning-cli="\$FM_LIGHTNING_CLI"
   - alias lncli="\$FM_LNCLI"

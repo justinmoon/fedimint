@@ -1,8 +1,6 @@
-use std::{
-    fs::File,
-    io::Read,
-    sync::atomic::{self, AtomicU32, AtomicU64},
-};
+use std::fs::File;
+use std::io::Read;
+use std::sync::atomic::{self, AtomicU32, AtomicU64};
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -173,8 +171,7 @@ impl Default for BackOff {
 mod test {
     use time::OffsetDateTime;
 
-    use crate::BitMexOracle;
-    use crate::OracleClient;
+    use crate::{BitMexOracle, OracleClient};
 
     #[tokio::test]
     async fn get_price_at_time() {
