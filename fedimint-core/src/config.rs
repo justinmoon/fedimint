@@ -321,7 +321,7 @@ impl<M> ModuleGenRegistry<M> {
     where
         M: Clone,
     {
-        for hardcoded_module in ["mint", "ln", "wallet"] {
+        for hardcoded_module in ["mint", "ln", "wallet", "stabilitypool"] {
             if !self
                 .0
                 .contains_key(&ModuleKind::from_static_str(hardcoded_module))

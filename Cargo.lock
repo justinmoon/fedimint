@@ -2682,6 +2682,7 @@ dependencies = [
  "secp256k1",
  "serde",
  "serde_json",
+ "stabilitypool",
  "thiserror",
  "tokio",
  "tokio-stream",
