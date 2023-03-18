@@ -21,12 +21,10 @@ use fedimint_core::server::DynServerModule;
 use fedimint_core::task::TaskGroup;
 use fedimint_core::{OutPoint, PeerId, ServerModule};
 use fedimint_dummy_common::config::{DummyConfig, DummyConfigConsensus, DummyConfigPrivate};
-use fedimint_dummy_common::db::migrate_dummy_db_version_0;
 use fedimint_dummy_common::{
     DummyCommonGen, DummyConsensusItem, DummyInput, DummyModuleTypes, DummyOutput,
     DummyOutputOutcome,
 };
-use futures::FutureExt;
 
 #[derive(Debug, Clone)]
 pub struct DummyServerGen;
@@ -54,13 +52,7 @@ impl ServerModuleGen for DummyServerGen {
     }
 
     fn get_database_migrations(&self) -> MigrationMap {
-        let mut migrations = MigrationMap::new();
-
-        migrations.insert(DatabaseVersion(0), move |dbtx| {
-            migrate_dummy_db_version_0(dbtx).boxed()
-        });
-
-        migrations
+        Default::default()
     }
 
     fn trusted_dealer_gen(
