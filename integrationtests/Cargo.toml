@@ -27,6 +27,8 @@ fedimint-client = { path = "../fedimint-client" }
 fedimint-server = { path = "../fedimint-server" }
 fedimint-bitcoind = { path = "../fedimint-bitcoind" }
 fedimint-core ={ path = "../fedimint-core" }
+fedimint-dummy-client = { path = "../modules/fedimint-dummy-client" }
+fedimint-dummy-server = { path = "../modules/fedimint-dummy-server" }
 fedimint-ln-client = { path = "../modules/fedimint-ln-client" }
 fedimint-ln-server = { path = "../modules/fedimint-ln-server" }
 fedimint-logging = { path = "../fedimint-logging", features = ["telemetry"] }

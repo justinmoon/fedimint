@@ -1444,6 +1444,8 @@ dependencies = [
  "fedimint-bitcoind",
  "fedimint-client",
  "fedimint-core",
+ "fedimint-dummy-client",
+ "fedimint-dummy-server",
  "fedimint-ln-client",
  "fedimint-ln-server",
  "fedimint-logging",

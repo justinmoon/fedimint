@@ -17,12 +17,18 @@
 //! is thus undesirable.
 mod fixtures;
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
 use assert_matches::assert_matches;
-use bitcoin::{Amount, KeyPair};
+use bitcoin::{Amount, BlockHash, KeyPair};
+use bitcoincore_rpc::jsonrpc::serde_json::Value;
+use fedimint_core::api::{FederationApiExt, WsFederationApi};
+use fedimint_core::core::LEGACY_HARDCODED_INSTANCE_ID_WALLET;
+use fedimint_core::module::ApiRequestErased;
 use fedimint_core::outcome::TransactionStatus;
+use fedimint_core::query::EventuallyConsistent;
 use fedimint_core::task::TaskGroup;
 use fedimint_core::{msats, sats, TieredMulti};
 use fedimint_ln_client::contracts::{Preimage, PreimageDecryptionShare};
@@ -1313,6 +1319,35 @@ async fn cannot_replay_transactions() -> Result<()> {
             .await
             .into_iter()
             .all(|s| matches!(s, Some(TransactionStatus::Accepted { .. }))));
+    })
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_bettymint() -> Result<()> {
+    non_lightning_test(2, |fed, user, bitcoin, _, _| async move {
+        // fed..
+        fed.mine_and_mint(&user, &*bitcoin, sats(5000)).await;
+        let ws_api: Arc<_> = WsFederationApi::from_config(user.client.config().as_ref()).into();
+        let response: Value = ws_api
+            .request_with_strategy(
+                EventuallyConsistent::new(ws_api.peers().len()),
+                format!("/module/{LEGACY_HARDCODED_INSTANCE_ID_WALLET}/block_hash"),
+                ApiRequestErased::new(1),
+            )
+            .await
+            .unwrap();
+        info!("response {response:?}");
+
+        let hash: BlockHash = response.as_str().unwrap().parse().unwrap();
+        // create bet a for next block
+        // create bet b for next block
+        // mine block
+        // check that one of a or b won via api
+        // check that one of a or b lost via api
+        // winner sweeps succefully
+        // loser fails to sweep
+        // todo!()
     })
     .await
 }

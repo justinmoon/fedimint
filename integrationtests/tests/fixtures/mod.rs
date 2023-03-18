@@ -31,6 +31,8 @@ use fedimint_core::outcome::TransactionStatus;
 use fedimint_core::server::DynServerModule;
 use fedimint_core::task::{timeout, TaskGroup};
 use fedimint_core::{core, sats, Amount, OutPoint, PeerId, TieredMulti, TransactionId};
+use fedimint_dummy_client::common::DummyCommonGen;
+use fedimint_dummy_server::DummyServerGen;
 use fedimint_ln_client::{LightningClientGen, LightningGateway};
 use fedimint_ln_server::LightningGen;
 use fedimint_logging::TracingSetup;
@@ -218,12 +220,14 @@ pub async fn fixtures(num_peers: u16, gateway_node: GatewayNode) -> anyhow::Resu
         DynServerModuleGen::from(WalletGen),
         DynServerModuleGen::from(MintGen),
         DynServerModuleGen::from(LightningGen),
+        DynServerModuleGen::from(DummyServerGen),
     ]);
 
     let client_module_inits = ClientModuleGenRegistry::from(vec![
         DynClientModuleGen::from(WalletClientGen),
         DynClientModuleGen::from(MintClientGen),
         DynClientModuleGen::from(LightningClientGen),
+        // DynClientModuleGen::from(LightningClientGen),
     ]);
 
     let decoders = module_decode_stubs();

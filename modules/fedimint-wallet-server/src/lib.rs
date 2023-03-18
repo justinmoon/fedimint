@@ -643,6 +643,12 @@ impl ServerModule for Wallet {
                 }
             },
             api_endpoint! {
+                "/block_hash",
+                async |module: &Wallet, _context, params: u64| -> Option<bitcoin::BlockHash> {
+                    Ok(module.block_hash(params).await.ok())
+                }
+            },
+            api_endpoint! {
                 "/peg_out_fees",
                 async |module: &Wallet, context, params: (Address, u64)| -> Option<PegOutFees> {
                     let (address, sats) = params;
@@ -958,6 +964,10 @@ impl Wallet {
         self.current_round_consensus(dbtx)
             .await
             .map(|rc| rc.block_height)
+    }
+
+    pub async fn block_hash(&self, height: u64) -> anyhow::Result<bitcoin::BlockHash> {
+        self.btc_rpc.get_block_hash(height).await
     }
 
     async fn sync_up_to_consensus_height<'a>(
