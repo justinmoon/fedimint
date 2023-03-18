@@ -44,6 +44,7 @@ use fedimint_wallet_server::common::WalletConsensusItem::PegOutSignature;
 use fedimint_wallet_server::common::{PegOutFees, PegOutSignatureItem, Rbf};
 use fixtures::{rng, secp, sha256};
 use futures::future::{join_all, Either};
+use mint_client::api::WalletFederationApi;
 use mint_client::mint::MintClient;
 use mint_client::transaction::legacy::Output;
 use mint_client::transaction::TransactionBuilder;
@@ -1326,7 +1327,7 @@ async fn cannot_replay_transactions() -> Result<()> {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_bettymint() -> Result<()> {
     non_lightning_test(2, |fed, user, bitcoin, _, _| async move {
-        // fed..
+        // /block_hash API works
         fed.mine_and_mint(&user, &*bitcoin, sats(5000)).await;
         let ws_api: Arc<_> = WsFederationApi::from_config(user.client.config().as_ref()).into();
         let response: Value = ws_api
@@ -1337,9 +1338,32 @@ async fn test_bettymint() -> Result<()> {
             )
             .await
             .unwrap();
-        info!("response {response:?}");
+        let _block_hash: BlockHash = response.as_str().unwrap().parse().unwrap();
 
-        let hash: BlockHash = response.as_str().unwrap().parse().unwrap();
+        // create lottery contract outpu
+        let notes = user.client.notes().await;
+        let amount = notes.total_amount();
+        let mut builder = TransactionBuilder::default();
+        let (mut keys, input) = MintClient::ecash_input(notes).unwrap();
+        builder.input(&mut keys, input);
+
+        let consensus_height = user
+            .client
+            .wallet_client()
+            .context
+            .api
+            .fetch_consensus_block_height()
+            .await
+            .unwrap();
+        let finality_delay = user.client.wallet_client().config.finality_delay;
+        let bet_height = consensus_height + (finality_delay as u64) + 1;
+
+        let _outpoint = user.client.gamble(bet_height, amount).await.unwrap();
+
+        // let tx_typed = user.tx_with_change(builder, sats(5000)).await;
+        // let tx = tx_typed.into_type_erased();
+        // let txid = tx.tx_hash();
+
         // create bet a for next block
         // create bet b for next block
         // mine block

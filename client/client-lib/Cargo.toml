@@ -28,6 +28,7 @@ miniscript = { version = "7.0.0", git = "https://github.com/rust-bitcoin/rust-mi
 fedimint-client = { path = "../../fedimint-client" }
 fedimint-core = { path = "../../fedimint-core" }
 fedimint-derive-secret = { path = "../../crypto/derive-secret" }
+fedimint-dummy-client = { path = "../../modules/fedimint-dummy-client" }
 fedimint-ln-client = { path = "../../modules/fedimint-ln-client" }
 fedimint-logging = { path = "../../fedimint-logging" }
 fedimint-mint-client = { path = "../../modules/fedimint-mint-client" }

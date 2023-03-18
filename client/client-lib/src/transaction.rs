@@ -19,8 +19,8 @@ pub mod legacy {
     use bitcoin_hashes::hex::ToHex;
     use bitcoin_hashes::Hash;
     use fedimint_core::core::{
-        DynInput, DynOutput, LEGACY_HARDCODED_INSTANCE_ID_LN, LEGACY_HARDCODED_INSTANCE_ID_MINT,
-        LEGACY_HARDCODED_INSTANCE_ID_WALLET,
+        DynInput, DynOutput, LEGACY_HARDCODED_INSTANCE_ID_DUMMY, LEGACY_HARDCODED_INSTANCE_ID_LN,
+        LEGACY_HARDCODED_INSTANCE_ID_MINT, LEGACY_HARDCODED_INSTANCE_ID_WALLET,
     };
     use fedimint_core::encoding::{Decodable, Encodable};
     use fedimint_core::module::ModuleCommon;
@@ -70,6 +70,7 @@ pub mod legacy {
         Mint(<fedimint_mint_client::MintModuleTypes as ModuleCommon>::Output),
         Wallet(<fedimint_wallet_client::WalletModuleTypes as ModuleCommon>::Output),
         LN(<fedimint_ln_client::LightningModuleTypes as ModuleCommon>::Output),
+        Dummy(<fedimint_dummy_client::DummyModuleTypes as ModuleCommon>::Output),
     }
 
     impl Transaction {
@@ -102,6 +103,9 @@ pub mod legacy {
                         DynOutput::from_typed(LEGACY_HARDCODED_INSTANCE_ID_WALLET, o)
                     }
                     Output::LN(o) => DynOutput::from_typed(LEGACY_HARDCODED_INSTANCE_ID_LN, o),
+                    Output::Dummy(o) => {
+                        DynOutput::from_typed(LEGACY_HARDCODED_INSTANCE_ID_DUMMY, o)
+                    }
                 })
                 .collect::<Vec<DynOutput>>();
 
@@ -183,6 +187,9 @@ pub mod legacy {
                         }
                         Output::LN(output) => {
                             DynOutput::from_typed(LEGACY_HARDCODED_INSTANCE_ID_LN, output)
+                        }
+                        Output::Dummy(output) => {
+                            DynOutput::from_typed(LEGACY_HARDCODED_INSTANCE_ID_DUMMY, output)
                         }
                     })
                     .collect(),
@@ -335,6 +342,7 @@ impl TransactionBuilder {
             Output::Mint(output) => client.mint_client().output_amount(output),
             Output::Wallet(output) => client.wallet_client().output_amount(output),
             Output::LN(output) => client.ln_client().output_amount(output),
+            Output::Dummy(output) => client.dummy_client().output_amount(output),
         })
     }
 

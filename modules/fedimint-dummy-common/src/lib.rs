@@ -7,7 +7,7 @@ use fedimint_core::core::{Decoder, ModuleInstanceId, ModuleKind};
 use fedimint_core::encoding::{Decodable, Encodable};
 use fedimint_core::module::__reexports::serde_json;
 use fedimint_core::module::{CommonModuleGen, ModuleCommon};
-use fedimint_core::plugin_types_trait_impl_common;
+use fedimint_core::{plugin_types_trait_impl_common, Amount};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -46,10 +46,17 @@ impl ModuleGenParams for DummyConfigGenParams {
     const MODULE_NAME: &'static str = "dummy";
 }
 
-#[derive(
-    Debug, Clone, Eq, PartialEq, Hash, Deserialize, Serialize, Encodable, Decodable, Default,
-)]
-pub struct DummyInput;
+// #[derive(
+//     Debug, Clone, Eq, PartialEq, Hash, Deserialize, Serialize, Encodable,
+// Decodable, Default, )]
+// pub struct DummyInput;
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Deserialize, Serialize, Encodable, Decodable)]
+pub struct DummyInput {
+    /// Block height of the lottery contract that we're claiming
+    pub block_height: u64,
+    /// Size of the pot they won
+    pub amount: Amount,
+}
 
 impl fmt::Display for DummyInput {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -57,10 +64,11 @@ impl fmt::Display for DummyInput {
     }
 }
 
-#[derive(
-    Debug, Clone, Eq, PartialEq, Hash, Deserialize, Serialize, Encodable, Decodable, Default,
-)]
-pub struct DummyOutput;
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Deserialize, Serialize, Encodable, Decodable)]
+pub struct DummyOutput {
+    pub amount: fedimint_core::Amount,
+    pub contract: LotteryContract,
+}
 
 impl fmt::Display for DummyOutput {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -102,4 +110,19 @@ plugin_types_trait_impl_common!(
 pub enum DummyError {
     #[error("Something went wrong")]
     SomethingDummyWentWrong,
+}
+
+/// Contract for trust-minimized lotteries
+///
+/// User locks up funds associated with a future bitcoin block height and a
+/// pubkey. All contracts for this block height are sorted lexigraphically by
+/// pubkey, and the block hash of that block is interpreted as an integer and
+/// modded by the number of bets to choose a winner
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Deserialize, Serialize, Encodable, Decodable)]
+pub struct LotteryContract {
+    /// Block height of the lottery
+    pub block_height: u64,
+    /// Public key of the user who is betting
+    pub user_pubkey: secp256k1::XOnlyPublicKey,
+    // TODO: amount
 }

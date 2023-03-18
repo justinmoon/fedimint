@@ -1,5 +1,6 @@
 pub mod api;
 pub mod db;
+pub mod dummy;
 pub mod ln;
 pub mod mint;
 pub mod outcome;
@@ -9,7 +10,8 @@ pub mod wallet;
 
 pub mod modules {
     pub use {
-        fedimint_ln_client as ln, fedimint_mint_client as mint, fedimint_wallet_client as wallet,
+        fedimint_dummy_client as dummy, fedimint_ln_client as ln, fedimint_mint_client as mint,
+        fedimint_wallet_client as wallet,
     };
 }
 
@@ -23,6 +25,7 @@ use api::{LnFederationApi, WalletFederationApi};
 use bitcoin::util::key::KeyPair;
 use bitcoin::{secp256k1, Address, Transaction as BitcoinTransaction};
 use bitcoin_hashes::{sha256, Hash};
+use dummy::DummyClient;
 use fedimint_client::module::gen::{ClientModuleGenRegistry, ClientModuleGenRegistryExt};
 use fedimint_core::api::{
     DynFederationApi, FederationError, GlobalFederationApi, MemberError, OutputOutcomeError,
@@ -43,6 +46,7 @@ use fedimint_core::task::{self, sleep};
 use fedimint_core::tiered::InvalidAmountTierError;
 use fedimint_core::{Amount, OutPoint, TieredMulti, TransactionId};
 use fedimint_derive_secret::{ChildId, DerivableSecret};
+use fedimint_dummy_client::config::DummyClientConfig;
 use fedimint_ln_client::LightningModuleTypes;
 use fedimint_logging::LOG_WALLET;
 use fedimint_mint_client::MintModuleTypes;
@@ -219,6 +223,18 @@ impl<T> Client<T> {
 impl<T: AsRef<ClientConfig> + Clone + Send> Client<T> {
     pub fn db(&self) -> &Database {
         &self.context.db
+    }
+
+    pub fn dummy_client(&self) -> DummyClient {
+        DummyClient {
+            config: self
+                .config
+                .as_ref()
+                .get_first_module_by_kind::<DummyClientConfig>("dummy")
+                .expect("needs dummy module client config")
+                .1,
+            context: self.context.clone(),
+        }
     }
 
     pub fn ln_client(&self) -> LnClient {
@@ -1165,6 +1181,26 @@ impl Client<UserClientConfig> {
             }
             Err(e) => Err(e),
         }
+    }
+
+    /// Enter lottery for some block height
+    pub async fn gamble(&self, block_height: u64, amount: Amount) -> Result<OutPoint> {
+        let mut dbtx = self.context.db.begin_transaction().await;
+
+        let mut tx = TransactionBuilder::default();
+
+        let (mut keys, input) = self.mint_client().select_input(amount).await?;
+        tx.input(&mut keys, input);
+
+        let mut rng = rand::rngs::OsRng;
+        let output = self
+            .dummy_client()
+            .create_output(&mut dbtx, block_height, amount)
+            .await;
+        tx.output(Output::Dummy(output));
+
+        let txid = self.submit_tx_with_change(tx, &mut rng).await?;
+        Ok(OutPoint { txid, out_idx: 0 })
     }
 }
 

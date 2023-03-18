@@ -19,7 +19,7 @@ use fedimint_core::module::{
 };
 use fedimint_core::server::DynServerModule;
 use fedimint_core::task::TaskGroup;
-use fedimint_core::{OutPoint, PeerId, ServerModule};
+use fedimint_core::{Amount, OutPoint, PeerId, ServerModule};
 use fedimint_dummy_common::config::{DummyConfig, DummyConfigConsensus, DummyConfigPrivate};
 use fedimint_dummy_common::{
     DummyCommonGen, DummyConsensusItem, DummyInput, DummyModuleTypes, DummyOutput,
@@ -173,6 +173,9 @@ impl ServerModule for Dummy {
         _verification_cache: &Self::VerificationCache,
         _input: &'a DummyInput,
     ) -> Result<InputMeta, ModuleError> {
+        // does account for this block height have money in it?
+
+        // put the contract pubkey in input meta
         unimplemented!()
     }
 
@@ -183,24 +186,29 @@ impl ServerModule for Dummy {
         _input: &'b DummyInput,
         _cache: &Self::VerificationCache,
     ) -> Result<InputMeta, ModuleError> {
+        //
         unimplemented!()
     }
 
     async fn validate_output(
         &self,
         _dbtx: &mut ModuleDatabaseTransaction<'_, ModuleInstanceId>,
-        _output: &DummyOutput,
+        output: &DummyOutput,
     ) -> Result<TransactionItemAmount, ModuleError> {
-        unimplemented!()
+        // has the block been mined yet?
+        Ok(TransactionItemAmount {
+            amount: output.amount,
+            fee: Amount::ZERO,
+        })
     }
 
     async fn apply_output<'a, 'b>(
         &'a self,
-        _dbtx: &mut ModuleDatabaseTransaction<'b, ModuleInstanceId>,
-        _output: &'a DummyOutput,
+        dbtx: &mut ModuleDatabaseTransaction<'b, ModuleInstanceId>,
+        output: &'a DummyOutput,
         _out_point: OutPoint,
     ) -> Result<TransactionItemAmount, ModuleError> {
-        unimplemented!()
+        self.validate_output(dbtx, output).await
     }
 
     async fn end_consensus_epoch<'a, 'b>(
@@ -228,8 +236,11 @@ impl ServerModule for Dummy {
 
     fn api_endpoints(&self) -> Vec<ApiEndpoint<Self>> {
         vec![api_endpoint! {
-            "/dummy",
-            async |_module: &Dummy, _dbtx, _request: ()| -> () {
+            // FIXME: should return all the outpoints for this?
+            // then if inputs and outputs are 1:1 then winner can create the necessary inputs
+            "/pot-size",
+            async |_module: &Dummy, _dbtx, _request: u64| -> () {
+                // TODO: sum up the amount of all contracts for this height
                 Ok(())
             }
         }]
