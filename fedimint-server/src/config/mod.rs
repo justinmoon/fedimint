@@ -11,9 +11,8 @@ use fedimint_aead::{encrypted_read, get_encryption_key, get_password_hash};
 use fedimint_core::cancellable::Cancelled;
 pub use fedimint_core::config::*;
 use fedimint_core::config::{
-    ApiEndpoint, ClientConfig, ConfigGenParams, ConfigResponse, DkgPeerMsg, FederationId,
-    JsonWithKind, ModuleConfigResponse, ServerModuleConfig, ServerModuleGenRegistry,
-    TypedServerModuleConfig,
+    ApiEndpoint, ClientConfig, ConfigResponse, DkgPeerMsg, FederationId, JsonWithKind,
+    ModuleConfigResponse, ServerModuleConfig, ServerModuleGenRegistry, TypedServerModuleConfig,
 };
 use fedimint_core::core::{ModuleInstanceId, ModuleKind, MODULE_INSTANCE_ID_GLOBAL};
 use fedimint_core::module::{ApiAuth, PeerHandle};
@@ -160,7 +159,7 @@ pub struct ServerConfigParams {
     pub meta: BTreeMap<String, String>,
     /// Params for the modules we wish to configure, can contain custom
     /// parameters
-    pub modules: ConfigGenParams,
+    pub modules: ConfigGenParamsRegistry,
 }
 
 impl ServerConfigConsensus {
@@ -387,10 +386,16 @@ impl ServerConfig {
         let module_configs: BTreeMap<_, _> = registry
             .legacy_init_order_iter()
             .enumerate()
-            .map(|(module_id, (_kind, gen))| {
+            .map(|(module_id, (kind, gen))| {
                 (
                     u16::try_from(module_id).expect("Can't fail"),
-                    gen.trusted_dealer_gen(peers, &peer0.modules),
+                    gen.trusted_dealer_gen(
+                        peers,
+                        peer0
+                            .modules
+                            .get(&kind)
+                            .expect("Missing config gen params for {kind}"),
+                    ),
                 )
             })
             .collect();
@@ -466,13 +471,20 @@ impl ServerConfig {
         // of each module that was compiled in. This is how things were
         // initially, where we consider "module as a code" as "module as an instance at
         // runtime"
-        for (module_instance_id, (_kind, gen)) in registry.legacy_init_order_iter().enumerate() {
+        for (module_instance_id, (kind, gen)) in registry.legacy_init_order_iter().enumerate() {
             let module_instance_id = u16::try_from(module_instance_id)
                 .expect("64k module instances should be enough for everyone");
             let dkg = PeerHandle::new(&connections, module_instance_id, *our_id, peers.clone());
             module_cfgs.insert(
                 module_instance_id,
-                gen.distributed_gen(&dkg, &params.modules).await?,
+                gen.distributed_gen(
+                    &dkg,
+                    params
+                        .modules
+                        .get(&kind)
+                        .expect("Missing module config gen for {kind}"),
+                )
+                .await?,
             );
         }
 
@@ -627,7 +639,7 @@ impl ServerConfigParams {
         federation_name: String,
         certs: Vec<String>,
         password: &str,
-        module_params: ConfigGenParams,
+        module_params: ConfigGenParamsRegistry,
     ) -> anyhow::Result<Self> {
         let mut peers = BTreeMap::<PeerId, PeerServerParams>::new();
         for (idx, cert) in certs.into_iter().sorted().enumerate() {
@@ -669,7 +681,7 @@ impl ServerConfigParams {
         our_id: PeerId,
         peers: &BTreeMap<PeerId, PeerServerParams>,
         federation_name: String,
-        modules: ConfigGenParams,
+        modules: ConfigGenParamsRegistry,
     ) -> ServerConfigParams {
         let peer_certs: HashMap<PeerId, rustls::Certificate> = peers
             .iter()
@@ -724,7 +736,7 @@ impl ServerConfigParams {
         peers: &[PeerId],
         base_port: u16,
         federation_name: &str,
-        modules: ConfigGenParams,
+        modules: ConfigGenParamsRegistry,
     ) -> anyhow::Result<HashMap<PeerId, ServerConfigParams>> {
         let keys: HashMap<PeerId, (rustls::Certificate, rustls::PrivateKey)> = peers
             .iter()
