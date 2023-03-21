@@ -253,7 +253,8 @@ async fn run_fedimintd(id: usize) -> anyhow::Result<()> {
     // wait for bitcoin RPC to be ready ...
     await_bitcoind_ready(&format!("fedimint-{id}")).await?;
 
-    let bin_dir = env::var("FM_BIN_DIR")?;
+    // let bin_dir = env::var("FM_BIN_DIR")?;
+    let bin_dir = "/Users/justin/work/fedi/target/debug";
     let cfg_dir = env::var("FM_CFG_DIR")?;
 
     // spawn fedimintd

@@ -23,6 +23,7 @@ use tbs::{serde_impl, Scalar};
 use thiserror::Error;
 use threshold_crypto::group::{Curve, Group, GroupEncoding};
 use threshold_crypto::{G1Projective, G2Projective, Signature};
+use tracing::info;
 use url::Url;
 
 use crate::module::{DynCommonModuleGen, DynServerModuleGen, IDynCommonModuleGen};
@@ -233,6 +234,7 @@ impl ClientConfig {
 ///
 /// The same `ModuleKind` may have multiple instances with different settings
 #[derive(Debug, Clone, Default)]
+// FIXME: turn this into a ModuleGenRestry called ModuleGenParamsRegistry
 pub struct ConfigGenParams(BTreeMap<String, serde_json::Value>);
 
 impl ConfigGenParams {
@@ -319,7 +321,7 @@ impl<M> ModuleGenRegistry<M> {
     /// Return legacy initialization order. See [`LegacyInitOrderIter`].
     pub fn legacy_init_order_iter(&self) -> LegacyInitOrderIter<M>
     where
-        M: Clone,
+        M: Clone + Debug,
     {
         for hardcoded_module in ["mint", "ln", "wallet"] {
             if !self
@@ -329,6 +331,8 @@ impl<M> ModuleGenRegistry<M> {
                 panic!("Missing {hardcoded_module} module");
             }
         }
+
+        info!("modulez {:?}", self.0);
 
         LegacyInitOrderIter {
             next_id: 0,

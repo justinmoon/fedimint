@@ -4,6 +4,15 @@ export FM_FED_SIZE=${1:-2}
 
 source scripts/build.sh $FM_FED_SIZE
 
+export RUST_BACKTRACE=1
+
+pushd ../fedi/fedimintd || exit
+cargo build --bin fedimintd
+popd || return
+
+mkdir $FM_CFG_DIR/server-0
+mkdir $FM_CFG_DIR/server-1
+
 start_bitcoind | show_verbose_output &
 start_federation
 
