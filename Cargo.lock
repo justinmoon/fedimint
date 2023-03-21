@@ -2632,7 +2632,6 @@ dependencies = [
  "secp256k1",
  "serde",
  "serde_json",
- "stabilitypool",
  "thiserror",
  "threshold_crypto",
  "tokio",
