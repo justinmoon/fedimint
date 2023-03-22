@@ -64,11 +64,16 @@ async fn main() -> Result<(), anyhow::Error> {
             // Wait for plugin to signal it's shutting down
             // Shut down everything else via TaskGroup regardless of error
             let _ = plugin.join().await;
+            std::fs::write("/Users/justin/work/fedimint/file", "joined")
+                .expect("Unable to write file");
             tg.shutdown().await;
+            std::fs::write("/Users/justin/work/fedimint/file", "shutdown")
+                .expect("Unable to write file");
         })
         .await
         .map_err(|e| ClnExtensionError::Error(anyhow!("Failed to start server, {:?}", e)))?;
 
+    std::fs::write("/Users/justin/work/fedimint/file", "returned").expect("Unable to write file");
     Ok(())
 }
 
