@@ -15,7 +15,7 @@ use fedimint_core::core::{
     ModuleInstanceId, ModuleKind, LEGACY_HARDCODED_INSTANCE_ID_LN,
     LEGACY_HARDCODED_INSTANCE_ID_MINT, LEGACY_HARDCODED_INSTANCE_ID_WALLET,
 };
-use fedimint_core::encoding::Encodable;
+use fedimint_core::encoding::{Decodable, Encodable};
 use fedimint_core::module::registry::ModuleRegistry;
 use fedimint_core::{BitcoinHash, ModuleDecoderRegistry};
 use serde::de::DeserializeOwned;
@@ -27,7 +27,6 @@ use threshold_crypto::group::{Curve, Group, GroupEncoding};
 use threshold_crypto::{G1Projective, G2Projective, Signature};
 use url::Url;
 
-use crate::encoding::Decodable;
 use crate::module::{
     DynCommonModuleGen, DynServerModuleGen, IDynCommonModuleGen, ModuleConsensusVersion,
 };
