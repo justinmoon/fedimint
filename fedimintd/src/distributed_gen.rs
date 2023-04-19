@@ -5,7 +5,10 @@ use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand};
 use fedimint_aead::{encrypted_read, encrypted_write, get_encryption_key};
-use fedimint_core::config::{DkgError, ServerModuleGenParamsRegistry, ServerModuleGenRegistry};
+use fedimint_core::config::{
+    DkgError, ModuleGenParams, ServerModuleGenParamsRegistry, ServerModuleGenRegistry,
+};
+use fedimint_core::core::{ModuleInstanceId, ModuleKind};
 use fedimint_core::module::ServerModuleGen;
 use fedimint_core::task::{self, TaskGroup};
 use fedimint_core::Amount;
@@ -134,7 +137,8 @@ enum Command {
 ///
 /// See [`super::fedimintd::Fedimintd`] for more info.
 pub struct DistributedGen {
-    module_gens: ServerModuleGenRegistry,
+    pub module_gens: ServerModuleGenRegistry,
+    module_gens_params: ServerModuleGenParamsRegistry,
     opts: Cli,
 }
 
@@ -147,6 +151,7 @@ impl DistributedGen {
 
         Ok(Self {
             module_gens: ServerModuleGenRegistry::new(),
+            module_gens_params: ServerModuleGenParamsRegistry::default(),
             opts,
         })
     }
@@ -163,6 +168,20 @@ impl DistributedGen {
         self.with_module(LightningGen)
             .with_module(MintGen)
             .with_module(WalletGen)
+    }
+
+    pub fn with_extra_module_gens_params<P>(
+        mut self,
+        id: ModuleInstanceId,
+        kind: ModuleKind,
+        params: P,
+    ) -> Self
+    where
+        P: ModuleGenParams,
+    {
+        self.module_gens_params
+            .attach_config_gen_params(id, kind, params);
+        self
     }
 
     pub async fn run(self) -> anyhow::Result<()> {
@@ -190,7 +209,7 @@ impl DistributedGen {
                 finality_delay,
                 password,
             } => {
-                let mut module_gens_params = ServerModuleGenParamsRegistry::default();
+                let mut module_gens_params = self.module_gens_params.clone();
                 attach_default_module_gen_params(
                     &mut module_gens_params,
                     max_denomination,
