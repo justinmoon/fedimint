@@ -240,7 +240,7 @@ impl ClientConfig {
 }
 
 #[derive(Clone, Debug)]
-pub struct ModuleGenRegistry<M>(BTreeMap<ModuleKind, M>);
+pub struct ModuleGenRegistry<M>(pub BTreeMap<ModuleKind, M>);
 
 impl<M> Default for ModuleGenRegistry<M> {
     fn default() -> Self {
