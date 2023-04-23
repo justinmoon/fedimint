@@ -1,13 +1,23 @@
-import { Button, Input } from '@chakra-ui/react';
-import React, { useState } from 'react';
+import { Button, FormControl, FormLabel, Input, NumberDecrementStepper, NumberIncrementStepper, NumberInput, NumberInputField, NumberInputStepper, Radio, RadioGroup, Stack } from '@chakra-ui/react';
+import { useEffect, useState, useContext } from 'react';
 import { ApiContext } from './components/ApiProvider';
 
 
 const LoggedIn = () => {
-	const { api } = React.useContext(ApiContext);
+	const { api } = useContext(ApiContext);
+	const [defaults, setDefaults] = useState<any>(null);
+
+	useEffect(() => {
+		async function getDefaults() {
+			const defaults = await api.getDefaults();
+			setDefaults(defaults);
+		}
+		getDefaults();
+	}, []);
+	
 	async function onSetDefaults() {
 		try {
-			await api.setDefaults();
+			await api.setDefaults(defaults);
 			console.log('defaults set');
 		} catch(e) {
 			console.error('failed to set defaults', e);
@@ -45,6 +55,24 @@ const LoggedIn = () => {
 			console.error('failed to startConsensus', e);
 		}
 	}
+	function setFederationName(name: string) {
+		const d = { ...defaults };
+		d.meta.federation_name = name;
+		setDefaults(d);
+	}
+	function setFinalityDelay(finalityDelay: string) {
+		const d = { ...defaults };
+		d.modules.wallet.finality_delay = parseInt(finalityDelay) - 1; // FIXME: is that right?
+		setDefaults(d);
+	}
+	function setNetwork(network: string) {
+		console.log(network);
+		const d = { ...defaults };
+		d.modules.wallet.network = network;
+		setDefaults(d);
+	}
+
+	console.log(defaults);
 	return (
 		<>
 			<Button onClick={onSetDefaults}>
@@ -62,12 +90,42 @@ const LoggedIn = () => {
 			<Button onClick={onStartConsensus}>
 				Start Consensus
 			</Button>
+			<div>
+				{JSON.stringify(defaults)}
+			</div>
+			{defaults && (<> 
+				<FormControl>
+					<FormLabel>Federation Name</FormLabel>
+					<Input value={defaults.meta.federation_name} onChange={e => setFederationName(e.target.value)}/>
+				</FormControl>
+				<FormControl>
+					<FormLabel>Block Confirmations Required</FormLabel>
+					<NumberInput defaultValue={defaults.modules.wallet.finality_delay} min={3} max={1000} onChange={n => setFinalityDelay(n)}>
+						<NumberInputField />
+						<NumberInputStepper>
+							<NumberIncrementStepper />
+							<NumberDecrementStepper />
+						</NumberInputStepper>
+					</NumberInput>
+				</FormControl>
+				<FormControl>
+					<FormLabel>Network</FormLabel>
+					<RadioGroup onChange={setNetwork} value={defaults.modules.wallet.network}>
+						<Stack direction='row'>
+							<Radio value='bitcoin'>Mainnet</Radio>
+							<Radio value='testnet'>Testnet</Radio>
+							<Radio value='signet'>Signet</Radio>
+							<Radio value='regtest'>Regtest</Radio>
+						</Stack>
+					</RadioGroup>
+				</FormControl>
+			</>)}
 		</>
 	);
 };
 
 export const Admin = () => {
-	const { api } = React.useContext(ApiContext);
+	const { api } = useContext(ApiContext);
 	const [password, setPassword] = useState('');
 	const [loggedIn, setLoggedIn] = useState(false);
 

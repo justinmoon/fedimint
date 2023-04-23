@@ -4,7 +4,8 @@ export interface ApiInterface {
 	loggedIn: () => boolean;
 	setPassword: (password: string) => Promise<void>;
 	setPasswordLocal: (password: string) => void;
-	setDefaults: () => Promise<void>;
+	getDefaults: () => Promise<any>;
+	setDefaults: (defaults: any) => Promise<void>;
 	runDkg: () => Promise<void>;
 	verify: () => Promise<void>;
 	status: () => Promise<string>;
@@ -47,15 +48,20 @@ export class Api implements ApiInterface {
 		this.password = password;
 	};
 
-	setDefaults = async (): Promise<void> => {
+	getDefaults = async (): Promise<any> => {
+		const defaults = await rpc('get_default_config_gen_params', null, this.password);
+		console.log('get_default_config_gen_params result', defaults);
+		return defaults;
+	};
+
+
+	setDefaults = async (defaults: any): Promise<void> => {
 		const connections = {
 			our_name: 'leader',
 			leader_api_url: null,
 		};
 		const connectionsResult = await rpc('set_config_gen_connections', connections, this.password);
 		console.log('set_config_gen_connections result', connectionsResult);
-		const defaults = await rpc('get_default_config_gen_params', null, this.password);
-		console.log('get_default_config_gen_params result', defaults);
 		const setResult = await rpc('set_config_gen_params', defaults, this.password);
 		console.log('set_config_gen_params result', setResult);
 	};
