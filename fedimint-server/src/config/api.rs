@@ -105,7 +105,9 @@ impl ConfigGenApi {
             client
                 .add_config_gen_peer(connection.as_peer_info()?)
                 .await
-                .map_err(|_| ApiError::not_found("Unable to connect to the leader".to_string()))?;
+                .map_err(|e| {
+                    ApiError::not_found(format!("Unable to connect to the leader {:?}", e))
+                })?;
         }
 
         self.notify_peer_connection.notify_one();
@@ -579,7 +581,13 @@ pub fn server_endpoints() -> Vec<ApiEndpoint<ConfigGenApi>> {
             "set_config_gen_connections",
             async |config: &ConfigGenApi, context, server: ConfigGenConnectionsRequest| -> () {
                 check_auth(context)?;
-                config.set_config_gen_connections(server).await
+                match config.set_config_gen_connections(server).await {
+                    Ok(r) => Ok(r),
+                    Err(e) => {
+                        tracing::error!("set_config_gen_connections error {:?}", e);
+                        Err(e)
+                    }
+                }
             }
         },
         api_endpoint! {
@@ -600,6 +608,7 @@ pub fn server_endpoints() -> Vec<ApiEndpoint<ConfigGenApi>> {
         api_endpoint! {
             "await_config_gen_peers",
             async |config: &ConfigGenApi, context, peers: usize| -> Vec<PeerServerParams> {
+                // FIXME: a little surprising this endpoint wasn't authenticated ...
                 check_no_auth(context)?;
                 config.await_config_gen_peers(peers).await
             }
@@ -899,6 +908,7 @@ mod tests {
             for peer in &followers {
                 hashes.insert(peer.client.get_verify_config_hash().await.unwrap());
             }
+            // FIXME: Why doesn't leader verify as well?
             for peer in &followers {
                 peer.client.verify_configs(hashes.clone()).await.unwrap();
             }

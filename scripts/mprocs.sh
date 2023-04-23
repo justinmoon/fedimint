@@ -17,7 +17,12 @@ echo "Running in temporary directory $FM_TEST_DIR"
 export FM_READY_FILE=$FM_TMP_DIR/ready
 mkfifo $FM_READY_FILE
 
+<<<<<<< HEAD:scripts/mprocs.sh
 devimint dev-fed &>$FM_LOGS_DIR/devimint.log &
+=======
+# export RUST_LOG=info,jsonrpsee=trace
+$FM_BIN_DIR/fedimint-bin-tests tmuxinator &>$FM_LOGS_DIR/fedimint-dev.log &
+>>>>>>> 1a84da3bdd (fix: guardian-gui prototype):scripts/fed-shell.sh
 echo $! >> $FM_PID_FILE
 
 env | sed -En 's/^(FM_[^=]*).*/\1/gp' | while read var; do printf 'export %s=%q\n' "$var" "${!var}"; done > .tmpenv
