@@ -46,6 +46,39 @@ const Login = (props: RouteProps) => {
 	);
 };
 
+const LeadOrFollow = (props: RouteProps) => {
+	return (
+		<>
+			<Button onClick={() => props.setRoute(Route.LeaderSetConsensusParameters)}>
+				Lead
+			</Button>
+			<Button onClick={() => props.setRoute(Route.FollowerSetLeader)}>
+				Follow
+			</Button>
+		</>
+
+	);
+};
+
+const LeaderSetConsensusParameters = (props: RouteProps) => {
+	return (
+		<>
+			Leader
+		</>
+
+	);
+};
+
+const FollowerSetLeader = (props: RouteProps) => {
+	return (
+		<>
+			Followers
+		</>
+
+	);
+};
+
+
 const LoggedIn = () => {
 	const { api } = useContext(ApiContext);
 	const [defaults, setDefaults] = useState<any>(null);
@@ -204,6 +237,15 @@ export const Admin = () => {
 		switch (route) {
 		case Route.Login: {
 			return <Login route={route} setRoute={setRoute} />;
+		}
+		case Route.LeadOrFollow: {
+			return <LeadOrFollow route={route} setRoute={setRoute} />;
+		}
+		case Route.LeaderSetConsensusParameters: {
+			return <LeaderSetConsensusParameters route={route} setRoute={setRoute} />;
+		}
+		case Route.FollowerSetLeader: {
+			return <FollowerSetLeader route={route} setRoute={setRoute} />;
 		}
 		default: {
 			return <LoggedIn />;

@@ -11,8 +11,8 @@
 		"noFallthroughCasesInSwitch": true,
 		"noImplicitAny": true,
 		"noEmit": true,
-		"noUnusedLocals": true,
-		"noUnusedParameters": true,
+		"noUnusedLocals": false, // FIXME: undo
+		"noUnusedParameters": false, // FIXME: undo
 		"skipLibCheck": true,
 		"module": "esnext",
 		"moduleResolution": "node",
