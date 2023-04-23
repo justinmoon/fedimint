@@ -61,25 +61,6 @@ const LeadOrFollow = (props: RouteProps) => {
 };
 
 const LeaderSetConsensusParameters = (props: RouteProps) => {
-	return (
-		<>
-			Leader
-		</>
-
-	);
-};
-
-const FollowerSetLeader = (props: RouteProps) => {
-	return (
-		<>
-			Followers
-		</>
-
-	);
-};
-
-
-const LoggedIn = () => {
 	const { api } = useContext(ApiContext);
 	const [defaults, setDefaults] = useState<any>(null);
 
@@ -90,57 +71,29 @@ const LoggedIn = () => {
 		}
 		getDefaults();
 	}, []);
-	
+
 	async function onSetDefaults() {
 		try {
 			await api.setDefaults(defaults);
 			console.log('defaults set');
+			props.setRoute(Route.LeaderViewFollowers);
 		} catch(e) {
 			console.error('failed to set defaults', e);
 		}
 	}
-	async function onDkg() {
-		try {
-			await api.runDkg();
-			console.log('ran dkg');
-		} catch(e) {
-			console.error('failed to run dkg', e);
-		}
-	}
-	async function onVerify() {
-		try {
-			const status = await api.verify();
-			console.log('verify', status);
-		} catch(e) {
-			console.error('failed to verify', e);
-		}
-	}
-	async function onStatus() {
-		try {
-			const status = await api.status();
-			console.log('status', status);
-		} catch(e) {
-			console.error('failed to get status', e);
-		}
-	}
-	async function onStartConsensus() {
-		try {
-			const status = await api.startConsensus();
-			console.log('startConsensus', status);
-		} catch(e) {
-			console.error('failed to startConsensus', e);
-		}
-	}
+
 	function setFederationName(name: string) {
 		const d = { ...defaults };
 		d.meta.federation_name = name;
 		setDefaults(d);
 	}
+
 	function setFinalityDelay(finalityDelay: string) {
 		const d = { ...defaults };
 		d.modules.wallet.finality_delay = parseInt(finalityDelay) - 1; // FIXME: is that right?
 		setDefaults(d);
 	}
+
 	function setNetwork(network: string) {
 		console.log(network);
 		const d = { ...defaults };
@@ -148,27 +101,8 @@ const LoggedIn = () => {
 		setDefaults(d);
 	}
 
-	console.log(defaults);
 	return (
 		<>
-			<Button onClick={onSetDefaults}>
-				Set Defaults
-			</Button>
-			<Button onClick={onDkg}>
-				Run DKG
-			</Button>
-			<Button onClick={onVerify}>
-				Verify
-			</Button>
-			<Button onClick={onStatus}>
-				Status
-			</Button>
-			<Button onClick={onStartConsensus}>
-				Start Consensus
-			</Button>
-			<div>
-				{JSON.stringify(defaults)}
-			</div>
 			{defaults && (<> 
 				<FormControl>
 					<FormLabel>Federation Name</FormLabel>
@@ -195,8 +129,87 @@ const LoggedIn = () => {
 						</Stack>
 					</RadioGroup>
 				</FormControl>
+				<Button onClick={onSetDefaults}>
+					Continue
+				</Button>
 			</>)}
 		</>
+	);
+};
+
+const FollowerSetLeader = (props: RouteProps) => {
+	return (
+		<>
+			Followers
+		</>
+
+	);
+};
+
+
+const Leftover = () => {
+	const { api } = useContext(ApiContext);
+	
+	async function onDkg() {
+		try {
+			await api.runDkg();
+			console.log('ran dkg');
+		} catch(e) {
+			console.error('failed to run dkg', e);
+		}
+	}
+
+	async function onVerify() {
+		try {
+			const status = await api.verify();
+			console.log('verify', status);
+		} catch(e) {
+			console.error('failed to verify', e);
+		}
+	}
+
+	async function onStatus() {
+		try {
+			const status = await api.status();
+			console.log('status', status);
+		} catch(e) {
+			console.error('failed to get status', e);
+		}
+	}
+
+	async function onStartConsensus() {
+		try {
+			const status = await api.startConsensus();
+			console.log('startConsensus', status);
+		} catch(e) {
+			console.error('failed to startConsensus', e);
+		}
+	}
+
+	return (
+		<>
+			<Button onClick={onDkg}>
+				Run DKG
+			</Button>
+			<Button onClick={onVerify}>
+				Verify
+			</Button>
+			<Button onClick={onStatus}>
+				Status
+			</Button>
+			<Button onClick={onStartConsensus}>
+				Start Consensus
+			</Button>
+		</>
+	);
+};
+
+const Catchall = (props: RouteProps) => {
+	return (
+		<>
+			Route: {props.route.toString()}
+		</>
+
 	);
 };
 
@@ -248,7 +261,7 @@ export const Admin = () => {
 			return <FollowerSetLeader route={route} setRoute={setRoute} />;
 		}
 		default: {
-			return <LoggedIn />;
+			return <Catchall route={route} setRoute={setRoute} />;
 		}
 		}
 	}
