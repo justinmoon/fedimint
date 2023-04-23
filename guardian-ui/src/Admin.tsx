@@ -2,6 +2,49 @@ import { Button, FormControl, FormLabel, Input, NumberDecrementStepper, NumberIn
 import { useEffect, useState, useContext } from 'react';
 import { ApiContext } from './components/ApiProvider';
 
+interface RouteProps {
+	route: Route,
+	setRoute: React.Dispatch<React.SetStateAction<Route>>
+}
+
+const Login = (props: RouteProps) => {
+	const { api } = useContext(ApiContext);
+	const [password, setPassword] = useState('');
+
+	async function onSignup() {
+		try {
+			await api.setPassword(password);
+			console.log('password set');
+			props.setRoute(Route.LeadOrFollow);
+		} catch(e) {
+			console.error('failed to set password', e);
+		}
+	}
+
+	async function onLogin() {
+		try {
+			api.setPasswordLocal(password);
+			console.log('password set');
+			props.setRoute(Route.LeadOrFollow);
+		} catch(e) {
+			console.error('failed to set password', e);
+		}
+	}
+
+
+	return (
+		<>
+			<Input placeholder='password' onChange={e => setPassword(e.target.value)}/>
+			<Button onClick={onLogin}>
+				Login
+			</Button>
+			<Button onClick={onSignup}>
+				Signup
+			</Button>
+		</>
+
+	);
+};
 
 const LoggedIn = () => {
 	const { api } = useContext(ApiContext);
@@ -124,49 +167,55 @@ const LoggedIn = () => {
 	);
 };
 
+export enum Route {
+	Login,
+	LeadOrFollow,
+	LeaderSetConsensusParameters,
+	LeaderViewFollowers,
+	FollowerSetLeader,
+	FollowerAcceptConsensusParameters,
+	Dkg,
+	Hash,
+	Consensus
+}
+
 export const Admin = () => {
-	const { api } = useContext(ApiContext);
-	const [password, setPassword] = useState('');
-	const [loggedIn, setLoggedIn] = useState(false);
-
-	async function onSignup() {
-		try {
-			await api.setPassword(password);
-			console.log('password set');
-			setLoggedIn(true);
-		} catch(e) {
-			console.error('failed to set password', e);
-		}
-	}
-
-	async function onLogin() {
-		try {
-			api.setPasswordLocal(password);
-			console.log('password set');
-			setLoggedIn(true);
-		} catch(e) {
-			console.error('failed to set password', e);
-		}
-	}
-
-	// TODO: use server_status() to route here
-	if (loggedIn) {
+	const [route, setRoute] = useState<Route>(Route.Login);
+	function renderNavbar() {
 		return (
-			<>
-				<LoggedIn />
-			</>
+			<nav>
+				<Button onClick={() => setRoute(Route.Login)}>Login</Button>
+
+				<Button onClick={() => setRoute(Route.LeadOrFollow)}>Lead Or Follow</Button>
+				<Button onClick={() => setRoute(Route.LeaderSetConsensusParameters)}>Set Consensus Parameters</Button>
+				<Button onClick={() => setRoute(Route.LeaderViewFollowers)}>View Followers</Button>
+
+				<Button onClick={() => setRoute(Route.FollowerSetLeader)}>Set Leader</Button>
+				<Button onClick={() => setRoute(Route.FollowerAcceptConsensusParameters)}>Accept Consensus Parameters</Button>
+
+				<Button onClick={() => setRoute(Route.Dkg)}>DKG</Button>
+				<Button onClick={() => setRoute(Route.Hash)}>Hash</Button>
+				<Button onClick={() => setRoute(Route.Consensus)}>Consensus</Button>
+			</nav>
 		);
 	}
 
+	function renderRoute() {
+		switch (route) {
+		case Route.Login: {
+			return <Login route={route} setRoute={setRoute} />;
+		}
+		default: {
+			return <LoggedIn />;
+		}
+		}
+	}
+
+
 	return (
 		<>
-			<Input placeholder='password' onChange={e => setPassword(e.target.value)}/>
-			<Button onClick={onLogin}>
-				Login
-			</Button>
-			<Button onClick={onSignup}>
-				Signup
-			</Button>
+			{renderNavbar()}
+			{renderRoute()}
 		</>
 	);
 };
