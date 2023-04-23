@@ -120,7 +120,7 @@ impl FedimintServer {
             &mut task_group,
         );
 
-        // // Attempt get the config with local password, otherwise start config gen
+        // Attempt get the config with local password, otherwise start config gen
         // if let Ok(password) = fs::read_to_string(self.data_dir.join(PLAINTEXT_PASSWORD)) {
         //     config_gen
         //         .set_password(ApiAuth(password.clone()))

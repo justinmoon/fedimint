@@ -1,11 +1,13 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::time::Duration;
 
 use clap::Parser;
+use fedimint_core::admin_client::ConfigGenParamsRequest;
 use fedimint_core::config::{
-    ModuleGenParams, ServerModuleGenParamsRegistry, ServerModuleGenRegistry,
+    ModuleGenParams, ServerModuleGenParamsRegistry, ServerModuleGenRegistry, META_FEDERATION_NAME_KEY,
 };
 use fedimint_core::core::{ModuleKind, LEGACY_HARDCODED_INSTANCE_ID_LN, LEGACY_HARDCODED_INSTANCE_ID_MINT, LEGACY_HARDCODED_INSTANCE_ID_WALLET};
 use fedimint_core::db::Database;
@@ -25,6 +27,7 @@ use futures::FutureExt;
 use tokio::select;
 use tracing::{debug, error, info, warn};
 
+use crate::attach_default_module_gen_params;
 use crate::ui::{run_ui, UiMessage};
 
 /// Time we will wait before forcefully shutting down tasks
@@ -218,6 +221,7 @@ async fn run(
         let data_dir = opts.data_dir.clone();
         let ui_task_group = task_group.make_subgroup().await;
         let password = opts.password.clone();
+        let module_gens_params_clone = module_gens_params.clone();
         task_group
             .spawn("admin-ui", move |_| async move {
                 run_ui(
@@ -227,7 +231,7 @@ async fn run(
                     password,
                     ui_task_group,
                     module_gens,
-                    module_gens_params,
+                    module_gens_params_clone,
                 )
                 .await;
             })
@@ -274,8 +278,26 @@ async fn run(
     let bind_api= std::env::var("FM_BIND_API").unwrap().parse().unwrap();
     let api_url= std::env::var("FM_API_URL").unwrap().parse().unwrap();
 
+    info!("module_gens {:?}", module_gens);
+    info!("module_gens_params {:?}", &module_gens_params);
+    // TODO: read these defaults from the environment
+    let max_denomination = fedimint_core::Amount::from_msats(100000000000);
+    let network = bitcoin::Network::Regtest;
+    let finality_delay = 11;
+    let mut module_gens_params_mut = module_gens_params.clone();
+    attach_default_module_gen_params(
+        &mut module_gens_params_mut,
+        max_denomination,
+        network,
+        finality_delay,
+    );
+
     // TODO: Fedimintd should use the config gen API
     fs::write(opts.data_dir.join(PLAINTEXT_PASSWORD), opts.password)?;
+    let default_params = ConfigGenParamsRequest {
+        meta: BTreeMap::from([(META_FEDERATION_NAME_KEY.to_owned(), "foobar".to_string())]),
+        modules: module_gens_params_mut,
+    };
     let mut api = FedimintServer {
         data_dir: opts.data_dir,
         settings: ConfigGenSettings {
@@ -284,11 +306,12 @@ async fn run(
             api_bind: bind_api,
             p2p_url,
             api_url,
-            default_params: Default::default(),
-            // module_gens: module_gens.legacy_init_modules(),
-            module_gens: Default::default(),
-            // registry: module_gens,
-            registry: Default::default(),
+            default_params,
+            module_gens: module_gens.legacy_init_modules(),
+            registry: module_gens,
+            // default_params: Default::default(),
+            // module_gens: Default::default(),
+            // registry: Default::default(),
         },
         db,
     };
