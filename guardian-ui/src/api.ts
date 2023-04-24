@@ -5,6 +5,7 @@ export interface ApiInterface {
 	setPassword: (password: string) => Promise<void>;
 	setPasswordLocal: (password: string) => void;
 	getDefaults: () => Promise<any>;
+	setConnections: (leaderUrl: string) => Promise<void>;
 	setDefaults: (defaults: any) => Promise<void>;
 	runDkg: () => Promise<void>;
 	verify: () => Promise<void>;
@@ -13,7 +14,8 @@ export interface ApiInterface {
 }
 
 async function rpc<T>(method: string, params: any, auth:string|null=null): Promise<T> {
-	const websocketUrl = 'ws://127.0.0.1:18174';
+	// FIXME: probably shouldn't have a default here ...
+	const websocketUrl = process.env.REACT_APP_FM_CONFIG_API || 'ws://127.0.0.1:18174';
 	const requestTimeoutMs = 20000;
 	const websocket = new JsonRpcWebsocket(websocketUrl, requestTimeoutMs, (error: JsonRpcError) => {
 		/* handle error */
@@ -54,7 +56,6 @@ export class Api implements ApiInterface {
 		return defaults;
 	};
 
-
 	setDefaults = async (defaults: any): Promise<void> => {
 		const connections = {
 			our_name: 'leader',
@@ -64,6 +65,11 @@ export class Api implements ApiInterface {
 		console.log('set_config_gen_connections result', connectionsResult);
 		const setResult = await rpc('set_config_gen_params', defaults, this.password);
 		console.log('set_config_gen_params result', setResult);
+	};
+
+	setConnections = async (leaderUrl: string): Promise<void> => {
+		const defaults = await rpc('set_connections', leaderUrl, this.password);
+		console.log('set_connections result', defaults);
 	};
 
 	runDkg = async (): Promise<void> => {

@@ -138,18 +138,33 @@ const LeaderSetConsensusParameters = (props: RouteProps) => {
 };
 
 const FollowerSetLeader = (props: RouteProps) => {
+	const { api } = useContext(ApiContext);
+	const [leaderUrl, setLeaderUrl] = useState('');
+
+	async function onSelectLeader() {
+		try {
+			await api.setConnections(leaderUrl);
+			console.log('password set');
+			props.setRoute(Route.LeadOrFollow);
+		} catch(e) {
+			console.error('failed to set password', e);
+		}
+	}
+
 	return (
 		<>
-			Followers
+			<Input placeholder='password' onChange={e => setLeaderUrl(e.target.value)}/>
+			<Button onClick={onSelectLeader}>
+				Set Leader URL
+			</Button>
 		</>
-
 	);
 };
 
 
 const Leftover = () => {
 	const { api } = useContext(ApiContext);
-	
+
 	async function onDkg() {
 		try {
 			await api.runDkg();
