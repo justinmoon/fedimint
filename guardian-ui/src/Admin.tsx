@@ -1,4 +1,4 @@
-import { Button, FormControl, FormLabel, Input, NumberDecrementStepper, NumberIncrementStepper, NumberInput, NumberInputField, NumberInputStepper, Radio, RadioGroup, Stack } from '@chakra-ui/react';
+import { Text, Button, FormControl, FormLabel, Input, NumberDecrementStepper, NumberIncrementStepper, NumberInput, NumberInputField, NumberInputStepper, Radio, RadioGroup, Stack } from '@chakra-ui/react';
 import { useEffect, useState, useContext } from 'react';
 import { ApiContext } from './components/ApiProvider';
 
@@ -52,7 +52,7 @@ const LeadOrFollow = (props: RouteProps) => {
 		try {
 			api.setConnections('leader');
 			console.log('password set');
-			props.setRoute(Route.LeaderSetConsensusParameters);
+			props.setRoute(Route.LeaderAwaitPeers);
 		} catch(e) {
 			console.error('failed to set connections for the leader', e);
 		}
@@ -71,6 +71,38 @@ const LeadOrFollow = (props: RouteProps) => {
 	);
 };
 
+const LeaderAwaitPeers = (props: RouteProps) => {
+	const { api } = useContext(ApiContext);
+	const [numPeers, setNumPeers] = useState(2);
+
+	async function onAwaitPeers() {
+		// TODO: retry if this times out or something
+		await api.awaitPeers(numPeers);
+		console.log('peers arrived');
+		props.setRoute(Route.LeaderSetConsensusParameters);
+	}
+
+	// TODO: do some setInterval calling get_config_gen_peers to show who has joined so far
+	return (
+		<>
+			<FormControl>
+				<FormLabel>How many many guardians including yourself?</FormLabel>
+				<NumberInput defaultValue={numPeers} min={1} max={20} onChange={n => setNumPeers(parseInt(n))}>
+					<NumberInputField />
+					<NumberInputStepper>
+						<NumberIncrementStepper />
+						<NumberDecrementStepper />
+					</NumberInputStepper>
+				</NumberInput>
+			</FormControl>
+			<Button onClick={onAwaitPeers}>
+				Continue
+			</Button>
+		</>
+	);
+};
+
+
 const LeaderSetConsensusParameters = (props: RouteProps) => {
 	const { api } = useContext(ApiContext);
 	const [defaults, setDefaults] = useState<any>(null);
@@ -87,7 +119,7 @@ const LeaderSetConsensusParameters = (props: RouteProps) => {
 		try {
 			await api.setDefaults(defaults);
 			console.log('defaults set');
-			props.setRoute(Route.LeaderViewFollowers);
+			props.setRoute(Route.Dkg);
 		} catch(e) {
 			console.error('failed to set defaults', e);
 		}
@@ -148,6 +180,56 @@ const LeaderSetConsensusParameters = (props: RouteProps) => {
 	);
 };
 
+const FollowerAcceptConsensusParameters = (props: RouteProps) => {
+	const { api } = useContext(ApiContext);
+	const [defaults, setDefaults] = useState<any>(null);
+
+	useEffect(() => {
+		async function getDefaults() {
+			const defaults = await api.getDefaults();
+			setDefaults(defaults);
+		}
+		getDefaults();
+	}, []);
+
+
+	async function onAccept() {
+		try {
+			await api.setDefaults(defaults);
+			console.log('defaults set');
+			props.setRoute(Route.Dkg);
+		} catch(e) {
+			console.error('failed to set defaults', e);
+		}
+	}
+
+	return (
+		<>
+			{defaults && (<> 
+				<FormControl>
+					<FormLabel>Federation Name</FormLabel>
+					<Input disabled={true} value={defaults.meta.federation_name} />
+				</FormControl>
+				<FormControl>
+					<FormLabel>Block Confirmations Required</FormLabel>
+					<Text>
+						{defaults.modules.wallet.finality_delay}
+					</Text> 
+				</FormControl>
+				<FormControl>
+					<FormLabel>Network</FormLabel>
+					<Text>
+						{defaults.modules.wallet.network}
+					</Text>
+				</FormControl>
+				<Button onClick={onAccept}>
+					Accept
+				</Button>
+			</>)}
+		</>
+	);
+};
+
 const FollowerSetLeader = (props: RouteProps) => {
 	const { api } = useContext(ApiContext);
 	const [leaderUrl, setLeaderUrl] = useState('ws://127.0.0.1:18174');
@@ -175,7 +257,7 @@ const FollowerSetLeader = (props: RouteProps) => {
 };
 
 
-const Leftover = () => {
+const DkgAndConsensus = (props: RouteProps) => {
 	const { api } = useContext(ApiContext);
 
 	async function onDkg() {
@@ -245,7 +327,8 @@ export enum Route {
 	Login,
 	LeadOrFollow,
 	LeaderSetConsensusParameters,
-	LeaderViewFollowers,
+	LeaderAwaitPeers,
+	// LeaderViewFollowers,
 	FollowerSetLeader,
 	FollowerAcceptConsensusParameters,
 	Dkg,
@@ -264,7 +347,6 @@ export const Admin = () => {
 
 				<Button onClick={() => setRoute(Route.LeadOrFollow)}>Lead Or Follow</Button>
 				<Button onClick={() => setRoute(Route.LeaderSetConsensusParameters)}>Set Consensus Parameters</Button>
-				<Button onClick={() => setRoute(Route.LeaderViewFollowers)}>View Followers</Button>
 
 				<Button onClick={() => setRoute(Route.FollowerSetLeader)}>Set Leader</Button>
 				<Button onClick={() => setRoute(Route.FollowerAcceptConsensusParameters)}>Accept Consensus Parameters</Button>
@@ -296,8 +378,17 @@ export const Admin = () => {
 		case Route.LeaderSetConsensusParameters: {
 			return <LeaderSetConsensusParameters route={route} setRoute={setRoute} />;
 		}
+		case Route.LeaderAwaitPeers: {
+			return <LeaderAwaitPeers route={route} setRoute={setRoute} />;
+		}
 		case Route.FollowerSetLeader: {
 			return <FollowerSetLeader route={route} setRoute={setRoute} />;
+		}
+		case Route.FollowerAcceptConsensusParameters: {
+			return <FollowerAcceptConsensusParameters route={route} setRoute={setRoute} />;
+		}
+		case Route.Dkg: {
+			return <DkgAndConsensus route={route} setRoute={setRoute} />;
 		}
 		default: {
 			return <Catchall route={route} setRoute={setRoute} />;
@@ -309,6 +400,7 @@ export const Admin = () => {
 	return (
 		<>
 			{renderNavbar()}
+			<br/>
 			{renderRoute()}
 			<div>
 				<Button onClick={onStatus}>

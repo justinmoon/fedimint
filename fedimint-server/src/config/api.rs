@@ -611,6 +611,7 @@ pub fn server_endpoints() -> Vec<ApiEndpoint<ConfigGenApi>> {
         api_endpoint! {
             "await_config_gen_peers",
             async |config: &ConfigGenApi, context, peers: usize| -> Vec<PeerServerParams> {
+                // FIXME: a little surprising this endpoint wasn't authenticated ...
                 check_no_auth(context)?;
                 config.await_config_gen_peers(peers).await
             }

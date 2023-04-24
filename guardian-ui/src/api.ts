@@ -7,6 +7,7 @@ export interface ApiInterface {
 	getDefaults: () => Promise<any>;
 	setConnections: (ourName: string, leaderUrl?: string) => Promise<void>;
 	setDefaults: (defaults: any) => Promise<void>;
+	awaitPeers: (numPeers: number) => Promise<void>;
 	runDkg: () => Promise<void>;
 	verify: () => Promise<void>;
 	status: () => Promise<string>;
@@ -77,9 +78,14 @@ export class Api implements ApiInterface {
 		console.log('set_config_gen_connections result', defaults);
 	};
 
+	awaitPeers = async (numPeers: number): Promise<void> => {
+		const result = await rpc('await_config_gen_peers', numPeers); // not authenticated
+		console.log('await_config_gen_peers result', result);
+	};
+
 	runDkg = async (): Promise<void> => {
 		const result = await rpc('run_dkg', null, this.password);
-		console.log('runDkg result', result);
+		console.log('run_dkg result', result);
 	};
 
 	verify = async (): Promise<void> => {
