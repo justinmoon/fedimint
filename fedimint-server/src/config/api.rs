@@ -111,7 +111,6 @@ impl ConfigGenApi {
             // Note PeerIds don't really exist at this point, but id doesn't matter because
             // it's not used in the WS client for anything, perhaps it should be removed
             let client = WsAdminClient::new(url, PeerId::from(0), connection.auth.clone());
-            tracing::info!("connecting to leader: {:?}", connection.as_peer_info());
             client
                 .add_config_gen_peer(connection.as_peer_info())
                 .await
@@ -210,6 +209,7 @@ impl ConfigGenApi {
             .await
             .map_err(|_| ApiError::not_found("Unable to get params from leader".to_string()))?;
 
+        // FIXME: this is a little weird. Why are we setting something here?
         self.set_config_state(connection, consensus.clone())?;
 
         Ok(consensus)
@@ -302,7 +302,7 @@ impl ConfigGenApi {
             .values()
             .cloned()
             .collect();
-
+        
         if user_hashes != hashes {
             return Self::bad_request("Config verification failed");
         }
@@ -341,7 +341,6 @@ impl ConfigGenApi {
         let has_upgrade_flag = { self.has_upgrade_flag().await };
 
         let state = self.state.lock().expect("lock poisoned");
-        tracing::info!("config api status {:?}", &*state);
         match &*state {
             ConfigApiState::SetPassword => ServerStatus::AwaitingPassword,
             _ if has_upgrade_flag => ServerStatus::Upgrading,
@@ -399,6 +398,7 @@ impl ConfigGenApi {
     ) -> ApiResult<()> {
         let mut state = self.state.lock().expect("lock poisoned");
 
+        tracing::info!("sensensus peers {:?}", consensus.peers);
         let (our_id, _) = consensus
             .peers
             .iter()
@@ -903,6 +903,7 @@ mod tests {
             for peer in &followers {
                 hashes.insert(peer.client.get_verify_config_hash().await.unwrap());
             }
+            // FIXME: Why doesn't leader verify as well?
             for peer in &followers {
                 peer.client.verify_configs(hashes.clone()).await.unwrap();
             }

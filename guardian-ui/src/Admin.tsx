@@ -11,7 +11,7 @@ const Login = (props: RouteProps) => {
 	const { api } = useContext(ApiContext);
 	const [password, setPassword] = useState('');
 
-	async function onSignup() {
+	async function onCreatePassword() {
 		try {
 			await api.setPassword(password);
 			console.log('password set');
@@ -21,7 +21,7 @@ const Login = (props: RouteProps) => {
 		}
 	}
 
-	async function onLogin() {
+	async function onSetPassword() {
 		try {
 			api.setPasswordLocal(password);
 			console.log('password set');
@@ -34,11 +34,11 @@ const Login = (props: RouteProps) => {
 	return (
 		<>
 			<Input placeholder='password' onChange={e => setPassword(e.target.value)}/>
-			<Button onClick={onLogin}>
-				Login
+			<Button onClick={onSetPassword}>
+				Set Password
 			</Button>
-			<Button onClick={onSignup}>
-				Signup
+			<Button onClick={onCreatePassword}>
+				Create Password 
 			</Button>
 		</>
 
@@ -180,22 +180,23 @@ const LeaderSetConsensusParameters = (props: RouteProps) => {
 	);
 };
 
+// FIXME: this should call get_consensus_config_gen_params instead
 const FollowerAcceptConsensusParameters = (props: RouteProps) => {
 	const { api } = useContext(ApiContext);
-	const [defaults, setDefaults] = useState<any>(null);
+	const [params, setParams] = useState<any>(null);
 
 	useEffect(() => {
-		async function getDefaults() {
-			const defaults = await api.getDefaults();
-			setDefaults(defaults);
+		async function getConsensusParams() {
+			const p = await api.followerGetConsensusParams();
+			setParams(p);
 		}
-		getDefaults();
+		getConsensusParams();
 	}, []);
 
 
 	async function onAccept() {
 		try {
-			await api.setDefaults(defaults);
+			// await api.setDefaults(defaults);
 			console.log('defaults set');
 			props.setRoute(Route.Dkg);
 		} catch(e) {
@@ -205,26 +206,32 @@ const FollowerAcceptConsensusParameters = (props: RouteProps) => {
 
 	return (
 		<>
-			{defaults && (<> 
+			{params && (<> 
 				<FormControl>
 					<FormLabel>Federation Name</FormLabel>
-					<Input disabled={true} value={defaults.meta.federation_name} />
+					<Input disabled={true} value={params.requested.meta.federation_name} />
 				</FormControl>
 				<FormControl>
 					<FormLabel>Block Confirmations Required</FormLabel>
 					<Text>
-						{defaults.modules.wallet.finality_delay}
+						{params.requested.modules.wallet.finality_delay}
 					</Text> 
 				</FormControl>
 				<FormControl>
 					<FormLabel>Network</FormLabel>
 					<Text>
-						{defaults.modules.wallet.network}
+						{params.requested.modules.wallet.network}
 					</Text>
 				</FormControl>
 				<Button onClick={onAccept}>
 					Accept
 				</Button>
+				<Text>Peers</Text>
+				{Object.keys(params.peers).map(peerId => (
+					<>
+						<Text>Name: {params.peers[peerId].name}</Text>
+					</>
+				))}
 			</>)}
 		</>
 	);
@@ -257,35 +264,71 @@ const FollowerSetLeader = (props: RouteProps) => {
 };
 
 
-const DkgAndConsensus = (props: RouteProps) => {
+const Dkg = (props: RouteProps) => {
 	const { api } = useContext(ApiContext);
 
 	async function onDkg() {
 		try {
 			await api.runDkg();
 			console.log('ran dkg');
+			props.setRoute(Route.VerifyConfigHash);
 		} catch(e) {
 			console.error('failed to run dkg', e);
 		}
 	}
 
+	return (
+		<>
+			<Button onClick={onDkg}>
+				Run DKG
+			</Button>
+		</>
+	);
+};
+
+// FIXME: look into config and see how many hashes we need
+const VerifyConfigHash = (props: RouteProps) => {
+	const { api } = useContext(ApiContext);
+	const [peerHash, setPeerHash] = useState('');
+	const [ourHash, setOurHash] = useState('');
+
+	useEffect(() => {
+		async function getConfigHash() {
+			const hash = await api.configHash();
+			setOurHash(hash);
+		}
+		getConfigHash();
+	}, []);
+
 	async function onVerify() {
 		try {
-			const status = await api.verify();
+			const status = await api.verify([ourHash, peerHash]);
 			console.log('verify', status);
+			props.setRoute(Route.Consensus);
 		} catch(e) {
 			console.error('failed to verify', e);
 		}
 	}
 
-	async function onStatus() {
-		try {
-			const status = await api.status();
-			console.log('status', status);
-		} catch(e) {
-			console.error('failed to get status', e);
-		}
-	}
+	return (
+		<>
+			<FormControl>
+				<FormLabel>Your config hash</FormLabel>
+				<Text>{ourHash}</Text>
+			</FormControl>
+			<FormControl>
+				<FormLabel>Peer config hash</FormLabel>
+				<Input value={peerHash} onChange={e => setPeerHash(e.target.value)} />
+			</FormControl>
+			<Button onClick={onVerify}>
+				Verify
+			</Button>
+		</>
+	);
+};
+
+const Consensus = (props: RouteProps) => {
+	const { api } = useContext(ApiContext);
 
 	async function onStartConsensus() {
 		try {
@@ -298,15 +341,6 @@ const DkgAndConsensus = (props: RouteProps) => {
 
 	return (
 		<>
-			<Button onClick={onDkg}>
-				Run DKG
-			</Button>
-			<Button onClick={onVerify}>
-				Verify
-			</Button>
-			<Button onClick={onStatus}>
-				Status
-			</Button>
 			<Button onClick={onStartConsensus}>
 				Start Consensus
 			</Button>
@@ -328,11 +362,10 @@ export enum Route {
 	LeadOrFollow,
 	LeaderSetConsensusParameters,
 	LeaderAwaitPeers,
-	// LeaderViewFollowers,
 	FollowerSetLeader,
 	FollowerAcceptConsensusParameters,
 	Dkg,
-	Hash,
+	VerifyConfigHash,
 	Consensus
 }
 
@@ -346,13 +379,13 @@ export const Admin = () => {
 				<Button onClick={() => setRoute(Route.Login)}>Login</Button>
 
 				<Button onClick={() => setRoute(Route.LeadOrFollow)}>Lead Or Follow</Button>
-				<Button onClick={() => setRoute(Route.LeaderSetConsensusParameters)}>Set Consensus Parameters</Button>
+				<Button onClick={() => setRoute(Route.LeaderSetConsensusParameters)}>Set Params</Button>
 
 				<Button onClick={() => setRoute(Route.FollowerSetLeader)}>Set Leader</Button>
-				<Button onClick={() => setRoute(Route.FollowerAcceptConsensusParameters)}>Accept Consensus Parameters</Button>
+				<Button onClick={() => setRoute(Route.FollowerAcceptConsensusParameters)}>Accept Param</Button>
 
 				<Button onClick={() => setRoute(Route.Dkg)}>DKG</Button>
-				<Button onClick={() => setRoute(Route.Hash)}>Hash</Button>
+				<Button onClick={() => setRoute(Route.VerifyConfigHash)}>Hash</Button>
 				<Button onClick={() => setRoute(Route.Consensus)}>Consensus</Button>
 			</nav>
 		);
@@ -388,7 +421,13 @@ export const Admin = () => {
 			return <FollowerAcceptConsensusParameters route={route} setRoute={setRoute} />;
 		}
 		case Route.Dkg: {
-			return <DkgAndConsensus route={route} setRoute={setRoute} />;
+			return <Dkg route={route} setRoute={setRoute} />;
+		}
+		case Route.VerifyConfigHash: {
+			return <VerifyConfigHash route={route} setRoute={setRoute} />;
+		}
+		case Route.Consensus: {
+			return <Consensus route={route} setRoute={setRoute} />;
 		}
 		default: {
 			return <Catchall route={route} setRoute={setRoute} />;

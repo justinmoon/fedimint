@@ -9,8 +9,10 @@ export interface ApiInterface {
 	setDefaults: (defaults: any) => Promise<void>;
 	awaitPeers: (numPeers: number) => Promise<void>;
 	runDkg: () => Promise<void>;
-	verify: () => Promise<void>;
+	configHash: () => Promise<string>;
+	verify: (configHashes: string[]) => Promise<void>;
 	status: () => Promise<string>;
+	followerGetConsensusParams: () => Promise<any>;
 	startConsensus: () => Promise<void>;
 }
 
@@ -58,13 +60,8 @@ export class Api implements ApiInterface {
 		return defaults;
 	};
 
+	// FIXME: rename this
 	setDefaults = async (defaults: any): Promise<void> => {
-		const connections = {
-			our_name: 'leader',
-			leader_api_url: null,
-		};
-		const connectionsResult = await rpc('set_config_gen_connections', connections, this.password);
-		console.log('set_config_gen_connections result', connectionsResult);
 		const setResult = await rpc('set_config_gen_params', defaults, this.password);
 		console.log('set_config_gen_params result', setResult);
 	};
@@ -88,16 +85,26 @@ export class Api implements ApiInterface {
 		console.log('run_dkg result', result);
 	};
 
-	verify = async (): Promise<void> => {
+	configHash = async (): Promise<string> => {
 		const hash = await rpc('get_verify_config_hash', null, this.password);
 		console.log('get_verify_config_hash result', hash);
-		const result = await rpc('verify_configs', [hash], this.password);
+		return hash as string;
+	};
+
+	verify = async (configHashes: string[]): Promise<void> => {
+		const result = await rpc('verify_configs', configHashes, this.password);
 		console.log('verify_config result', result);
 	};
 
 	status = async (): Promise<string> => {
 		const result = await rpc('status', null, this.password);
 		console.log('status result', result);
+		return result as string;
+	};
+
+	followerGetConsensusParams = async (): Promise<string> => {
+		const result = await rpc('get_consensus_config_gen_params', null);
+		console.log('get_consensus_config_gen_params result', result);
 		return result as string;
 	};
 
