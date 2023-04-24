@@ -111,10 +111,11 @@ impl ConfigGenApi {
             // Note PeerIds don't really exist at this point, but id doesn't matter because
             // it's not used in the WS client for anything, perhaps it should be removed
             let client = WsAdminClient::new(url, PeerId::from(0), connection.auth.clone());
+            tracing::info!("connecting to leader: {:?}", connection.as_peer_info());
             client
                 .add_config_gen_peer(connection.as_peer_info())
                 .await
-                .map_err(|_| ApiError::not_found("Unable to connect to the leader".to_string()))?;
+                .map_err(|e| ApiError::not_found(format!("Unable to connect to the leader {:?}", e)))?;
         }
 
         self.notify_peer_connection.notify_one();
@@ -143,7 +144,7 @@ impl ConfigGenApi {
             ConfigApiState::VerifyConfigParams(_, params) => {
                 Ok(params.consensus.peers.values().cloned().collect())
             }
-            _ => Self::bad_request("Set the config connections first"),
+            s => Self::bad_request(&format!("(get_config_gen_peers) Set the config connections first {:?}", s)),
         }?;
 
         Ok(peers)
@@ -340,6 +341,7 @@ impl ConfigGenApi {
         let has_upgrade_flag = { self.has_upgrade_flag().await };
 
         let state = self.state.lock().expect("lock poisoned");
+        tracing::info!("config api status {:?}", &*state);
         match &*state {
             ConfigApiState::SetPassword => ServerStatus::AwaitingPassword,
             _ if has_upgrade_flag => ServerStatus::Upgrading,
@@ -380,7 +382,7 @@ impl ConfigGenApi {
         match &*state {
             ConfigApiState::SetConfigGenParams(connection) => Ok(connection.clone()),
             ConfigApiState::SetConnections(_) => {
-                Self::bad_request("Set the config connections first")
+                Self::bad_request("(get_connection_state) Set the config connections first (SetConnections)")
             }
             _ => Self::bad_request("Config params were already generated"),
         }
@@ -582,7 +584,13 @@ pub fn server_endpoints() -> Vec<ApiEndpoint<ConfigGenApi>> {
             "set_config_gen_connections",
             async |config: &ConfigGenApi, context, server: ConfigGenConnectionsRequest| -> () {
                 check_auth(context)?;
-                config.set_config_gen_connections(server).await
+                match config.set_config_gen_connections(server).await {
+                    Ok(r) => Ok(r),
+                    Err(e) => {
+                        tracing::error!("set_config_gen_connections error {:?}", e);
+                        Err(e)
+                    }
+                }
             }
         },
         api_endpoint! {

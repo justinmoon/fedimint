@@ -31,7 +31,6 @@ const Login = (props: RouteProps) => {
 		}
 	}
 
-
 	return (
 		<>
 			<Input placeholder='password' onChange={e => setPassword(e.target.value)}/>
@@ -47,9 +46,21 @@ const Login = (props: RouteProps) => {
 };
 
 const LeadOrFollow = (props: RouteProps) => {
+	const { api } = useContext(ApiContext);
+
+	async function onLead() {
+		try {
+			api.setConnections('leader');
+			console.log('password set');
+			props.setRoute(Route.LeaderSetConsensusParameters);
+		} catch(e) {
+			console.error('failed to set connections for the leader', e);
+		}
+	}
+
 	return (
 		<>
-			<Button onClick={() => props.setRoute(Route.LeaderSetConsensusParameters)}>
+			<Button onClick={() => onLead()}>
 				Lead
 			</Button>
 			<Button onClick={() => props.setRoute(Route.FollowerSetLeader)}>
@@ -139,21 +150,23 @@ const LeaderSetConsensusParameters = (props: RouteProps) => {
 
 const FollowerSetLeader = (props: RouteProps) => {
 	const { api } = useContext(ApiContext);
-	const [leaderUrl, setLeaderUrl] = useState('');
+	const [leaderUrl, setLeaderUrl] = useState('ws://127.0.0.1:18174');
+	const [ourName, setOurName] = useState('follower');
 
 	async function onSelectLeader() {
 		try {
-			await api.setConnections(leaderUrl);
-			console.log('password set');
-			props.setRoute(Route.LeadOrFollow);
+			await api.setConnections(ourName, leaderUrl);
+			console.log('set connections');
+			props.setRoute(Route.FollowerAcceptConsensusParameters);
 		} catch(e) {
-			console.error('failed to set password', e);
+			console.error('failed to set connections', e);
 		}
 	}
 
 	return (
 		<>
-			<Input placeholder='password' onChange={e => setLeaderUrl(e.target.value)}/>
+			<Input placeholder='our name' value={ourName} onChange={e => setOurName(e.target.value)}/>
+			<Input placeholder='leader url' value={leaderUrl} onChange={e => setLeaderUrl(e.target.value)}/>
 			<Button onClick={onSelectLeader}>
 				Set Leader URL
 			</Button>
@@ -242,6 +255,8 @@ export enum Route {
 
 export const Admin = () => {
 	const [route, setRoute] = useState<Route>(Route.Login);
+	const { api } = useContext(ApiContext);
+
 	function renderNavbar() {
 		return (
 			<nav>
@@ -259,6 +274,15 @@ export const Admin = () => {
 				<Button onClick={() => setRoute(Route.Consensus)}>Consensus</Button>
 			</nav>
 		);
+	}
+
+	async function onStatus() {
+		try {
+			const status = await api.status();
+			console.log('status', status);
+		} catch(e) {
+			console.error('failed to get status', e);
+		}
 	}
 
 	function renderRoute() {
@@ -286,6 +310,11 @@ export const Admin = () => {
 		<>
 			{renderNavbar()}
 			{renderRoute()}
+			<div>
+				<Button onClick={onStatus}>
+					Status
+				</Button>
+			</div>
 		</>
 	);
 };

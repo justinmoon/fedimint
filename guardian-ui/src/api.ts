@@ -5,7 +5,7 @@ export interface ApiInterface {
 	setPassword: (password: string) => Promise<void>;
 	setPasswordLocal: (password: string) => void;
 	getDefaults: () => Promise<any>;
-	setConnections: (leaderUrl: string) => Promise<void>;
+	setConnections: (ourName: string, leaderUrl?: string) => Promise<void>;
 	setDefaults: (defaults: any) => Promise<void>;
 	runDkg: () => Promise<void>;
 	verify: () => Promise<void>;
@@ -37,6 +37,7 @@ export class Api implements ApiInterface {
 		this.password = null;
 	}
 
+	// FIXME: remove
 	loggedIn = (): boolean => {
 		return this.password !== null;
 	};
@@ -67,9 +68,13 @@ export class Api implements ApiInterface {
 		console.log('set_config_gen_params result', setResult);
 	};
 
-	setConnections = async (leaderUrl: string): Promise<void> => {
-		const defaults = await rpc('set_connections', leaderUrl, this.password);
-		console.log('set_connections result', defaults);
+	setConnections = async (ourName: string, leaderUrl?: string): Promise<void> => {
+		const connections = {
+			our_name: ourName, // FIXME: make the call twice, second time with our_name
+			leader_api_url: leaderUrl,
+		};
+		const defaults = await rpc('set_config_gen_connections', connections, this.password);
+		console.log('set_config_gen_connections result', defaults);
 	};
 
 	runDkg = async (): Promise<void> => {
@@ -86,7 +91,7 @@ export class Api implements ApiInterface {
 
 	status = async (): Promise<string> => {
 		const result = await rpc('status', null, this.password);
-		console.log('runDkg result', result);
+		console.log('status result', result);
 		return result as string;
 	};
 
