@@ -128,12 +128,16 @@ impl Lightningd {
     pub async fn new(process_mgr: &ProcessManager, bitcoind: Bitcoind) -> Result<Self> {
         let cln_dir = env::var("FM_CLN_DIR")?;
 
+        let extension_path = cmd!("which gateway-cln-extension")
+            .out_string()
+            .await
+            .context("gateway-cln-extension not on path")?;
         let cmd = cmd!(
             "lightningd",
             "--dev-fast-gossip",
             "--dev-bitcoind-poll=1",
             "--lightning-dir={cln_dir}",
-            "--plugin={bin_dir}/gateway-cln-extension"
+            "--plugin={extension_path}"
         );
 
         let process = process_mgr.spawn_daemon("lightningd", cmd).await?;
