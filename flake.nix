@@ -187,6 +187,11 @@
                 pkg = rustPackageOutputsFinal.gateway-pkgs;
                 bin = "gateway-cli";
               };
+            gateway-cln-extension = pickBinary
+              {
+                pkg = rustPackageOutputsFinal.gateway-pkgs;
+                bin = "gateway-cln-extension";
+              };
           };
 
           # Technically nested sets are not allowed in `packages`, so we can
@@ -330,6 +335,15 @@
                     pkgs.nil
                     pkgs-unstable.convco
                     pkgs.nodePackages.bash-language-server
+
+                    # fedimint
+                    packages.distributedgen
+                    packages.fedimint-cli
+                    packages.fedimintd
+                    packages.gateway-cli
+                    packages.gatewayd
+                    packages.gateway-cln-extension
+
                   ] ++ lib.optionals (!stdenv.isAarch64 && !stdenv.isDarwin) [
                     pkgs.semgrep
                   ];

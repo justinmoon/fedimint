@@ -127,7 +127,6 @@ pub struct Lightningd {
 impl Lightningd {
     pub async fn new(process_mgr: &ProcessManager, bitcoind: Bitcoind) -> Result<Self> {
         let cln_dir = env::var("FM_CLN_DIR")?;
-        let bin_dir = env::var("FM_BIN_DIR")?;
 
         let cmd = cmd!(
             "lightningd",
@@ -330,7 +329,6 @@ pub struct Gatewayd {
 
 impl Gatewayd {
     pub async fn new(process_mgr: &ProcessManager, ln: ClnOrLnd) -> Result<Self> {
-        let bin_dir = env::var("FM_BIN_DIR")?;
         let ln_name = ln.name();
         let test_dir = env::var("FM_TEST_DIR")?;
         let gateway_env: HashMap<String, String> = match ln {
@@ -366,7 +364,7 @@ impl Gatewayd {
         let process = process_mgr
             .spawn_daemon(
                 &format!("gatewayd-{ln_name}"),
-                cmd!("{bin_dir}/gatewayd", ln_name).envs(gateway_env),
+                cmd!("gatewayd", ln_name).envs(gateway_env),
             )
             .await?;
 
@@ -377,14 +375,13 @@ impl Gatewayd {
     }
 
     pub async fn cmd(&self) -> Command {
-        let bin_dir = env::var("FM_BIN_DIR").expect("FM_BIN_DIR not found");
         match &self.ln {
             ClnOrLnd::Cln(_) => {
-                cmd!("{bin_dir}/gateway-cli", "--rpcpassword=theresnosecondbest")
+                cmd!("gateway-cli", "--rpcpassword=theresnosecondbest")
             }
             ClnOrLnd::Lnd(_) => {
                 cmd!(
-                    "{bin_dir}/gateway-cli",
+                    "gateway-cli",
                     "--rpcpassword=theresnosecondbest",
                     "-a",
                     "http://127.0.0.1:28175"
@@ -527,7 +524,6 @@ async fn latency_tests(dev_fed: DevFed) -> Result<()> {
 }
 
 async fn cli_tests(dev_fed: DevFed) -> Result<()> {
-    let bin_dir = env::var("FM_BIN_DIR")?;
     let data_dir = env::var("FM_DATA_DIR")?;
 
     #[allow(unused_variables)]
@@ -543,7 +539,7 @@ async fn cli_tests(dev_fed: DevFed) -> Result<()> {
     } = dev_fed;
 
     cmd!(
-        "{bin_dir}/distributedgen",
+        "distributedgen",
         "config-decrypt",
         "--in-file={data_dir}/server-0/private.encrypt",
         "--out-file={data_dir}/server-0/config-plaintext.json"
@@ -553,7 +549,7 @@ async fn cli_tests(dev_fed: DevFed) -> Result<()> {
     .await?;
 
     cmd!(
-        "{bin_dir}/distributedgen",
+        "distributedgen",
         "config-encrypt",
         "--in-file={data_dir}/server-0/config-plaintext.json",
         "--out-file={data_dir}/server-0/config-2"
@@ -563,7 +559,7 @@ async fn cli_tests(dev_fed: DevFed) -> Result<()> {
     .await?;
 
     cmd!(
-        "{bin_dir}/distributedgen",
+        "distributedgen",
         "config-decrypt",
         "--in-file={data_dir}/server-0/config-2",
         "--out-file={data_dir}/server-0/config-plaintext-2.json"
