@@ -533,6 +533,8 @@ pub async fn dev_fed(process_mgr: &ProcessManager) -> Result<DevFed> {
     fed.await_gateways_registered().await?;
     info!(LOG_DEVIMINT, "gateways registered");
     fed.use_gateway(&gw_cln).await?;
+    fed.pegin(10_000_000).await?;
+    info!(LOG_TEST, "pegged in");
     info!(
         LOG_DEVIMINT,
         "starting dev federation took {:?}",
