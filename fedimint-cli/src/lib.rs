@@ -405,6 +405,23 @@ impl Opts {
         )
         .await)
     }
+
+    async fn build_client_ng(
+        &self,
+        module_gens: &ClientModuleGenRegistry,
+    ) -> CliResult<fedimint_client::Client> {
+        let mut tg = TaskGroup::new();
+        let cfg = self.load_config()?.0;
+        let db = self.load_rocks_db()?;
+
+        let mut client_builder = ClientBuilder::default();
+        client_builder.with_module_gens(module_gens.clone());
+        client_builder.with_primary_module(1);
+        client_builder.with_config(cfg.clone());
+        client_builder.with_database(db);
+
+        client_builder.build(&mut tg).await.map_err_cli_general()
+    }
 }
 
 #[derive(Subcommand, Clone)]
@@ -1054,18 +1071,8 @@ impl FedimintCli {
             }
             Command::Module { id, arg } => {
                 let cfg = cli.load_config()?;
-
-                let mut tg = TaskGroup::new();
-
-                let mut client_builder = ClientBuilder::default();
-                client_builder.with_module(MintClientGen);
-                client_builder.with_module(LightningClientGen);
-                client_builder.with_module(WalletClientGen);
-                client_builder.with_primary_module(1);
-                client_builder.with_config(cfg.0.clone());
-                client_builder.with_database(cli.load_rocks_db().unwrap());
-                let client = client_builder
-                    .build(&mut tg)
+                let client = cli
+                    .build_client_ng(&self.module_gens)
                     .await
                     .map_err_cli_msg(CliErrorKind::GeneralFailure, "failure")?;
 

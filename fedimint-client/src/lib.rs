@@ -769,6 +769,11 @@ impl ClientBuilder {
         self.module_gens.attach(module_gen);
     }
 
+    /// Replace module generator registry entirely
+    pub fn with_module_gens(&mut self, module_gens: ClientModuleGenRegistry) {
+        self.module_gens = module_gens;
+    }
+
     /// Uses this config to initialize modules
     ///
     /// ## Panics
