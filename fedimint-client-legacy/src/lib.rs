@@ -158,7 +158,7 @@ pub struct Client<C> {
     config: C,
     context: Arc<ClientContext>,
     #[allow(unused)]
-    pub root_secret: DerivableSecret,
+    root_secret: DerivableSecret,
 }
 
 impl<C> Client<C> {
@@ -180,7 +180,7 @@ impl<C> Client<C> {
 }
 
 #[derive(Encodable, Decodable)]
-pub struct ClientSecret([u8; 16]);
+pub struct ClientSecret([u8; 64]);
 
 impl Serialize for ClientSecret {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
@@ -318,37 +318,6 @@ impl<T: AsRef<ClientConfig> + Clone + Send> Client<T> {
         };
         tx.commit_tx().await;
         secret.into_root_secret()
-    }
-
-    /// Fetches the client secret from the database or generates a new one if
-    /// none is present
-    #[allow(dead_code)]
-    pub async fn get_client_secret(&self) -> ClientSecret {
-        let mut tx = self.context.db.begin_transaction().await;
-        let client_secret = tx.get_value(&ClientSecretKey).await;
-        let secret = if let Some(client_secret) = client_secret {
-            client_secret
-        } else {
-            let secret: ClientSecret = thread_rng().gen();
-            let no_replacement = tx.insert_entry(&ClientSecretKey, &secret).await.is_none();
-            assert!(
-                no_replacement,
-                "We would have overwritten our secret key, aborting!"
-            );
-            secret
-        };
-        tx.commit_tx().await;
-        secret
-    }
-
-    /// Overwrite client secret ... only used when user trying to recover ecash
-    /// tokens ... NOTE: this doesn't set the secret in the client itself
-    /// (couldn't figure out how to make it mutable)
-    pub async fn dangerous_save_client_secret(&self, entropy: [u8; 16]) {
-        let client_secret = ClientSecret(entropy);
-        let mut dbtx = self.context.db.begin_transaction().await;
-        dbtx.insert_entry(&ClientSecretKey, &client_secret).await;
-        dbtx.commit_tx().await;
     }
 
     pub async fn peg_in<R: RngCore + CryptoRng>(
@@ -1549,22 +1518,16 @@ impl Client<GatewayClientConfig> {
 
 impl Distribution<ClientSecret> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> ClientSecret {
-        let mut secret = [0u8; 16];
+        let mut secret = [0u8; 64];
         rng.fill(&mut secret);
         ClientSecret(secret)
     }
 }
 
 impl ClientSecret {
-    pub fn into_root_secret(self) -> DerivableSecret {
+    fn into_root_secret(self) -> DerivableSecret {
         const FEDIMINT_CLIENT_NONCE: &[u8] = b"Fedimint Client Salt";
         DerivableSecret::new_root(&self.0, FEDIMINT_CLIENT_NONCE)
-    }
-    pub fn entropy(&self) -> [u8; 16] {
-        self.0
-    }
-    pub fn new(entropy: [u8; 16]) -> Self {
-        Self(entropy)
     }
 }
 
