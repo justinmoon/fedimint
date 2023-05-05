@@ -443,7 +443,7 @@ mod imp {
     }
 
     pub async fn sleep(duration: Duration) {
-        gloo_timers::future::sleep(duration).await
+        gloo_timers::future::sleep(duration.min(Duration::from_millis(360000))).await
     }
 
     pub async fn sleep_until(deadline: Instant) {
