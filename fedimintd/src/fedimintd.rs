@@ -21,7 +21,9 @@ use fedimint_ln_server::LightningGen;
 use fedimint_logging::TracingSetup;
 use fedimint_mint_server::MintGen;
 use fedimint_server::config::api::ConfigGenSettings;
-use fedimint_server::config::io::{CODE_VERSION, DB_FILE, PLAINTEXT_PASSWORD};
+use fedimint_server::config::io::{
+    CODE_VERSION, DB_FILE, JSON_EXT, LOCAL_CONFIG, PLAINTEXT_PASSWORD,
+};
 use fedimint_server::FedimintServer;
 use fedimint_wallet_server::WalletGen;
 use futures::FutureExt;
@@ -29,6 +31,7 @@ use tokio::select;
 use tracing::{debug, error, info, warn};
 
 use crate::attach_default_module_gen_params;
+use crate::ui::{run_ui, UiMessage};
 
 /// Time we will wait before forcefully shutting down tasks
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
@@ -41,7 +44,7 @@ pub struct ServerOpts {
     /// Password to encrypt sensitive config files
     // TODO: should probably never send password to the server directly, rather send the hash via
     // the API
-    #[arg(long, env = "FM_PASSWORD")]
+    #[arg(long, env = "FM_PASSWORD", default_value = "FIXME")]
     pub password: String,
     /// Port to run admin UI on
     #[arg(long, env = "FM_LISTEN_UI")]
@@ -201,48 +204,48 @@ async fn run(
     module_gens: ServerModuleGenRegistry,
     module_gens_params: ServerModuleGenParamsRegistry,
 ) -> anyhow::Result<()> {
-    // let (ui_sender, mut ui_receiver) = tokio::sync::mpsc::channel(1);
+    let (ui_sender, mut ui_receiver) = tokio::sync::mpsc::channel(1);
 
-    // info!("Starting pre-check");
+    info!("Starting pre-check");
 
     // Run admin UI if a socket address was given for it
-    // if let Some(listen_ui) = opts.listen_ui {
-    //     let module_gens = module_gens.clone();
-    //     // Spawn admin UI
-    //     let data_dir = opts.data_dir.clone();
-    //     let ui_task_group = task_group.make_subgroup().await;
-    //     let password = opts.password.clone();
-    //     task_group
-    //         .spawn("admin-ui", move |_| async move {
-    //             run_ui(
-    //                 data_dir,
-    //                 ui_sender,
-    //                 listen_ui,
-    //                 password,
-    //                 ui_task_group,
-    //                 module_gens,
-    //                 module_gens_params,
-    //             )
-    //             .await;
-    //         })
-    //         .await;
+    let module_gens_params_clone = module_gens_params.clone();
+    if let Some(listen_ui) = opts.listen_ui {
+        let module_gens = module_gens.clone();
+        // Spawn admin UI
+        let data_dir = opts.data_dir.clone();
+        let ui_task_group = task_group.make_subgroup().await;
+        let password = opts.password.clone();
+        task_group
+            .spawn("admin-ui", move |_| async move {
+                run_ui(
+                    data_dir,
+                    ui_sender,
+                    listen_ui,
+                    password,
+                    ui_task_group,
+                    module_gens,
+                    module_gens_params_clone,
+                )
+                .await;
+            })
+            .await;
 
-    //     // If federation configs (e.g. local.json) missing, wait for admin UI to
-    // report     // DKG completion
-    //     let local_cfg_path =
-    // opts.data_dir.join(LOCAL_CONFIG).with_extension(JSON_EXT);
-    //     if !std::path::Path::new(&local_cfg_path).exists() {
-    //         loop {
-    //             if let UiMessage::DkgSuccess = ui_receiver
-    //                 .recv()
-    //                 .await
-    //                 .expect("failed to receive setup message")
-    //             {
-    //                 break;
-    //             }
-    //         }
-    //     }
-    // }
+        // If federation configs (e.g. local.json) missing, wait for admin UI to
+        // report DKG completion
+        let local_cfg_path = opts.data_dir.join(LOCAL_CONFIG).with_extension(JSON_EXT);
+        if !std::path::Path::new(&local_cfg_path).exists() {
+            loop {
+                if let UiMessage::DkgSuccess = ui_receiver
+                    .recv()
+                    .await
+                    .expect("failed to receive setup message")
+                {
+                    break;
+                }
+            }
+        }
+    }
 
     // info!("Starting consensus");
 
