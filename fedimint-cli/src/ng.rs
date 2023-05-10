@@ -130,7 +130,7 @@ pub async fn handle_ng_command<D: IDatabase>(
         ClientNg::LnPay { bolt11 } => {
             let active_gateway = client.fetch_active_gateway().await?;
 
-            let operation_id = client
+            let (operation_id, txid) = client
                 .pay_bolt11_invoice(fed_id, bolt11, active_gateway)
                 .await?;
 
@@ -139,6 +139,7 @@ pub async fn handle_ng_command<D: IDatabase>(
             while let Some(update) = updates.next().await {
                 match update {
                     LnPayState::Success { preimage } => {
+                        client.await_mint_change(operation_id, txid).await?;
                         return Ok(serde_json::to_value(PayInvoiceResponse {
                             operation_id: operation_id.to_hex(),
                             preimage,
