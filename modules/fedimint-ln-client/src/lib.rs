@@ -404,7 +404,7 @@ async fn ln_operation(
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-enum LightningMeta {
+pub enum LightningMeta {
     Pay {
         out_point: OutPoint,
         invoice: Invoice,
