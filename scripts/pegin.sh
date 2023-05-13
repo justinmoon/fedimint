@@ -70,8 +70,7 @@ FED_ID="$(get_federation_id)"
 
 # get a peg-in address from either the gateway or the client
 if [ "$USE_GATEWAY" == 1 ]; then 
-    ADDR="$($GATEWAY_CLI address --federation-id "$FED_ID")"
-    ADDR="${ADDR:1:-1}"
+    ADDR=$($GATEWAY_CLI address --federation-id "$FED_ID" | tr -d '"')
 else 
     ADDR="$($FM_MINT_CLIENT peg-in-address | jq -e -r '.address')"; 
 fi
