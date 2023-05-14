@@ -11,7 +11,7 @@ use fedimint_client::sm::OperationId;
 use fedimint_client::Client;
 use fedimint_core::config::ClientConfig;
 use fedimint_core::core::{ModuleInstanceId, ModuleKind};
-use fedimint_core::encoding::Decodable;
+use fedimint_core::encoding::{Decodable, Encodable};
 use fedimint_core::module::registry::ModuleDecoderRegistry;
 use fedimint_core::{Amount, ParseAmountError, TieredMulti, TieredSummary};
 use fedimint_ln_client::{LightningClientExt, LnPayState, LnReceiveState};
@@ -39,6 +39,12 @@ impl FromStr for ModuleSelector {
             Self::Kind(ModuleKind::clone_from_str(s))
         })
     }
+}
+
+pub fn serialize_ecash(c: &TieredMulti<SpendableNote>) -> String {
+    let mut bytes = Vec::new();
+    Encodable::consensus_encode(c, &mut bytes).expect("encodes correctly");
+    base64::encode(&bytes)
 }
 
 #[derive(Debug, Clone, Subcommand)]
@@ -138,7 +144,7 @@ pub async fn handle_ng_command(
                 .await?;
             info!("Spend e-cash operation: {operation:?}");
 
-            Ok(serde_json::to_value(notes).unwrap())
+            Ok(json!({ "note": serialize_ecash(&notes) }))
         }
         ClientNg::LnInvoice {
             amount,
