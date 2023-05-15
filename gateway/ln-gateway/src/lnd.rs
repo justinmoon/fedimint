@@ -328,7 +328,9 @@ impl ILnRpcClient for GatewayLndClient {
             });
         }
 
-        Ok(GetRouteHintsResponse { route_hints })
+        Ok(GetRouteHintsResponse {
+            route_hints: vec![],
+        })
     }
 
     async fn pay(&self, invoice: PayInvoiceRequest) -> crate::Result<PayInvoiceResponse> {
