@@ -163,6 +163,7 @@ declare_vars! {
         FM_BIND_API: String = format!("127.0.0.1:{api}", api = BASE_PORT + id * 10 + 1);
         FM_API_URL: String = format!("ws://{FM_BIND_API}");
         FM_DATA_DIR: PathBuf = mkdir(globals.FM_DATA_DIR.join(format!("server-{id}"))).await?;
+        FM_ADMIN_PASSWORD: String = (id + 1).to_string().repeat(4);
         // For new UI, don't set password or run the old UI
         FM_LISTEN_UI: Option<String> = if ui_kind == UiKind::Old {
             Some(format!("127.0.0.1:{ui}", ui = BASE_PORT + id * 10 + 2))
