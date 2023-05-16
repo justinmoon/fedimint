@@ -6,7 +6,10 @@ use std::time::Duration;
 use clap::Parser;
 use fedimint_core::admin_client::ConfigGenParamsRequest;
 use fedimint_core::bitcoinrpc::BitcoinRpcConfig;
-use fedimint_core::config::{ServerModuleGenParamsRegistry, ServerModuleGenRegistry};
+use fedimint_core::config::{
+    ModuleGenParams, ServerModuleGenParamsRegistry, ServerModuleGenRegistry,
+};
+use fedimint_core::core::{ModuleInstanceId, ModuleKind};
 use fedimint_core::db::Database;
 use fedimint_core::module::ServerModuleGen;
 use fedimint_core::task::{sleep, TaskGroup};
@@ -149,6 +152,20 @@ impl Fedimintd {
         self.with_module(LightningGen)
             .with_module(MintGen)
             .with_module(WalletGen)
+    }
+
+    pub fn with_extra_module_gens_params<P>(
+        mut self,
+        id: ModuleInstanceId,
+        kind: ModuleKind,
+        params: P,
+    ) -> Self
+    where
+        P: ModuleGenParams,
+    {
+        self.module_gens_params
+            .attach_config_gen_params(id, kind, params);
+        self
     }
 
     pub async fn run(self) -> ! {
