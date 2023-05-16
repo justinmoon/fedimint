@@ -483,6 +483,10 @@ impl Client {
         self.inner.api.as_ref()
     }
 
+    pub fn dyn_api(&self) -> DynFederationApi {
+        self.inner.api.clone()
+    }
+
     pub fn federation_id(&self) -> FederationId {
         self.inner.federation_id
     }
