@@ -43,6 +43,7 @@ fedimint-logging = { path = "../fedimint-logging", features = ["telemetry"] }
 fedimint-wallet-server = { path = "../modules/fedimint-wallet-server" }
 fedimint-mint-server = { path = "../modules/fedimint-mint-server" }
 fedimint-ln-server = { path = "../modules/fedimint-ln-server" }
+fedimint-dummy-server = { path = "../modules/fedimint-dummy-server" }
 rand = "0.8"
 rayon = "1.6.1"
 rcgen = "=0.10.0"

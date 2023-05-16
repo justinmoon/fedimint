@@ -1967,6 +1967,7 @@ dependencies = [
  "fedimint-bitcoind",
  "fedimint-build",
  "fedimint-core",
+ "fedimint-dummy-server",
  "fedimint-ln-server",
  "fedimint-logging",
  "fedimint-mint-server",
