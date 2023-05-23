@@ -2,6 +2,7 @@ pub mod actor;
 pub mod client;
 pub mod lnd;
 pub mod lnrpc_client;
+pub mod ng;
 pub mod rpc;
 pub mod types;
 pub mod utils;
