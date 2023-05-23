@@ -15,11 +15,20 @@ pub trait LightningTest {
         expiry_time: Option<u64>,
     ) -> ln_gateway::Result<Invoice>;
 
+    /// Creates invoice from a non-gateway LN node
+    async fn invalid_invoice(
+        &self,
+        amount: Amount,
+        expiry_time: Option<u64>,
+    ) -> ln_gateway::Result<Invoice>;
+
     /// Returns the amount that the gateway LN node has sent
     async fn amount_sent(&self) -> Amount;
 
     /// Is this a LN instance shared with other tests
     fn is_shared(&self) -> bool;
+
+    // fn fail_invoice(&self, invoice: Invoice) {}
 }
 
 #[derive(ValueEnum, Clone, Debug)]

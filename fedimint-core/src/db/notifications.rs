@@ -229,6 +229,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_multi_same() {
+        let notifs = Notifications::new();
+        let key1 = 1;
+        let sub1 = notifs.register(&key1);
+        let sub2 = notifs.register(&key1);
+        notifs.notify(&key1).await;
+        // notifs.notify(&key1).await;
+        assert!(
+            future_returns_shortly(sub1).await.is_some(),
+            "should notify"
+        );
+        assert!(
+            future_returns_shortly(sub2).await.is_some(),
+            "should notify"
+        );
+    }
+
+    #[tokio::test]
     async fn test_notify_queue() {
         let notifs = Notifications::new();
         let key1 = 1;

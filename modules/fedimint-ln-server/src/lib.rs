@@ -49,7 +49,7 @@ use itertools::Itertools;
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use strum::IntoEnumIterator;
-use tracing::{debug, error, info_span, instrument, trace, warn};
+use tracing::{debug, error, info, info_span, instrument, trace, warn};
 
 #[derive(Debug, Clone)]
 pub struct LightningGen;
@@ -605,6 +605,12 @@ impl ServerModule for Lightning {
 
                 dbtx.insert_entry(&ContractKey(*contract), &updated_contract_account)
                     .await;
+
+                dbtx.insert_new_entry(
+                    &ContractUpdateKey(out_point),
+                    &LightningOutputOutcome::CancelOutgoingContract { id: *contract },
+                )
+                .await;
             }
         }
 
@@ -805,6 +811,7 @@ impl ServerModule for Lightning {
             api_endpoint! {
                 "wait_account",
                 async |module: &Lightning, context, contract_id: ContractId| -> ContractAccount {
+                    info!("### fetching contract id server-side {contract_id}");
                     Ok(module
                         .wait_contract_account(context, contract_id)
                         .await)

@@ -15,6 +15,9 @@ pub mod contracts;
 pub mod db;
 use std::time::SystemTime;
 
+use anyhow::bail;
+use fedimint_client::sm::OperationId;
+use fedimint_client::{Client, OperationLogEntry};
 use fedimint_core::core::{Decoder, ModuleInstanceId, ModuleKind};
 use fedimint_core::encoding::{Decodable, Encodable};
 use fedimint_core::module::{CommonModuleGen, ModuleCommon, ModuleConsensusVersion};
@@ -130,6 +133,9 @@ pub enum LightningOutputOutcome {
     Offer {
         id: OfferId,
     },
+    CancelOutgoingContract {
+        id: ContractId,
+    },
 }
 
 impl LightningOutputOutcome {
@@ -137,6 +143,7 @@ impl LightningOutputOutcome {
         match self {
             LightningOutputOutcome::Contract { id: _, outcome } => outcome.is_permanent(),
             LightningOutputOutcome::Offer { .. } => true,
+            LightningOutputOutcome::CancelOutgoingContract { .. } => true,
         }
     }
 }
@@ -149,6 +156,9 @@ impl std::fmt::Display for LightningOutputOutcome {
             }
             LightningOutputOutcome::Offer { id } => {
                 write!(f, "LN Offer {id}")
+            }
+            LightningOutputOutcome::CancelOutgoingContract { id: contract_id } => {
+                write!(f, "LN Outgoing Contract Cancellation {contract_id}")
             }
         }
     }
@@ -340,4 +350,20 @@ pub enum LightningError {
     NotOutgoingContract,
     #[error("Cancellation request wasn't properly signed")]
     InvalidCancellationSignature,
+}
+
+pub async fn ln_operation(
+    client: &Client,
+    operation_id: OperationId,
+) -> anyhow::Result<OperationLogEntry> {
+    let operation = client
+        .get_operation(operation_id)
+        .await
+        .ok_or(anyhow::anyhow!("Operation not found"))?;
+
+    if operation.operation_type() != LightningCommonGen::KIND.as_str() {
+        bail!("Operation is not a lightning operation");
+    }
+
+    Ok(operation)
 }

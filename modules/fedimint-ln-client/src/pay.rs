@@ -16,7 +16,7 @@ use fedimint_ln_common::{LightningGateway, LightningInput, LightningOutputOutcom
 use futures::future;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use tracing::error;
+use tracing::{error, info};
 
 use crate::api::LnFederationApi;
 use crate::{LightningClientContext, LightningClientStateMachines};
@@ -210,6 +210,7 @@ impl LightningPayFunded {
         let gateway = self.gateway.clone();
         let payload = self.payload.clone();
         let contract_id = self.payload.contract_id;
+        info!("### funded {contract_id}");
         vec![StateTransition::new(
             // Immediately try to pay the invoice by contacting the gateway
             future::ready(()),

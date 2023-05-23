@@ -127,15 +127,21 @@ pub struct UserClientConfig(pub ClientConfig);
 pub struct GatewayClientConfig {
     pub client_config: ClientConfig,
     #[serde(with = "serde_keypair")]
+    // generate on start, store in db
     pub redeem_key: bitcoin::KeyPair,
+    // env var
     pub timelock_delta: u64,
+    // env var
     pub api: Url,
+    // fetch at runtime
     pub node_pub_key: bitcoin::secp256k1::PublicKey,
+    // generate on start
     /// Channel identifier assigned to the mint by the gateway.
     /// All clients in this federation should use this value as
     /// `short_channel_id` when creating invoices to be settled by this
     /// gateway.
     pub mint_channel_id: u64,
+    // env var
     // Gateway configured routing fees
     #[serde(with = "serde_routing_fees")]
     pub fees: RoutingFees,
