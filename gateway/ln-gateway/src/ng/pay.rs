@@ -28,7 +28,7 @@ pub enum GatewayPayStates {
 #[derive(Debug, Clone, Eq, PartialEq, Decodable, Encodable)]
 pub struct GatewayPayCommon {
     // TODO: Revisit if this should be here
-    redeem_key: bitcoin::KeyPair,
+    pub redeem_key: bitcoin::KeyPair,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Decodable, Encodable)]
@@ -87,8 +87,8 @@ pub enum GatewayPayError {
 
 #[derive(Debug, Clone, Eq, PartialEq, Decodable, Encodable)]
 pub struct GatewayPayFetchContract {
-    contract_id: ContractId,
-    timelock_delta: u64,
+    pub contract_id: ContractId,
+    pub timelock_delta: u64,
 }
 
 impl GatewayPayFetchContract {

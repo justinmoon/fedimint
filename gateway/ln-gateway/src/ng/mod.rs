@@ -2,30 +2,36 @@ pub mod pay;
 
 use std::sync::Arc;
 
+use anyhow::anyhow;
+use bitcoin_hashes::Hash;
 use fedimint_client::derivable_secret::DerivableSecret;
 use fedimint_client::module::gen::ClientModuleGen;
 use fedimint_client::module::ClientModule;
 use fedimint_client::sm::util::MapStateTransitions;
 use fedimint_client::sm::{Context, DynState, ModuleNotifier, OperationId, State};
-use fedimint_client::{sm_enum_variant_translation, DynGlobalClientContext, UpdateStreamOrOutcome};
+use fedimint_client::{
+    sm_enum_variant_translation, Client, DynGlobalClientContext, UpdateStreamOrOutcome,
+};
 use fedimint_core::core::{IntoDynInstance, ModuleInstanceId};
-use fedimint_core::db::Database;
+use fedimint_core::db::{AutocommitError, Database, ModuleDatabaseTransaction};
 use fedimint_core::encoding::{Decodable, Encodable};
 use fedimint_core::module::ExtendsCommonModuleGen;
 use fedimint_core::{apply, async_trait_maybe_send};
 use fedimint_ln_common::config::LightningClientConfig;
-use fedimint_ln_common::{LightningCommonGen, LightningModuleTypes};
+use fedimint_ln_common::{LightningCommonGen, LightningModuleTypes, KIND};
 use lightning_invoice::Invoice;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
-use self::pay::GatewayPayStateMachine;
+use self::pay::{
+    GatewayPayCommon, GatewayPayFetchContract, GatewayPayStateMachine, GatewayPayStates,
+};
 use crate::lnrpc_client::ILnRpcClient;
 
 /// The high-level state of a reissue operation started with
 /// [`LightningClientExt::pay_bolt11_invoice`].
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
-pub enum LnPayState {
+pub enum GatewayExtPayStates {
     Created,
     FetchedContract,
     BuyPreimage,
@@ -34,15 +40,75 @@ pub enum LnPayState {
     Fail,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum GatewayMeta {
+    Pay,
+}
+
 #[apply(async_trait_maybe_send!)]
 pub trait GatewayClientExt {
-    /// Pays a LN invoice with our available funds
-    async fn pay_bolt11_invoice(&self, invoice: Invoice) -> anyhow::Result<OperationId>;
+    /// Pay lightning invoice on behalf of federation user
+    async fn gateway_pay_bolt11_invoice(&self, invoice: Invoice) -> anyhow::Result<OperationId>;
 
-    async fn subscribe_ln_pay(
+    /// Subscribe to update to lightning payment
+    async fn gateway_subscribe_ln_pay(
         &self,
         operation_id: OperationId,
-    ) -> anyhow::Result<UpdateStreamOrOutcome<'_, LnPayState>>;
+    ) -> anyhow::Result<UpdateStreamOrOutcome<'_, GatewayExtPayStates>>;
+}
+
+#[apply(async_trait_maybe_send!)]
+impl GatewayClientExt for Client {
+    /// Pays a LN invoice with our available funds
+    async fn gateway_pay_bolt11_invoice(&self, invoice: Invoice) -> anyhow::Result<OperationId> {
+        let (gateway, instance) = self.get_first_module::<GatewayClientModule>(&KIND);
+
+        self.db()
+            .autocommit(
+                |dbtx| {
+                    let invoice = invoice.clone();
+                    Box::pin(async move {
+                        let (operation_id, states) = gateway
+                            .gateway_pay_bolt11_invoice(
+                                &mut dbtx.with_module_prefix(instance.id),
+                                invoice,
+                            )
+                            .await?;
+
+                        let dyn_states = states
+                            .into_iter()
+                            .map(|s| s.into_dyn(instance.id))
+                            .collect();
+
+                        self.add_state_machines(dbtx, dyn_states).await?;
+                        self.add_operation_log_entry(
+                            dbtx,
+                            operation_id,
+                            KIND.as_str(),
+                            GatewayMeta::Pay,
+                        )
+                        .await;
+
+                        Ok(operation_id)
+                    })
+                },
+                Some(100),
+            )
+            .await
+            .map_err(|e| match e {
+                AutocommitError::ClosureError { error, .. } => error,
+                AutocommitError::CommitFailed { last_error, .. } => {
+                    anyhow!("Commit to DB failed: {last_error}")
+                }
+            })
+    }
+
+    async fn gateway_subscribe_ln_pay(
+        &self,
+        operation_id: OperationId,
+    ) -> anyhow::Result<UpdateStreamOrOutcome<'_, GatewayExtPayStates>> {
+        unimplemented!()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -101,6 +167,32 @@ impl ClientModule for GatewayClientModule {
         _output: &<Self::Common as fedimint_core::module::ModuleCommon>::Output,
     ) -> fedimint_core::module::TransactionItemAmount {
         todo!()
+    }
+}
+
+impl GatewayClientModule {
+    /// This creates and returns the states which calling client can launch in
+    /// the executor
+    async fn gateway_pay_bolt11_invoice(
+        &self,
+        dbtx: &mut ModuleDatabaseTransaction<'_>,
+        invoice: Invoice,
+    ) -> anyhow::Result<(OperationId, Vec<GatewayClientStateMachines>)> {
+        // FIXME: will this prevent us from attempting to pay this invoice a second time
+        // if the first attempt fails?
+        let operation_id = OperationId(invoice.payment_hash().into_inner());
+
+        let state_machines = vec![GatewayClientStateMachines::Pay(GatewayPayStateMachine {
+            common: GatewayPayCommon {
+                redeem_key: todo!(),
+            },
+            state: GatewayPayStates::FetchContract(GatewayPayFetchContract {
+                contract_id: todo!(),
+                timelock_delta: 10,
+            }),
+        })];
+
+        Ok((operation_id, state_machines))
     }
 }
 
