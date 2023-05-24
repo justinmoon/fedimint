@@ -1,5 +1,5 @@
 use bitcoin_hashes::sha256;
-use fedimint_client::sm::{State, StateTransition};
+use fedimint_client::sm::{OperationId, State, StateTransition};
 use fedimint_client::DynGlobalClientContext;
 use fedimint_core::encoding::{Decodable, Encodable};
 use fedimint_core::Amount;
@@ -29,10 +29,12 @@ pub enum GatewayPayStates {
 pub struct GatewayPayCommon {
     // TODO: Revisit if this should be here
     pub redeem_key: bitcoin::KeyPair,
+    pub operation_id: OperationId,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Decodable, Encodable)]
 pub struct GatewayPayStateMachine {
+    // TODO: operation id
     pub common: GatewayPayCommon,
     pub state: GatewayPayStates,
 }
@@ -61,7 +63,7 @@ impl State for GatewayPayStateMachine {
     }
 
     fn operation_id(&self) -> fedimint_client::sm::OperationId {
-        todo!()
+        self.common.operation_id
     }
 }
 
@@ -254,8 +256,6 @@ impl GatewayPayBuyPreimage {
     ) -> Result<Preimage, GatewayPayError> {
         match context
             .lnrpc
-            .read()
-            .await
             .pay(PayInvoiceRequest {
                 invoice: invoice.to_string(),
                 max_delay,

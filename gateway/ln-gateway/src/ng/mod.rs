@@ -1,10 +1,12 @@
 pub mod pay;
 
+use std::env;
 use std::sync::Arc;
+use std::time::Duration;
 
-use anyhow::anyhow;
+use anyhow::{anyhow, Context as AnyhowContext};
 use bitcoin_hashes::Hash;
-use fedimint_client::derivable_secret::DerivableSecret;
+use fedimint_client::derivable_secret::{ChildId, DerivableSecret};
 use fedimint_client::module::gen::ClientModuleGen;
 use fedimint_client::module::ClientModule;
 use fedimint_client::sm::util::MapStateTransitions;
@@ -16,17 +18,28 @@ use fedimint_core::core::{IntoDynInstance, ModuleInstanceId};
 use fedimint_core::db::{AutocommitError, Database, ModuleDatabaseTransaction};
 use fedimint_core::encoding::{Decodable, Encodable};
 use fedimint_core::module::ExtendsCommonModuleGen;
+use fedimint_core::task::TaskGroup;
 use fedimint_core::{apply, async_trait_maybe_send};
-use fedimint_ln_common::config::LightningClientConfig;
-use fedimint_ln_common::{LightningCommonGen, LightningModuleTypes, KIND};
+use fedimint_ln_client::api::LnFederationApi;
+use fedimint_ln_common::config::{GatewayFee, LightningClientConfig};
+use fedimint_ln_common::route_hints::RouteHint;
+use fedimint_ln_common::{LightningCommonGen, LightningGateway, LightningModuleTypes, KIND};
+use lightning::routing::gossip::RoutingFees;
 use lightning_invoice::Invoice;
+use secp256k1::{KeyPair, PublicKey, Secp256k1};
 use serde::{Deserialize, Serialize};
-use tokio::sync::RwLock;
+use tracing::info;
+use url::Url;
 
 use self::pay::{
     GatewayPayCommon, GatewayPayFetchContract, GatewayPayStateMachine, GatewayPayStates,
 };
-use crate::lnrpc_client::ILnRpcClient;
+use crate::gatewaylnrpc::GetNodeInfoResponse;
+use crate::lnd::GatewayLndClient;
+use crate::lnrpc_client::{ILnRpcClient, NetworkLnRpcClient};
+use crate::LightningMode;
+
+const GW_ANNOUNCEMENT_TTL: Duration = Duration::from_secs(600);
 
 /// The high-level state of a reissue operation started with
 /// [`LightningClientExt::pay_bolt11_invoice`].
@@ -55,6 +68,9 @@ pub trait GatewayClientExt {
         &self,
         operation_id: OperationId,
     ) -> anyhow::Result<UpdateStreamOrOutcome<'_, GatewayExtPayStates>>;
+
+    /// Register gateway with federation
+    async fn register_with_federation(&self) -> anyhow::Result<()>;
 }
 
 #[apply(async_trait_maybe_send!)]
@@ -109,6 +125,44 @@ impl GatewayClientExt for Client {
     ) -> anyhow::Result<UpdateStreamOrOutcome<'_, GatewayExtPayStates>> {
         unimplemented!()
     }
+
+    /// Register this gateway with the federation
+    async fn register_with_federation(&self) -> anyhow::Result<()> {
+        let (gateway, instance) = self.get_first_module::<GatewayClientModule>(&KIND);
+        let route_hints = vec![];
+        let config = gateway.to_gateway_registration_info(route_hints, GW_ANNOUNCEMENT_TTL);
+        instance.api.register_gateway(&config).await?;
+        Ok(())
+    }
+}
+
+async fn create_lightning_client(mode: LightningMode) -> anyhow::Result<Arc<dyn ILnRpcClient>> {
+    // FIXME: remove task group requirement from GatewayLndClient
+    let task_group = TaskGroup::new();
+    let lnrpc: Arc<dyn ILnRpcClient> = match mode {
+        LightningMode::Cln { cln_extension_addr } => {
+            info!(
+                "Gateway configured to connect to remote LnRpcClient at \n cln extension address: {:?} ",
+                cln_extension_addr
+            );
+            Arc::new(NetworkLnRpcClient::new(cln_extension_addr).await?)
+        }
+        LightningMode::Lnd {
+            lnd_rpc_addr,
+            lnd_tls_cert,
+            lnd_macaroon,
+        } => {
+            info!(
+                "Gateway configured to connect to LND LnRpcClient at \n address: {:?},\n tls cert path: {:?},\n macaroon path: {} ",
+                lnd_rpc_addr, lnd_tls_cert, lnd_macaroon
+            );
+            Arc::new(
+                GatewayLndClient::new(lnd_rpc_addr, lnd_tls_cert, lnd_macaroon, task_group).await?,
+            )
+        }
+    };
+
+    Ok(lnrpc)
 }
 
 #[derive(Debug, Clone)]
@@ -127,16 +181,40 @@ impl ClientModuleGen for GatewayClientGen {
         &self,
         cfg: Self::Config,
         _db: Database,
-        _module_root_secret: DerivableSecret,
+        module_root_secret: DerivableSecret,
         _notifier: ModuleNotifier<DynGlobalClientContext, <Self::Module as ClientModule>::States>,
     ) -> anyhow::Result<Self::Module> {
-        Ok(GatewayClientModule { cfg })
+        let lightning_mode = LightningMode::from_env()?;
+        info!("mode: {lightning_mode:?}");
+        let lightning_client = create_lightning_client(lightning_mode).await?;
+        let GetNodeInfoResponse { pub_key, alias: _ } = lightning_client.info().await?;
+        let node_pub_key =
+            PublicKey::from_slice(&pub_key).map_err(|e| anyhow!("Invalid node pubkey {}", e))?;
+        info!("pubkey: {node_pub_key:?}");
+        let api: Url = env::var("FM_GATEWAY_API_ADDR")
+            .context("FM_GATEWAY_API_ADDR not found")?
+            .parse()?;
+        let fees: GatewayFee = env::var("FM_GATEWAY_FEES")
+            .context("FM_GATEWAY_FEES not found")?
+            .parse()?;
+        Ok(GatewayClientModule {
+            cfg,
+            redeem_key: module_root_secret
+                .child_key(ChildId(0))
+                .to_secp_key(&Secp256k1::new()),
+            node_pub_key,
+            lightning_client,
+            timelock_delta: 10, // FIXME: don't hardcode
+            api,
+            mint_channel_id: 1, // FIXME: don't hardcode
+            fees: fees.0,
+        })
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct GatewayClientContext {
-    lnrpc: Arc<RwLock<dyn ILnRpcClient>>,
+    lnrpc: Arc<dyn ILnRpcClient>,
 }
 
 impl Context for GatewayClientContext {}
@@ -144,6 +222,15 @@ impl Context for GatewayClientContext {}
 #[derive(Debug)]
 pub struct GatewayClientModule {
     cfg: LightningClientConfig,
+    redeem_key: KeyPair,
+    node_pub_key: PublicKey,
+    timelock_delta: u64, // FIXME: don't hard-code
+    // FIXME: this is used for gateway registration
+    // Should this happen inside or outside the client?
+    api: Url,
+    mint_channel_id: u64,
+    fees: RoutingFees,
+    lightning_client: Arc<dyn ILnRpcClient>,
 }
 
 impl ClientModule for GatewayClientModule {
@@ -152,7 +239,9 @@ impl ClientModule for GatewayClientModule {
     type States = GatewayClientStateMachines;
 
     fn context(&self) -> Self::ModuleStateMachineContext {
-        todo!()
+        Self::ModuleStateMachineContext {
+            lnrpc: self.lightning_client.clone(),
+        }
     }
 
     fn input_amount(
@@ -184,15 +273,31 @@ impl GatewayClientModule {
 
         let state_machines = vec![GatewayClientStateMachines::Pay(GatewayPayStateMachine {
             common: GatewayPayCommon {
-                redeem_key: todo!(),
+                redeem_key: self.redeem_key.clone(),
+                operation_id,
             },
             state: GatewayPayStates::FetchContract(GatewayPayFetchContract {
-                contract_id: todo!(),
+                contract_id: (*invoice.payment_hash()).into(), // FIXME: is this right?
                 timelock_delta: 10,
             }),
         })];
 
         Ok((operation_id, state_machines))
+    }
+    pub fn to_gateway_registration_info(
+        &self,
+        route_hints: Vec<RouteHint>,
+        time_to_live: Duration,
+    ) -> LightningGateway {
+        LightningGateway {
+            mint_channel_id: self.mint_channel_id,
+            mint_pub_key: self.redeem_key.x_only_public_key().0,
+            node_pub_key: self.node_pub_key,
+            api: self.api.clone(),
+            route_hints,
+            valid_until: fedimint_core::time::now() + time_to_live,
+            fees: self.fees,
+        }
     }
 }
 

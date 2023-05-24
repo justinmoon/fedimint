@@ -19,6 +19,7 @@ use fedimint_core::module::registry::ModuleDecoderRegistry;
 use fedimint_core::module::{CommonModuleGen, ModuleCommon};
 use fedimint_core::task::TaskGroup;
 use fedimint_ln_client::LightningCommonGen;
+use fedimint_ln_common::config::GatewayFee;
 use fedimint_logging::TracingSetup;
 use fedimint_mint_client::MintCommonGen;
 use lightning::routing::gossip::RoutingFees;
@@ -146,32 +147,4 @@ async fn main() -> Result<(), anyhow::Error> {
     }
 
     Ok(())
-}
-
-/// Gateway routing fees
-#[derive(Debug, Clone)]
-pub struct GatewayFee(RoutingFees);
-
-impl FromStr for GatewayFee {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut parts = s.split(',');
-        let base_msat = parts
-            .next()
-            .ok_or_else(|| anyhow::anyhow!("missing base fee in millisatoshis"))?
-            .parse()?;
-        let proportional_millionths = parts
-            .next()
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "missing liquidity based fee as proportional millionths of routed amount"
-                )
-            })?
-            .parse()?;
-        Ok(GatewayFee(RoutingFees {
-            base_msat,
-            proportional_millionths,
-        }))
-    }
 }

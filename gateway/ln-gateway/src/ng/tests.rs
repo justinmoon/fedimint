@@ -1,4 +1,5 @@
 use assert_matches::assert_matches;
+use fedimint_client::module::gen::ClientModuleGenRegistry;
 use fedimint_client::Client;
 use fedimint_core::sats;
 use fedimint_core::util::NextOrPending;
@@ -14,7 +15,8 @@ use fedimint_mint_server::MintGen;
 use fedimint_testing::federation::FederationTest;
 use fedimint_testing::fixtures::Fixtures;
 use fedimint_testing::gateway::GatewayTest;
-use ln_gateway::ng::GatewayClientExt;
+use ln_gateway::ng::pay::{GatewayPayFetchContract, GatewayPayStates};
+use ln_gateway::ng::{GatewayClientExt, GatewayClientGen};
 
 fn fixtures() -> Fixtures {
     // TODO: Remove dependency on mint (legacy gw client)
@@ -38,7 +40,14 @@ async fn test_hello() -> anyhow::Result<()> {
     let fixtures = fixtures();
     let fed = fixtures.new_fed().await;
     let (client1, client2) = fed.two_clients().await;
-    let _gateway = gateway(&fixtures, &fed, &client1).await;
+
+    let mut registry = ClientModuleGenRegistry::new();
+    // registry.attach(LightningClientGen);
+    registry.attach(MintClientGen);
+    registry.attach(GatewayClientGen);
+
+    let gateway = fed.new_gateway_client(registry).await;
+    gateway.register_with_federation().await?;
 
     // Print money for client2
     let (op, outpoint) = client2.print_money(sats(1000)).await?;
@@ -51,9 +60,16 @@ async fn test_hello() -> anyhow::Result<()> {
     assert_eq!(sub1.ok().await?, LnReceiveState::Created);
     assert_matches!(sub1.ok().await?, LnReceiveState::WaitingForPayment { .. });
 
-    let op = client2.gateway_pay_bolt11_invoice(invoice).await?;
-    // let mut sub2 = client2.subscribe_ln_pay(op).await?.into_stream();
-    // assert_eq!(sub2.ok().await?, LnPayState::Created);
+    let op = gateway.gateway_pay_bolt11_invoice(invoice.clone()).await?;
+    // let mut sub2 = gateway.gateway_subscribe_ln_pay(op).await?.into_stream();
+
+    // assert_eq!(
+    //     sub2.ok().await?,
+    //     GatewayPayStates::FetchContract(GatewayPayFetchContract {
+    //         contract_id: (*invoice.payment_hash()).into(),
+    //         timelock_delta: 10,
+    //     })
+    // );
 
     Ok(())
 }
