@@ -77,6 +77,7 @@ pub trait GatewayClientExt {
 impl GatewayClientExt for Client {
     /// Pays a LN invoice with our available funds
     async fn gateway_pay_bolt11_invoice(&self, invoice: Invoice) -> anyhow::Result<OperationId> {
+        info!("gateway_pay_bolt11_invoice()");
         let (gateway, instance) = self.get_first_module::<GatewayClientModule>(&KIND);
 
         self.db()

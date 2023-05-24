@@ -19,6 +19,7 @@ use crate::btc::BitcoinTest;
 use crate::federation::FederationTest;
 use crate::gateway::GatewayTest;
 use crate::ln::mock::FakeLightningTest;
+use crate::ln::LightningTest;
 
 /// A default timeout for things happening in tests
 pub const TIMEOUT: Duration = Duration::from_secs(10);
@@ -36,6 +37,7 @@ pub struct Fixtures {
     primary_client: ModuleInstanceId,
     bitcoin_rpc: BitcoinRpcConfig,
     bitcoin: Arc<dyn BitcoinTest>,
+    lightning: Arc<dyn LightningTest>,
 }
 
 impl Fixtures {
@@ -61,6 +63,7 @@ impl Fixtures {
             primary_client: id,
             bitcoin_rpc: config,
             bitcoin: Arc::new(bitcoin),
+            lightning: Arc::new(FakeLightningTest::new()),
         }
         .with_module(id, client, server, params)
     }
@@ -136,6 +139,11 @@ impl Fixtures {
     /// Get a test bitcoin fixture
     pub fn bitcoin(&self) -> Arc<dyn BitcoinTest> {
         self.bitcoin.clone()
+    }
+
+    /// Get a test lightning fixture
+    pub fn lightning(&self) -> Arc<dyn LightningTest> {
+        self.lightning.clone()
     }
 }
 

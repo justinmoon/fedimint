@@ -24,5 +24,6 @@ eval "$(devimint env)"
 export FM_TEST_USE_REAL_DAEMONS=1
 
 export FM_GATEWAY_FEES="0,0"
+export RUST_BACKTRACE=1
 
 env RUST_BACKTRACE=1 cargo test -p ln-gateway test_hello

@@ -8,6 +8,7 @@ use fedimint_ln_common::contracts::outgoing::OutgoingContractAccount;
 use fedimint_ln_common::contracts::{ContractId, FundedContract, Preimage};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use tracing::info;
 
 use super::GatewayClientContext;
 use crate::gatewaylnrpc::{PayInvoiceRequest, PayInvoiceResponse};
@@ -103,6 +104,7 @@ impl GatewayPayFetchContract {
         vec![StateTransition::new(
             Self::await_fetch_contract(global_context.clone(), self.contract_id),
             move |_dbtx, result, _old_state| {
+                info!("await_fetch_contract done");
                 Box::pin(Self::transition_fetch_contract(
                     global_context.clone(),
                     result,
@@ -117,8 +119,9 @@ impl GatewayPayFetchContract {
         global_context: DynGlobalClientContext,
         contract_id: ContractId,
     ) -> Result<OutgoingContractAccount, GatewayPayError> {
+        info!("await_fetch_contract id={contract_id:?}");
         let account = global_context
-            .module_api()
+            // .module_api()
             .fetch_contract(contract_id)
             .await
             .map_err(|_| GatewayPayError::OutgoingContractDoesNotExist { contract_id })?;
@@ -138,6 +141,7 @@ impl GatewayPayFetchContract {
         common: GatewayPayCommon,
         timelock_delta: u64,
     ) -> GatewayPayStateMachine {
+        info!("fetched contract");
         match result {
             Ok(contract) => {
                 if let Ok(buy_preimage) = Self::validate_outgoing_account(
@@ -148,21 +152,26 @@ impl GatewayPayFetchContract {
                 )
                 .await
                 {
+                    info!("-> BuyPreimage");
                     return GatewayPayStateMachine {
                         common,
                         state: GatewayPayStates::BuyPreimage(buy_preimage),
                     };
                 }
 
+                info!("-> Cancel");
                 GatewayPayStateMachine {
                     common,
                     state: GatewayPayStates::Cancel,
                 }
             }
-            Err(_) => GatewayPayStateMachine {
-                common,
-                state: GatewayPayStates::Canceled,
-            },
+            Err(_) => {
+                info!("-> Canceled");
+                return GatewayPayStateMachine {
+                    common,
+                    state: GatewayPayStates::Canceled,
+                };
+            }
         }
     }
 
@@ -276,14 +285,20 @@ impl GatewayPayBuyPreimage {
         prev_state: GatewayPayStateMachine,
     ) -> GatewayPayStateMachine {
         match result {
-            Ok(_) => GatewayPayStateMachine {
-                common: prev_state.common,
-                state: GatewayPayStates::Preimage,
-            },
-            Err(_) => GatewayPayStateMachine {
-                common: prev_state.common,
-                state: GatewayPayStates::Cancel,
-            },
+            Ok(_) => {
+                info!("-> Preimage");
+                GatewayPayStateMachine {
+                    common: prev_state.common,
+                    state: GatewayPayStates::Preimage,
+                }
+            }
+            Err(_) => {
+                info!("-> Cancel");
+                GatewayPayStateMachine {
+                    common: prev_state.common,
+                    state: GatewayPayStates::Cancel,
+                }
+            }
         }
     }
 

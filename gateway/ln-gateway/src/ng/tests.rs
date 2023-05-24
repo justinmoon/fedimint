@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use assert_matches::assert_matches;
 use fedimint_client::module::gen::ClientModuleGenRegistry;
 use fedimint_client::Client;
@@ -39,28 +41,32 @@ async fn gateway(fixtures: &Fixtures, fed: &FederationTest, client: &Client) -> 
 async fn test_hello() -> anyhow::Result<()> {
     let fixtures = fixtures();
     let fed = fixtures.new_fed().await;
-    let (client1, client2) = fed.two_clients().await;
+    let user_client = fed.new_client().await;
 
+    // Create gateway client
     let mut registry = ClientModuleGenRegistry::new();
-    // registry.attach(LightningClientGen);
     registry.attach(MintClientGen);
     registry.attach(GatewayClientGen);
-
     let gateway = fed.new_gateway_client(registry).await;
     gateway.register_with_federation().await?;
 
     // Print money for client2
-    let (op, outpoint) = client2.print_money(sats(1000)).await?;
-    client2.await_primary_module_output(op, outpoint).await?;
-
-    let (op, invoice) = client1
-        .create_bolt11_invoice(sats(250), "description".to_string(), None)
+    let (print_op, outpoint) = user_client.print_money(sats(1000)).await?;
+    user_client
+        .await_primary_module_output(print_op, outpoint)
         .await?;
-    let mut sub1 = client1.subscribe_ln_receive(op).await?.into_stream();
-    assert_eq!(sub1.ok().await?, LnReceiveState::Created);
-    assert_matches!(sub1.ok().await?, LnReceiveState::WaitingForPayment { .. });
 
-    let op = gateway.gateway_pay_bolt11_invoice(invoice.clone()).await?;
+    // Create test invoice
+    let invoice = fixtures.lightning().invoice(sats(250), None).await?;
+
+    // User client pays test invoice
+    let pay_op = user_client.pay_bolt11_invoice(invoice.clone()).await?;
+    let mut pay_sub = user_client.subscribe_ln_pay(pay_op).await?.into_stream();
+    assert_eq!(pay_sub.ok().await?, LnPayState::Created);
+    assert_matches!(pay_sub.ok().await?, LnPayState::Funded);
+
+    // Gateway facilitates payment on behalf of user
+    let gw_pay_op = gateway.gateway_pay_bolt11_invoice(invoice.clone()).await?;
     // let mut sub2 = gateway.gateway_subscribe_ln_pay(op).await?.into_stream();
 
     // assert_eq!(
@@ -70,6 +76,8 @@ async fn test_hello() -> anyhow::Result<()> {
     //         timelock_delta: 10,
     //     })
     // );
+
+    fedimint_core::task::sleep(Duration::from_secs(30)).await;
 
     Ok(())
 }
