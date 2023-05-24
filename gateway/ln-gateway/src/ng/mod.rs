@@ -6,8 +6,8 @@ use fedimint_client::derivable_secret::DerivableSecret;
 use fedimint_client::module::gen::ClientModuleGen;
 use fedimint_client::module::ClientModule;
 use fedimint_client::sm::util::MapStateTransitions;
-use fedimint_client::sm::{Context, DynState, ModuleNotifier, State};
-use fedimint_client::{sm_enum_variant_translation, DynGlobalClientContext};
+use fedimint_client::sm::{Context, DynState, ModuleNotifier, OperationId, State};
+use fedimint_client::{sm_enum_variant_translation, DynGlobalClientContext, UpdateStreamOrOutcome};
 use fedimint_core::core::{IntoDynInstance, ModuleInstanceId};
 use fedimint_core::db::Database;
 use fedimint_core::encoding::{Decodable, Encodable};
@@ -15,10 +15,35 @@ use fedimint_core::module::ExtendsCommonModuleGen;
 use fedimint_core::{apply, async_trait_maybe_send};
 use fedimint_ln_common::config::LightningClientConfig;
 use fedimint_ln_common::{LightningCommonGen, LightningModuleTypes};
+use lightning_invoice::Invoice;
+use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
 use self::pay::GatewayPayStateMachine;
 use crate::lnrpc_client::ILnRpcClient;
+
+/// The high-level state of a reissue operation started with
+/// [`LightningClientExt::pay_bolt11_invoice`].
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub enum LnPayState {
+    Created,
+    FetchedContract,
+    BuyPreimage,
+    Preimage,
+    Success,
+    Fail,
+}
+
+#[apply(async_trait_maybe_send!)]
+pub trait GatewayClientExt {
+    /// Pays a LN invoice with our available funds
+    async fn pay_bolt11_invoice(&self, invoice: Invoice) -> anyhow::Result<OperationId>;
+
+    async fn subscribe_ln_pay(
+        &self,
+        operation_id: OperationId,
+    ) -> anyhow::Result<UpdateStreamOrOutcome<'_, LnPayState>>;
+}
 
 #[derive(Debug, Clone)]
 pub struct GatewayClientGen;
