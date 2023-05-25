@@ -12,6 +12,7 @@ use fedimint_core::config::{
 use fedimint_core::core::ModuleInstanceId;
 use fedimint_core::module::{DynServerModuleGen, IServerModuleGen};
 use fedimint_core::task::{MaybeSend, MaybeSync};
+use ln_gateway::lnrpc_client::ILnRpcClient;
 use tempfile::TempDir;
 
 use crate::btc::mock::FakeBitcoinFactory;
@@ -38,6 +39,7 @@ pub struct Fixtures {
     bitcoin_rpc: BitcoinRpcConfig,
     bitcoin: Arc<dyn BitcoinTest>,
     lightning: Arc<dyn LightningTest>,
+    lightning_client: Arc<dyn ILnRpcClient>,
 }
 
 impl Fixtures {
@@ -54,6 +56,7 @@ impl Fixtures {
         };
         let FakeBitcoinFactory { bitcoin, config } = FakeBitcoinFactory::register_new();
 
+        let lightning = Arc::new(FakeLightningTest::new());
         Self {
             num_peers,
             ids: vec![],
@@ -63,7 +66,8 @@ impl Fixtures {
             primary_client: id,
             bitcoin_rpc: config,
             bitcoin: Arc::new(bitcoin),
-            lightning: Arc::new(FakeLightningTest::new()),
+            lightning: lightning.clone(),
+            lightning_client: lightning.clone(),
         }
         .with_module(id, client, server, params)
     }
@@ -142,8 +146,8 @@ impl Fixtures {
     }
 
     /// Get a test lightning fixture
-    pub fn lightning(&self) -> Arc<dyn LightningTest> {
-        self.lightning.clone()
+    pub fn lightning(&self) -> (Arc<dyn LightningTest>, Arc<dyn ILnRpcClient>) {
+        (self.lightning.clone(), self.lightning_client.clone())
     }
 }
 

@@ -39,9 +39,15 @@ async fn test_gateway_client() -> anyhow::Result<()> {
     let user_client = fed.new_client().await;
 
     // Create gateway client
+    // let lightning_mode = LightningMode::from_env()?;
+    // info!("mode: {lightning_mode:?}");
+    // let lightning_client = create_lightning_client(lightning_mode).await?;
+
     let mut registry = ClientModuleGenRegistry::new();
     registry.attach(MintClientGen);
-    registry.attach(GatewayClientGen);
+    registry.attach(GatewayClientGen {
+        lightning_client: fixtures.lightning().1,
+    });
     let gateway = fed.new_gateway_client(registry).await;
     gateway.register_with_federation().await?;
 
@@ -52,7 +58,7 @@ async fn test_gateway_client() -> anyhow::Result<()> {
         .await?;
 
     // Create test invoice
-    let invoice = fixtures.lightning().invoice(sats(250), None).await?;
+    let invoice = fixtures.lightning().0.invoice(sats(250), None).await?;
 
     // User client pays test invoice
     let (pay_op, contract_id) = user_client.pay_bolt11_invoice(invoice.clone()).await?;

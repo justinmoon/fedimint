@@ -174,7 +174,9 @@ async fn create_lightning_client(mode: LightningMode) -> anyhow::Result<Arc<dyn 
 }
 
 #[derive(Debug, Clone)]
-pub struct GatewayClientGen;
+pub struct GatewayClientGen {
+    pub lightning_client: Arc<dyn ILnRpcClient>,
+}
 
 impl ExtendsCommonModuleGen for GatewayClientGen {
     type Common = LightningCommonGen;
@@ -192,10 +194,7 @@ impl ClientModuleGen for GatewayClientGen {
         module_root_secret: DerivableSecret,
         notifier: ModuleNotifier<DynGlobalClientContext, <Self::Module as ClientModule>::States>,
     ) -> anyhow::Result<Self::Module> {
-        let lightning_mode = LightningMode::from_env()?;
-        info!("mode: {lightning_mode:?}");
-        let lightning_client = create_lightning_client(lightning_mode).await?;
-        let GetNodeInfoResponse { pub_key, alias: _ } = lightning_client.info().await?;
+        let GetNodeInfoResponse { pub_key, alias: _ } = self.lightning_client.info().await?;
         let node_pub_key =
             PublicKey::from_slice(&pub_key).map_err(|e| anyhow!("Invalid node pubkey {}", e))?;
         info!("pubkey: {node_pub_key:?}");
@@ -212,7 +211,7 @@ impl ClientModuleGen for GatewayClientGen {
                 .child_key(ChildId(0))
                 .to_secp_key(&Secp256k1::new()),
             node_pub_key,
-            lightning_client,
+            lightning_client: self.lightning_client.clone(),
             timelock_delta: 10, // FIXME: don't hardcode
             api,
             mint_channel_id: 1, // FIXME: don't hardcode
