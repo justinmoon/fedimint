@@ -192,7 +192,9 @@ pub trait FederationApiExt: IFederationApi {
         let max_delay_ms = 1000;
         loop {
             let response = futures.next().await;
-            trace!(?response, method, params = ?AbbreviateDebug(params.to_json()), "Received member response");
+            let id = tokio::task::try_id();
+            trace!(?response, method, ?id, ?peers, params = ?AbbreviateDebug(params.to_json()), "Received member response");
+
             match response {
                 Some(PeerResponse { peer, result }) => {
                     let result: MemberResult<MemberRet> =

@@ -104,7 +104,7 @@ impl GatewayPayFetchContract {
         vec![StateTransition::new(
             Self::await_fetch_contract(global_context.clone(), self.contract_id),
             move |_dbtx, result, _old_state| {
-                info!("await_fetch_contract done");
+                info!("await_fetch_contract done: {result:?}");
                 Box::pin(Self::transition_fetch_contract(
                     global_context.clone(),
                     result,
@@ -121,10 +121,11 @@ impl GatewayPayFetchContract {
     ) -> Result<OutgoingContractAccount, GatewayPayError> {
         info!("await_fetch_contract id={contract_id:?}");
         let account = global_context
-            // .module_api()
+            .module_api()
             .fetch_contract(contract_id)
             .await
             .map_err(|_| GatewayPayError::OutgoingContractDoesNotExist { contract_id })?;
+        info!("fetched contract {account:?}");
         if let FundedContract::Outgoing(contract) = account.contract {
             return Ok(OutgoingContractAccount {
                 amount: account.amount,
@@ -276,7 +277,10 @@ impl GatewayPayBuyPreimage {
                 let slice: [u8; 32] = preimage.try_into().expect("Failed to parse preimage");
                 Ok(Preimage(slice))
             }
-            Err(_) => Err(GatewayPayError::LightningPayError),
+            Err(e) => {
+                info!("error paying lightning invoice {e:?}");
+                Err(GatewayPayError::LightningPayError)
+            }
         }
     }
 
@@ -292,8 +296,8 @@ impl GatewayPayBuyPreimage {
                     state: GatewayPayStates::Preimage,
                 }
             }
-            Err(_) => {
-                info!("-> Cancel");
+            Err(e) => {
+                info!("-> Cancel {e:?}");
                 GatewayPayStateMachine {
                     common: prev_state.common,
                     state: GatewayPayStates::Cancel,

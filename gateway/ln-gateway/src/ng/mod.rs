@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{anyhow, Context as AnyhowContext};
+use async_stream::stream;
 use bitcoin_hashes::Hash;
 use fedimint_client::derivable_secret::{ChildId, DerivableSecret};
 use fedimint_client::module::gen::ClientModuleGen;
@@ -21,12 +22,13 @@ use fedimint_core::module::ExtendsCommonModuleGen;
 use fedimint_core::task::TaskGroup;
 use fedimint_core::{apply, async_trait_maybe_send};
 use fedimint_ln_client::api::LnFederationApi;
+use fedimint_ln_client::contracts::ContractId;
 use fedimint_ln_common::config::{GatewayFee, LightningClientConfig};
 use fedimint_ln_common::route_hints::RouteHint;
 use fedimint_ln_common::{LightningCommonGen, LightningGateway, LightningModuleTypes, KIND};
 use lightning::routing::gossip::RoutingFees;
 use lightning_invoice::Invoice;
-use secp256k1::{KeyPair, PublicKey, Secp256k1};
+use secp256k1::{All, KeyPair, PublicKey, Secp256k1};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 use url::Url;
@@ -61,7 +63,10 @@ pub enum GatewayMeta {
 #[apply(async_trait_maybe_send!)]
 pub trait GatewayClientExt {
     /// Pay lightning invoice on behalf of federation user
-    async fn gateway_pay_bolt11_invoice(&self, invoice: Invoice) -> anyhow::Result<OperationId>;
+    async fn gateway_pay_bolt11_invoice(
+        &self,
+        contract_id: ContractId,
+    ) -> anyhow::Result<OperationId>;
 
     /// Subscribe to update to lightning payment
     async fn gateway_subscribe_ln_pay(
@@ -76,19 +81,21 @@ pub trait GatewayClientExt {
 #[apply(async_trait_maybe_send!)]
 impl GatewayClientExt for Client {
     /// Pays a LN invoice with our available funds
-    async fn gateway_pay_bolt11_invoice(&self, invoice: Invoice) -> anyhow::Result<OperationId> {
+    async fn gateway_pay_bolt11_invoice(
+        &self,
+        contract_id: ContractId,
+    ) -> anyhow::Result<OperationId> {
         info!("gateway_pay_bolt11_invoice()");
         let (gateway, instance) = self.get_first_module::<GatewayClientModule>(&KIND);
 
         self.db()
             .autocommit(
                 |dbtx| {
-                    let invoice = invoice.clone();
                     Box::pin(async move {
                         let (operation_id, states) = gateway
                             .gateway_pay_bolt11_invoice(
                                 &mut dbtx.with_module_prefix(instance.id),
-                                invoice,
+                                contract_id,
                             )
                             .await?;
 
@@ -183,7 +190,7 @@ impl ClientModuleGen for GatewayClientGen {
         cfg: Self::Config,
         _db: Database,
         module_root_secret: DerivableSecret,
-        _notifier: ModuleNotifier<DynGlobalClientContext, <Self::Module as ClientModule>::States>,
+        notifier: ModuleNotifier<DynGlobalClientContext, <Self::Module as ClientModule>::States>,
     ) -> anyhow::Result<Self::Module> {
         let lightning_mode = LightningMode::from_env()?;
         info!("mode: {lightning_mode:?}");
@@ -200,6 +207,7 @@ impl ClientModuleGen for GatewayClientGen {
             .parse()?;
         Ok(GatewayClientModule {
             cfg,
+            notifier,
             redeem_key: module_root_secret
                 .child_key(ChildId(0))
                 .to_secp_key(&Secp256k1::new()),
@@ -223,6 +231,8 @@ impl Context for GatewayClientContext {}
 #[derive(Debug)]
 pub struct GatewayClientModule {
     cfg: LightningClientConfig,
+    pub notifier: ModuleNotifier<DynGlobalClientContext, GatewayClientStateMachines>,
+    // secp: Secp256k1<All>,
     redeem_key: KeyPair,
     node_pub_key: PublicKey,
     timelock_delta: u64, // FIXME: don't hard-code
@@ -266,11 +276,11 @@ impl GatewayClientModule {
     async fn gateway_pay_bolt11_invoice(
         &self,
         dbtx: &mut ModuleDatabaseTransaction<'_>,
-        invoice: Invoice,
+        contract_id: ContractId,
     ) -> anyhow::Result<(OperationId, Vec<GatewayClientStateMachines>)> {
         // FIXME: will this prevent us from attempting to pay this invoice a second time
         // if the first attempt fails?
-        let operation_id = OperationId(invoice.payment_hash().into_inner());
+        let operation_id = OperationId(contract_id.into_inner());
 
         let state_machines = vec![GatewayClientStateMachines::Pay(GatewayPayStateMachine {
             common: GatewayPayCommon {
@@ -278,7 +288,7 @@ impl GatewayClientModule {
                 operation_id,
             },
             state: GatewayPayStates::FetchContract(GatewayPayFetchContract {
-                contract_id: (*invoice.payment_hash()).into(), // FIXME: is this right?
+                contract_id,
                 timelock_delta: 10,
             }),
         })];
@@ -300,6 +310,55 @@ impl GatewayClientModule {
             fees: self.fees,
         }
     }
+
+    // async fn subscribe_pay(
+    //     &self,
+    //     operation_id: OperationId,
+    // ) -> anyhow::Result<UpdateStreamOrOutcome<'_, GatewayPayStates>> {
+    //     let mut stream = self.notifier.subscribe(operation_id).await;
+    //     // loop {
+    //     //     match stream.next().await {
+    //     //         Some(LightningClientStateMachines::Pay(state)) => match
+    // state.state {     //
+    // LightningPayStates::Refunded(refund_txid) => {     //
+    // return Ok(refund_txid);     //             }
+    //     //             LightningPayStates::Failure(reason) => {
+    //     //                 return Err(LightningPayError::Failed(reason))
+    //     //             }
+    //     //             _ => {}
+    //     //         },
+    //     //         Some(_) => {}
+    //     //         None =>
+    //     //     }
+    //     // }
+    //     stream! {
+    //         while let Some(state) = stream.next().await {
+    //             yield state
+    //         }
+    //     }
+    // }
+
+    // async fn await_fetched(
+    //     &self,
+    //     operation_id: OperationId,
+    // ) -> Result<TransactionId, LightningPayError> {
+    //     let mut stream = self.notifier.subscribe(operation_id).await;
+    //     loop {
+    //         match stream.next().await {
+    //             Some(LightningClientStateMachines::Pay(state)) => match
+    // state.state {                 LightningPayStates::Refunded(refund_txid)
+    // => {                     return Ok(refund_txid);
+    //                 }
+    //                 LightningPayStates::Failure(reason) => {
+    //                     return Err(LightningPayError::Failed(reason))
+    //                 }
+    //                 _ => {}
+    //             },
+    //             Some(_) => {}
+    //             None => {}
+    //         }
+    //     }
+    // }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Decodable, Encodable)]

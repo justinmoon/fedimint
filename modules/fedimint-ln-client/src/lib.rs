@@ -36,7 +36,9 @@ use fedimint_ln_common::contracts::incoming::IncomingContractOffer;
 use fedimint_ln_common::contracts::outgoing::{
     OutgoingContract, OutgoingContractAccount, OutgoingContractData,
 };
-use fedimint_ln_common::contracts::{Contract, EncryptedPreimage, IdentifiableContract, Preimage};
+use fedimint_ln_common::contracts::{
+    Contract, ContractId, EncryptedPreimage, IdentifiableContract, Preimage,
+};
 pub use fedimint_ln_common::*;
 use futures::StreamExt;
 use itertools::Itertools;
@@ -50,7 +52,7 @@ use receive::{LightningReceiveError, LightningReceiveStateMachine};
 use secp256k1_zkp::{All, Secp256k1};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 
 use crate::pay::{LightningPayCommon, LightningPayCreatedOutgoingLnContract, LightningPayStates};
 use crate::receive::{LightningReceiveStates, LightningReceiveSubmittedOffer};
@@ -71,7 +73,10 @@ pub trait LightningClientExt {
     async fn fetch_registered_gateways(&self) -> anyhow::Result<Vec<LightningGateway>>;
 
     /// Pays a LN invoice with our available funds
-    async fn pay_bolt11_invoice(&self, invoice: Invoice) -> anyhow::Result<OperationId>;
+    async fn pay_bolt11_invoice(
+        &self,
+        invoice: Invoice,
+    ) -> anyhow::Result<(OperationId, ContractId)>;
 
     async fn subscribe_ln_pay(
         &self,
@@ -168,12 +173,15 @@ impl LightningClientExt for Client {
         Ok(instance.api.fetch_gateways().await?)
     }
 
-    async fn pay_bolt11_invoice(&self, invoice: Invoice) -> anyhow::Result<OperationId> {
+    async fn pay_bolt11_invoice(
+        &self,
+        invoice: Invoice,
+    ) -> anyhow::Result<(OperationId, ContractId)> {
         let (lightning, instance) = self.get_first_module::<LightningClientModule>(&KIND);
         let operation_id = OperationId(invoice.payment_hash().into_inner());
         let active_gateway = self.select_active_gateway().await?;
 
-        let output = lightning
+        let (output, contract_id) = lightning
             .create_outgoing_output(
                 operation_id,
                 instance.api,
@@ -199,7 +207,7 @@ impl LightningClientExt for Client {
         )
         .await?;
 
-        Ok(operation_id)
+        Ok((operation_id, contract_id))
     }
 
     async fn create_bolt11_invoice(
@@ -499,7 +507,10 @@ impl LightningClientModule {
         gateway: LightningGateway,
         fed_id: FederationId,
         mut rng: impl RngCore + CryptoRng + 'a,
-    ) -> anyhow::Result<ClientOutput<LightningOutput, LightningClientStateMachines>> {
+    ) -> anyhow::Result<(
+        ClientOutput<LightningOutput, LightningClientStateMachines>,
+        ContractId,
+    )> {
         let consensus_height = api
             .fetch_consensus_block_height()
             .await?
@@ -543,6 +554,7 @@ impl LightningClientModule {
         };
 
         let contract_id = contract.contract_id();
+        info!("### initial contract creation {contract_id}");
         let sm_gen = Arc::new(move |funding_txid: TransactionId, _input_idx: u64| {
             vec![LightningClientStateMachines::Pay(
                 LightningPayStateMachine {
@@ -567,10 +579,13 @@ impl LightningClientModule {
             contract: Contract::Outgoing(contract),
         });
 
-        Ok(ClientOutput {
-            output: ln_output,
-            state_machines: sm_gen,
-        })
+        Ok((
+            ClientOutput {
+                output: ln_output,
+                state_machines: sm_gen,
+            },
+            contract_id,
+        ))
     }
 
     async fn await_receive_success(

@@ -9,6 +9,7 @@ use fedimint_dummy_client::{DummyClientExt, DummyClientGen};
 use fedimint_dummy_common::config::DummyGenParams;
 use fedimint_dummy_server::DummyGen;
 use fedimint_ln_client::{LightningClientExt, LightningClientGen, LnPayState, LnReceiveState};
+use fedimint_ln_common::api::LnFederationApi;
 use fedimint_ln_common::config::LightningGenParams;
 use fedimint_ln_server::LightningGen;
 use fedimint_mint_client::MintClientGen;
@@ -18,7 +19,9 @@ use fedimint_testing::federation::FederationTest;
 use fedimint_testing::fixtures::Fixtures;
 use fedimint_testing::gateway::GatewayTest;
 use ln_gateway::ng::pay::{GatewayPayFetchContract, GatewayPayStates};
-use ln_gateway::ng::{GatewayClientExt, GatewayClientGen};
+use ln_gateway::ng::{GatewayClientExt, GatewayClientGen, GatewayClientModule};
+use tokio_stream::StreamExt;
+use tracing::info;
 
 fn fixtures() -> Fixtures {
     // TODO: Remove dependency on mint (legacy gw client)
@@ -29,16 +32,8 @@ fn fixtures() -> Fixtures {
         .with_module(0, LightningClientGen, LightningGen, ln_params)
 }
 
-/// Setup a gateway connected to the fed and client
-async fn gateway(fixtures: &Fixtures, fed: &FederationTest, client: &Client) -> GatewayTest {
-    let gateway = fixtures.new_connected_gateway(fed).await;
-    let node_pub_key = gateway.last_registered().await.node_pub_key;
-    client.set_active_gateway(&node_pub_key).await.unwrap();
-    gateway
-}
-
 #[tokio::test(flavor = "multi_thread")]
-async fn test_hello() -> anyhow::Result<()> {
+async fn test_gateway_client() -> anyhow::Result<()> {
     let fixtures = fixtures();
     let fed = fixtures.new_fed().await;
     let user_client = fed.new_client().await;
@@ -60,14 +55,37 @@ async fn test_hello() -> anyhow::Result<()> {
     let invoice = fixtures.lightning().invoice(sats(250), None).await?;
 
     // User client pays test invoice
-    let pay_op = user_client.pay_bolt11_invoice(invoice.clone()).await?;
+    let (pay_op, contract_id) = user_client.pay_bolt11_invoice(invoice.clone()).await?;
     let mut pay_sub = user_client.subscribe_ln_pay(pay_op).await?.into_stream();
     assert_eq!(pay_sub.ok().await?, LnPayState::Created);
-    assert_matches!(pay_sub.ok().await?, LnPayState::Funded);
+    let funded = pay_sub.ok().await?;
+    assert_matches!(funded, LnPayState::Funded);
+    // while let Some(update) = pay_sub.next().await {
+    //     info!("Update: {:?}", update);
+    // }
 
     // Gateway facilitates payment on behalf of user
-    let gw_pay_op = gateway.gateway_pay_bolt11_invoice(invoice.clone()).await?;
-    // let mut sub2 = gateway.gateway_subscribe_ln_pay(op).await?.into_stream();
+    // fedimint_core::task::sleep(Duration::from_secs(5)).await;
+    // let contract_id = (*invoice.payment_hash()).into();
+    // info!("contract id {contract_id:?}");
+    // user_client
+    //     .api()
+    //     .with_module(0)
+    //     .fetch_contract(contract_id)
+    //     .await?;
+    let gw_pay_op = gateway.gateway_pay_bolt11_invoice(contract_id).await?;
+    // let mut gw_sub = gateway
+    //     .gateway_subscribe_ln_pay(gw_pay_op)
+    //     .await?
+    //     .into_stream();
+    // while let Some(update) = gw_sub.next().await {
+    //     info!("Update: {:?}", update);
+    // }
+    let (gw_client, _) = gateway.get_first_module::<GatewayClientModule>(&fedimint_ln_common::KIND);
+    let mut gw_sub_inner = gw_client.notifier.subscribe(gw_pay_op).await;
+    while let Some(update) = gw_sub_inner.next().await {
+        info!("Update: {:?}", update);
+    }
 
     // assert_eq!(
     //     sub2.ok().await?,
@@ -77,7 +95,7 @@ async fn test_hello() -> anyhow::Result<()> {
     //     })
     // );
 
-    fedimint_core::task::sleep(Duration::from_secs(30)).await;
+    fedimint_core::task::sleep(Duration::from_secs(300)).await;
 
     Ok(())
 }

@@ -3,6 +3,9 @@
 
 set -euo pipefail
 export RUST_LOG="${RUST_LOG:-info,timing=debug}"
+# export RUST_LOG=info,ln-gateway=debug,client=trace,fedimint-ln-client=debug,jsonrpsee=trace
+# export RUST_LOG=info,ln-gateway=debug,fedimint-client=debug,fedimint-ln-client=debug,jsonrpsee=trace
+export RUST_LOG=info
 
 source scripts/build.sh
 
@@ -26,4 +29,4 @@ export FM_TEST_USE_REAL_DAEMONS=1
 export FM_GATEWAY_FEES="0,0"
 export RUST_BACKTRACE=1
 
-env RUST_BACKTRACE=1 cargo test -p ln-gateway test_hello
+env RUST_BACKTRACE=1 cargo test -p ln-gateway test_gateway_client
