@@ -101,7 +101,49 @@ async fn test_gateway_client() -> anyhow::Result<()> {
     //     })
     // );
 
-    fedimint_core::task::sleep(Duration::from_secs(300)).await;
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_gateway_client_cancel() -> anyhow::Result<()> {
+    let fixtures = fixtures();
+    let fed = fixtures.new_fed().await;
+    let user_client = fed.new_client().await;
+
+    let mut registry = ClientModuleGenRegistry::new();
+    registry.attach(MintClientGen);
+    registry.attach(GatewayClientGen {
+        lightning_client: fixtures.lightning().1,
+    });
+    let gateway = fed.new_gateway_client(registry).await;
+    gateway.register_with_federation().await?;
+
+    // Print money for client2
+    let (print_op, outpoint) = user_client.print_money(sats(1000)).await?;
+    user_client
+        .await_primary_module_output(print_op, outpoint)
+        .await?;
+
+    // Create test invoice
+    let invoice = fixtures
+        .lightning()
+        .0
+        .invalid_invoice(sats(250), None)
+        .await?;
+
+    // User client pays test invoice
+    let (pay_op, contract_id) = user_client.pay_bolt11_invoice(invoice.clone()).await?;
+    let mut pay_sub = user_client.subscribe_ln_pay(pay_op).await?.into_stream();
+    assert_eq!(pay_sub.ok().await?, LnPayState::Created);
+    let funded = pay_sub.ok().await?;
+    assert_matches!(funded, LnPayState::Funded);
+
+    let gw_pay_op = gateway.gateway_pay_bolt11_invoice(contract_id).await?;
+    let (gw_client, _) = gateway.get_first_module::<GatewayClientModule>(&fedimint_ln_common::KIND);
+    let mut gw_sub_inner = gw_client.notifier.subscribe(gw_pay_op).await;
+    while let Some(update) = gw_sub_inner.next().await {
+        info!("Update: {:?}", update);
+    }
 
     Ok(())
 }
