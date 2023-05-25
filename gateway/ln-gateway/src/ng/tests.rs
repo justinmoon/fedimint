@@ -12,7 +12,9 @@ use fedimint_mint_client::MintClientGen;
 use fedimint_mint_common::config::MintGenParams;
 use fedimint_mint_server::MintGen;
 use fedimint_testing::fixtures::Fixtures;
-use ln_gateway::ng::{GatewayClientExt, GatewayClientGen, GatewayClientModule};
+use ln_gateway::ng::{
+    GatewayClientExt, GatewayClientGen, GatewayClientModule, GatewayExtPayStates,
+};
 use tokio_stream::StreamExt;
 use tracing::info;
 
@@ -56,11 +58,12 @@ async fn test_gateway_client() -> anyhow::Result<()> {
     assert_matches!(funded, LnPayState::Funded);
 
     let gw_pay_op = gateway.gateway_pay_bolt11_invoice(contract_id).await?;
-    let (gw_client, _) = gateway.get_first_module::<GatewayClientModule>(&fedimint_ln_common::KIND);
-    let mut gw_sub_inner = gw_client.notifier.subscribe(gw_pay_op).await;
-    while let Some(update) = gw_sub_inner.next().await {
-        info!("Update: {:?}", update);
-    }
+    let mut gw_pay_sub = gateway
+        .gateway_subscribe_ln_pay(gw_pay_op)
+        .await?
+        .into_stream();
+    assert_eq!(gw_pay_sub.ok().await?, GatewayExtPayStates::Created);
+    assert_eq!(gw_pay_sub.ok().await?, GatewayExtPayStates::Preimage);
 
     Ok(())
 }
@@ -100,11 +103,12 @@ async fn test_gateway_client_cancel() -> anyhow::Result<()> {
     assert_matches!(funded, LnPayState::Funded);
 
     let gw_pay_op = gateway.gateway_pay_bolt11_invoice(contract_id).await?;
-    let (gw_client, _) = gateway.get_first_module::<GatewayClientModule>(&fedimint_ln_common::KIND);
-    let mut gw_sub_inner = gw_client.notifier.subscribe(gw_pay_op).await;
-    while let Some(update) = gw_sub_inner.next().await {
-        info!("Update: {:?}", update);
-    }
+    let mut gw_pay_sub = gateway
+        .gateway_subscribe_ln_pay(gw_pay_op)
+        .await?
+        .into_stream();
+    assert_eq!(gw_pay_sub.ok().await?, GatewayExtPayStates::Created);
+    assert_eq!(gw_pay_sub.ok().await?, GatewayExtPayStates::Fail);
 
     Ok(())
 }

@@ -25,9 +25,12 @@ use fedimint_ln_client::api::LnFederationApi;
 use fedimint_ln_client::contracts::ContractId;
 use fedimint_ln_common::config::{GatewayFee, LightningClientConfig};
 use fedimint_ln_common::route_hints::RouteHint;
-use fedimint_ln_common::{LightningCommonGen, LightningGateway, LightningModuleTypes, KIND};
+use fedimint_ln_common::{
+    ln_operation, LightningCommonGen, LightningGateway, LightningModuleTypes, KIND,
+};
+use futures::StreamExt;
 use lightning::routing::gossip::RoutingFees;
-use secp256k1::{All, KeyPair, PublicKey, Secp256k1};
+use secp256k1::{KeyPair, PublicKey, Secp256k1};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 use url::Url;
@@ -45,8 +48,6 @@ const GW_ANNOUNCEMENT_TTL: Duration = Duration::from_secs(600);
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub enum GatewayExtPayStates {
     Created,
-    FetchedContract,
-    BuyPreimage,
     Preimage,
     Success,
     Fail,
@@ -128,7 +129,23 @@ impl GatewayClientExt for Client {
         &self,
         operation_id: OperationId,
     ) -> anyhow::Result<UpdateStreamOrOutcome<'_, GatewayExtPayStates>> {
-        unimplemented!()
+        let (gateway, _instance) = self.get_first_module::<GatewayClientModule>(&KIND);
+        let operation = ln_operation(self, operation_id).await?;
+
+        Ok(operation.outcome_or_updates(self.db(), operation_id, || {
+            stream! {
+                yield GatewayExtPayStates::Created;
+
+                match gateway.await_paid_invoice(operation_id).await {
+                    Ok(_) => {
+                        yield GatewayExtPayStates::Preimage;
+                    }
+                    Err(_) => {
+                        yield GatewayExtPayStates::Fail;
+                    }
+                }
+            }
+        }))
     }
 
     /// Register this gateway with the federation
@@ -305,6 +322,22 @@ impl GatewayClientModule {
             route_hints,
             valid_until: fedimint_core::time::now() + time_to_live,
             fees: self.fees,
+        }
+    }
+
+    async fn await_paid_invoice(&self, operation_id: OperationId) -> anyhow::Result<()> {
+        let mut stream = self.notifier.subscribe(operation_id).await;
+        loop {
+            match stream.next().await {
+                Some(GatewayClientStateMachines::Pay(state)) => match state.state {
+                    GatewayPayStates::Preimage => return Ok(()),
+                    GatewayPayStates::Cancel => {
+                        return Err(anyhow!("Gateway failed to pay invoice"))
+                    }
+                    _ => {}
+                },
+                _ => {}
+            }
         }
     }
 

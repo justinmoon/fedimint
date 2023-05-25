@@ -1477,6 +1477,7 @@ dependencies = [
  "bitcoin",
  "bitcoin_hashes",
  "erased-serde",
+ "fedimint-client",
  "fedimint-core",
  "fedimint-testing",
  "futures",
