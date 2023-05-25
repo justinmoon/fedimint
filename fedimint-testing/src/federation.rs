@@ -1,7 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 
 use fedimint_client::module::gen::ClientModuleGenRegistry;
-use fedimint_client::module::ClientModule;
 use fedimint_client::secret::PlainRootSecretStrategy;
 use fedimint_client::{Client, ClientBuilder};
 use fedimint_core::admin_client::{ConfigGenParamsConsensus, PeerServerParams};
@@ -23,7 +22,6 @@ use fedimint_server::net::connect::mock::{MockNetwork, StreamReliability};
 use fedimint_server::net::connect::{parse_host_port, Connector};
 use fedimint_server::net::peers::DelayCalculator;
 use fedimint_server::FedimintServer;
-use ln_gateway::ng::GatewayClientModule;
 use tokio_rustls::rustls;
 
 /// Test fixture for a running fedimint federation

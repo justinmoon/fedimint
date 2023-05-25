@@ -1,7 +1,6 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::process::exit;
-use std::str::FromStr;
 use std::time::Duration;
 
 use clap::Parser;
@@ -22,7 +21,6 @@ use fedimint_ln_client::LightningCommonGen;
 use fedimint_ln_common::config::GatewayFee;
 use fedimint_logging::TracingSetup;
 use fedimint_mint_client::MintCommonGen;
-use lightning::routing::gossip::RoutingFees;
 use ln_gateway::client::{DynGatewayClientBuilder, RocksDbFactory, StandardGatewayClientBuilder};
 use ln_gateway::{Gateway, LightningMode, DEFAULT_FEES};
 use tracing::{error, info};

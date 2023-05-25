@@ -1,16 +1,19 @@
-use bitcoin_hashes::sha256;
-use fedimint_client::sm::{OperationId, State, StateTransition};
+use std::sync::Arc;
+
+use fedimint_client::sm::{ClientSMDatabaseTransaction, OperationId, State, StateTransition};
+use fedimint_client::transaction::ClientInput;
 use fedimint_client::DynGlobalClientContext;
 use fedimint_core::encoding::{Decodable, Encodable};
-use fedimint_core::Amount;
+use fedimint_core::{Amount, OutPoint};
 use fedimint_ln_common::api::LnFederationApi;
 use fedimint_ln_common::contracts::outgoing::OutgoingContractAccount;
 use fedimint_ln_common::contracts::{ContractId, FundedContract, Preimage};
+use fedimint_ln_common::LightningInput;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::info;
 
-use super::GatewayClientContext;
+use super::{GatewayClientContext, GatewayClientStateMachines};
 use crate::gatewaylnrpc::{PayInvoiceRequest, PayInvoiceResponse};
 
 // TODO: Add diagram
@@ -18,7 +21,7 @@ use crate::gatewaylnrpc::{PayInvoiceRequest, PayInvoiceResponse};
 pub enum GatewayPayStates {
     PayInvoice(GatewayPayInvoice),
     Cancel,
-    Preimage,
+    Preimage(OutPoint),
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Decodable, Encodable)]
@@ -84,7 +87,6 @@ pub enum GatewayPayError {
 #[derive(Debug, Clone, Eq, PartialEq, Decodable, Encodable)]
 pub struct GatewayPayInvoice {
     pub contract_id: ContractId,
-    pub timelock_delta: u64,
 }
 
 impl GatewayPayInvoice {
@@ -94,16 +96,16 @@ impl GatewayPayInvoice {
         context: GatewayClientContext,
         common: GatewayPayCommon,
     ) -> Vec<StateTransition<GatewayPayStateMachine>> {
-        let timelock_delta = self.timelock_delta;
         vec![StateTransition::new(
             Self::await_buy_preimage(global_context.clone(), self.contract_id, context.clone()),
-            move |_dbtx, result, _old_state| {
-                info!("await_fetch_contract done: {result:?}");
+            move |dbtx, result, _old_state| {
+                info!("await_buy_preimage done: {result:?}");
                 Box::pin(Self::transition_bought_preimage(
                     global_context.clone(),
+                    dbtx,
                     result,
                     common.clone(),
-                    timelock_delta,
+                    context.clone(),
                 ))
             },
         )]
@@ -113,7 +115,7 @@ impl GatewayPayInvoice {
         global_context: DynGlobalClientContext,
         contract_id: ContractId,
         context: GatewayClientContext,
-    ) -> Result<Preimage, GatewayPayError> {
+    ) -> Result<(OutgoingContractAccount, Preimage), GatewayPayError> {
         let consensus_block_height = global_context
             .module_api()
             .fetch_consensus_block_height()
@@ -124,13 +126,12 @@ impl GatewayPayInvoice {
             return Err(GatewayPayError::MissingContractData);
         }
 
-        info!("await_fetch_contract id={contract_id:?}");
+        info!("await_buy_preimage id={contract_id:?}");
         let account = global_context
             .module_api()
             .fetch_contract(contract_id)
             .await
             .map_err(|_| GatewayPayError::OutgoingContractDoesNotExist { contract_id })?;
-        info!("fetched contract {account:?}");
         if let FundedContract::Outgoing(contract) = account.contract {
             let outgoing_contract_account = OutgoingContractAccount {
                 amount: account.amount,
@@ -138,14 +139,15 @@ impl GatewayPayInvoice {
             };
 
             let payment_parameters = Self::validate_outgoing_account(
-                global_context,
                 &outgoing_contract_account,
                 context.redeem_key,
                 context.timelock_delta,
                 consensus_block_height.unwrap(),
             )
             .await?;
-            return Self::await_buy_preimage_over_lightning(context, payment_parameters).await;
+            let preimage =
+                Self::await_buy_preimage_over_lightning(context, payment_parameters).await?;
+            return Ok((outgoing_contract_account, preimage));
         }
 
         Err(GatewayPayError::OutgoingContractDoesNotExist { contract_id })
@@ -180,17 +182,28 @@ impl GatewayPayInvoice {
 
     async fn transition_bought_preimage(
         global_context: DynGlobalClientContext,
-        result: Result<Preimage, GatewayPayError>,
+        dbtx: &mut ClientSMDatabaseTransaction<'_, '_>,
+        result: Result<(OutgoingContractAccount, Preimage), GatewayPayError>,
         common: GatewayPayCommon,
-        timelock_delta: u64,
+        context: GatewayClientContext,
     ) -> GatewayPayStateMachine {
         match result {
-            Ok(preimage) => GatewayPayStateMachine {
-                common,
-                state: GatewayPayStates::Preimage,
-            },
+            Ok((contract, preimage)) => {
+                let claim_input = contract.claim(preimage);
+                let client_input = ClientInput::<LightningInput, GatewayClientStateMachines> {
+                    input: claim_input,
+                    state_machines: Arc::new(|_, _| vec![]),
+                    keys: vec![context.redeem_key],
+                };
+
+                let (txid, _) = global_context.claim_input(dbtx, client_input).await;
+
+                GatewayPayStateMachine {
+                    common,
+                    state: GatewayPayStates::Preimage(OutPoint { txid, out_idx: 0 }),
+                }
+            }
             Err(_) => {
-                info!("-> Cancel");
                 return GatewayPayStateMachine {
                     common,
                     state: GatewayPayStates::Cancel,
@@ -200,7 +213,6 @@ impl GatewayPayInvoice {
     }
 
     async fn validate_outgoing_account(
-        global_context: DynGlobalClientContext,
         account: &OutgoingContractAccount,
         redeem_key: bitcoin::KeyPair,
         timelock_delta: u64,
@@ -238,7 +250,6 @@ impl GatewayPayInvoice {
             max_delay: max_delay.unwrap(),
             invoice_amount,
             max_send_amount: account.amount,
-            payment_hash: *invoice.payment_hash(),
             invoice,
         })
     }
@@ -249,7 +260,6 @@ pub struct PaymentParameters {
     max_delay: u64,
     invoice_amount: Amount,
     max_send_amount: Amount,
-    payment_hash: sha256::Hash,
     invoice: lightning_invoice::Invoice,
 }
 

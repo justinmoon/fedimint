@@ -95,8 +95,8 @@ impl LightningTest for RealLightningTest {
 
     async fn invalid_invoice(
         &self,
-        amount: Amount,
-        expiry_time: Option<u64>,
+        _amount: Amount,
+        _expiry_time: Option<u64>,
     ) -> ln_gateway::Result<Invoice> {
         unimplemented!()
     }

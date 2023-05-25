@@ -36,7 +36,7 @@ use fedimint_core::module::registry::ModuleDecoderRegistry;
 use fedimint_core::task::{self, RwLock, TaskGroup, TaskHandle};
 use fedimint_core::{Amount, TransactionId};
 use fedimint_ln_client::contracts::Preimage;
-use gatewaylnrpc::{gateway_lightning_server, GetNodeInfoResponse};
+use gatewaylnrpc::GetNodeInfoResponse;
 use lightning::routing::gossip::RoutingFees;
 use lnrpc_client::ILnRpcClient;
 use rpc::{FederationInfo, LightningReconnectPayload};
@@ -93,29 +93,6 @@ pub enum LightningMode {
         #[arg(long = "cln-extension-addr", env = "FM_GATEWAY_LIGHTNING_ADDR")]
         cln_extension_addr: Url,
     },
-}
-
-impl LightningMode {
-    // TODO: improve error messages when env vars are missing
-    fn from_env() -> anyhow::Result<Self> {
-        // CLN
-        let cln_extension_addr = env::var("FM_GATEWAY_LIGHTNING_ADDR");
-        if let Ok(cln_extension_addr) = cln_extension_addr {
-            let cln_extension_addr: Url = cln_extension_addr.parse()?;
-            return Ok(LightningMode::Cln { cln_extension_addr });
-        }
-
-        // LND
-        let lnd_rpc_addr = env::var("FM_LND_RPC_ADDR")?;
-        let lnd_tls_cert = env::var("FM_LND_TLS_CERT")?;
-        let lnd_macaroon = env::var("FM_LND_MACAROON")?;
-        let mode = LightningMode::Lnd {
-            lnd_rpc_addr,
-            lnd_tls_cert,
-            lnd_macaroon,
-        };
-        Ok(mode)
-    }
 }
 
 #[derive(Debug, Error)]

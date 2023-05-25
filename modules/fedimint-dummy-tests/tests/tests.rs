@@ -1,5 +1,4 @@
 use fedimint_client::module::gen::ClientModuleGenRegistry;
-use fedimint_client::module::ClientModuleRegistry;
 use fedimint_core::config::ClientModuleConfig;
 use fedimint_core::core::ModuleKind;
 use fedimint_core::module::ModuleConsensusVersion;

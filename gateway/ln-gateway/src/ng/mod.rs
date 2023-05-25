@@ -16,17 +16,16 @@ use fedimint_client::{
     sm_enum_variant_translation, Client, DynGlobalClientContext, UpdateStreamOrOutcome,
 };
 use fedimint_core::core::{IntoDynInstance, ModuleInstanceId};
-use fedimint_core::db::{AutocommitError, Database, ModuleDatabaseTransaction};
+use fedimint_core::db::{AutocommitError, Database};
 use fedimint_core::encoding::{Decodable, Encodable};
-use fedimint_core::module::ExtendsCommonModuleGen;
-use fedimint_core::task::TaskGroup;
-use fedimint_core::{apply, async_trait_maybe_send};
+use fedimint_core::module::{ExtendsCommonModuleGen, TransactionItemAmount};
+use fedimint_core::{apply, async_trait_maybe_send, Amount, OutPoint};
 use fedimint_ln_client::api::LnFederationApi;
 use fedimint_ln_client::contracts::ContractId;
 use fedimint_ln_common::config::{GatewayFee, LightningClientConfig};
 use fedimint_ln_common::route_hints::RouteHint;
 use fedimint_ln_common::{
-    ln_operation, LightningCommonGen, LightningGateway, LightningModuleTypes, KIND,
+    ln_operation, LightningCommonGen, LightningGateway, LightningModuleTypes, LightningOutput, KIND,
 };
 use futures::StreamExt;
 use lightning::routing::gossip::RoutingFees;
@@ -37,9 +36,7 @@ use url::Url;
 
 use self::pay::{GatewayPayCommon, GatewayPayInvoice, GatewayPayStateMachine, GatewayPayStates};
 use crate::gatewaylnrpc::GetNodeInfoResponse;
-use crate::lnd::GatewayLndClient;
-use crate::lnrpc_client::{ILnRpcClient, NetworkLnRpcClient};
-use crate::LightningMode;
+use crate::lnrpc_client::ILnRpcClient;
 
 const GW_ANNOUNCEMENT_TTL: Duration = Duration::from_secs(600);
 
@@ -84,20 +81,23 @@ impl GatewayClientExt for Client {
         contract_id: ContractId,
     ) -> anyhow::Result<OperationId> {
         info!("gateway_pay_bolt11_invoice()");
-        let (gateway, instance) = self.get_first_module::<GatewayClientModule>(&KIND);
+        let (_, instance) = self.get_first_module::<GatewayClientModule>(&KIND);
 
         self.db()
             .autocommit(
                 |dbtx| {
                     Box::pin(async move {
-                        let (operation_id, states) = gateway
-                            .gateway_pay_bolt11_invoice(
-                                &mut dbtx.with_module_prefix(instance.id),
-                                contract_id,
-                            )
-                            .await?;
+                        let operation_id = OperationId(contract_id.into_inner());
 
-                        let dyn_states = states
+                        let state_machines =
+                            vec![GatewayClientStateMachines::Pay(GatewayPayStateMachine {
+                                common: GatewayPayCommon { operation_id },
+                                state: GatewayPayStates::PayInvoice(GatewayPayInvoice {
+                                    contract_id,
+                                }),
+                            })];
+
+                        let dyn_states = state_machines
                             .into_iter()
                             .map(|s| s.into_dyn(instance.id))
                             .collect();
@@ -137,8 +137,15 @@ impl GatewayClientExt for Client {
                 yield GatewayExtPayStates::Created;
 
                 match gateway.await_paid_invoice(operation_id).await {
-                    Ok(_) => {
+                    Ok(outpoint) => {
                         yield GatewayExtPayStates::Preimage;
+
+                        if self.await_primary_module_output(operation_id, outpoint).await.is_ok() {
+                            yield GatewayExtPayStates::Success;
+                            return;
+                        }
+
+                        yield GatewayExtPayStates::Fail;
                     }
                     Err(_) => {
                         yield GatewayExtPayStates::Fail;
@@ -156,35 +163,6 @@ impl GatewayClientExt for Client {
         instance.api.register_gateway(&config).await?;
         Ok(())
     }
-}
-
-async fn create_lightning_client(mode: LightningMode) -> anyhow::Result<Arc<dyn ILnRpcClient>> {
-    // FIXME: remove task group requirement from GatewayLndClient
-    let task_group = TaskGroup::new();
-    let lnrpc: Arc<dyn ILnRpcClient> = match mode {
-        LightningMode::Cln { cln_extension_addr } => {
-            info!(
-                "Gateway configured to connect to remote LnRpcClient at \n cln extension address: {:?} ",
-                cln_extension_addr
-            );
-            Arc::new(NetworkLnRpcClient::new(cln_extension_addr).await?)
-        }
-        LightningMode::Lnd {
-            lnd_rpc_addr,
-            lnd_tls_cert,
-            lnd_macaroon,
-        } => {
-            info!(
-                "Gateway configured to connect to LND LnRpcClient at \n address: {:?},\n tls cert path: {:?},\n macaroon path: {} ",
-                lnd_rpc_addr, lnd_tls_cert, lnd_macaroon
-            );
-            Arc::new(
-                GatewayLndClient::new(lnd_rpc_addr, lnd_tls_cert, lnd_macaroon, task_group).await?,
-            )
-        }
-    };
-
-    Ok(lnrpc)
 }
 
 #[derive(Debug, Clone)]
@@ -274,41 +252,34 @@ impl ClientModule for GatewayClientModule {
 
     fn input_amount(
         &self,
-        _input: &<Self::Common as fedimint_core::module::ModuleCommon>::Input,
+        input: &<Self::Common as fedimint_core::module::ModuleCommon>::Input,
     ) -> fedimint_core::module::TransactionItemAmount {
-        todo!()
+        TransactionItemAmount {
+            amount: input.amount,
+            fee: self.cfg.fee_consensus.contract_input,
+        }
     }
 
     fn output_amount(
         &self,
-        _output: &<Self::Common as fedimint_core::module::ModuleCommon>::Output,
+        output: &<Self::Common as fedimint_core::module::ModuleCommon>::Output,
     ) -> fedimint_core::module::TransactionItemAmount {
-        todo!()
+        match output {
+            LightningOutput::Contract(account_output) => TransactionItemAmount {
+                amount: account_output.amount,
+                fee: self.cfg.fee_consensus.contract_output,
+            },
+            LightningOutput::Offer(_) | LightningOutput::CancelOutgoing { .. } => {
+                TransactionItemAmount {
+                    amount: Amount::ZERO,
+                    fee: Amount::ZERO,
+                }
+            }
+        }
     }
 }
 
 impl GatewayClientModule {
-    /// This creates and returns the states which calling client can launch in
-    /// the executor
-    async fn gateway_pay_bolt11_invoice(
-        &self,
-        dbtx: &mut ModuleDatabaseTransaction<'_>,
-        contract_id: ContractId,
-    ) -> anyhow::Result<(OperationId, Vec<GatewayClientStateMachines>)> {
-        // FIXME: will this prevent us from attempting to pay this invoice a second time
-        // if the first attempt fails?
-        let operation_id = OperationId(contract_id.into_inner());
-
-        let state_machines = vec![GatewayClientStateMachines::Pay(GatewayPayStateMachine {
-            common: GatewayPayCommon { operation_id },
-            state: GatewayPayStates::PayInvoice(GatewayPayInvoice {
-                contract_id,
-                timelock_delta: 10,
-            }),
-        })];
-
-        Ok((operation_id, state_machines))
-    }
     pub fn to_gateway_registration_info(
         &self,
         route_hints: Vec<RouteHint>,
@@ -325,12 +296,12 @@ impl GatewayClientModule {
         }
     }
 
-    async fn await_paid_invoice(&self, operation_id: OperationId) -> anyhow::Result<()> {
+    async fn await_paid_invoice(&self, operation_id: OperationId) -> anyhow::Result<OutPoint> {
         let mut stream = self.notifier.subscribe(operation_id).await;
         loop {
             match stream.next().await {
                 Some(GatewayClientStateMachines::Pay(state)) => match state.state {
-                    GatewayPayStates::Preimage => return Ok(()),
+                    GatewayPayStates::Preimage(outpoint) => return Ok(outpoint),
                     GatewayPayStates::Cancel => {
                         return Err(anyhow!("Gateway failed to pay invoice"))
                     }

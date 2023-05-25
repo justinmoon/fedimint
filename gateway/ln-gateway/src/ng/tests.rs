@@ -12,11 +12,7 @@ use fedimint_mint_client::MintClientGen;
 use fedimint_mint_common::config::MintGenParams;
 use fedimint_mint_server::MintGen;
 use fedimint_testing::fixtures::Fixtures;
-use ln_gateway::ng::{
-    GatewayClientExt, GatewayClientGen, GatewayClientModule, GatewayExtPayStates,
-};
-use tokio_stream::StreamExt;
-use tracing::info;
+use ln_gateway::ng::{GatewayClientExt, GatewayClientGen, GatewayExtPayStates};
 
 fn fixtures() -> Fixtures {
     // TODO: Remove dependency on mint (legacy gw client)
@@ -64,6 +60,7 @@ async fn test_gateway_client() -> anyhow::Result<()> {
         .into_stream();
     assert_eq!(gw_pay_sub.ok().await?, GatewayExtPayStates::Created);
     assert_eq!(gw_pay_sub.ok().await?, GatewayExtPayStates::Preimage);
+    assert_eq!(gw_pay_sub.ok().await?, GatewayExtPayStates::Success);
 
     Ok(())
 }
