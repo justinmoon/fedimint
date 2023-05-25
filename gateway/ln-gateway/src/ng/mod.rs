@@ -27,15 +27,12 @@ use fedimint_ln_common::config::{GatewayFee, LightningClientConfig};
 use fedimint_ln_common::route_hints::RouteHint;
 use fedimint_ln_common::{LightningCommonGen, LightningGateway, LightningModuleTypes, KIND};
 use lightning::routing::gossip::RoutingFees;
-use lightning_invoice::Invoice;
 use secp256k1::{All, KeyPair, PublicKey, Secp256k1};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 use url::Url;
 
-use self::pay::{
-    GatewayPayCommon, GatewayPayFetchContract, GatewayPayStateMachine, GatewayPayStates,
-};
+use self::pay::{GatewayPayCommon, GatewayPayInvoice, GatewayPayStateMachine, GatewayPayStates};
 use crate::gatewaylnrpc::GetNodeInfoResponse;
 use crate::lnd::GatewayLndClient;
 use crate::lnrpc_client::{ILnRpcClient, NetworkLnRpcClient};
@@ -223,6 +220,8 @@ impl ClientModuleGen for GatewayClientGen {
 #[derive(Debug, Clone)]
 pub struct GatewayClientContext {
     lnrpc: Arc<dyn ILnRpcClient>,
+    redeem_key: bitcoin::KeyPair,
+    timelock_delta: u64,
 }
 
 impl Context for GatewayClientContext {}
@@ -251,6 +250,8 @@ impl ClientModule for GatewayClientModule {
     fn context(&self) -> Self::ModuleStateMachineContext {
         Self::ModuleStateMachineContext {
             lnrpc: self.lightning_client.clone(),
+            redeem_key: self.redeem_key,
+            timelock_delta: self.timelock_delta,
         }
     }
 
@@ -282,11 +283,8 @@ impl GatewayClientModule {
         let operation_id = OperationId(contract_id.into_inner());
 
         let state_machines = vec![GatewayClientStateMachines::Pay(GatewayPayStateMachine {
-            common: GatewayPayCommon {
-                redeem_key: self.redeem_key.clone(),
-                operation_id,
-            },
-            state: GatewayPayStates::FetchContract(GatewayPayFetchContract {
+            common: GatewayPayCommon { operation_id },
+            state: GatewayPayStates::PayInvoice(GatewayPayInvoice {
                 contract_id,
                 timelock_delta: 10,
             }),

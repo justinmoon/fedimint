@@ -18,7 +18,7 @@ use fedimint_mint_server::MintGen;
 use fedimint_testing::federation::FederationTest;
 use fedimint_testing::fixtures::Fixtures;
 use fedimint_testing::gateway::GatewayTest;
-use ln_gateway::ng::pay::{GatewayPayFetchContract, GatewayPayStates};
+use ln_gateway::ng::pay::{GatewayPayInvoice, GatewayPayStates};
 use ln_gateway::ng::{GatewayClientExt, GatewayClientGen, GatewayClientModule};
 use tokio_stream::StreamExt;
 use tracing::info;
