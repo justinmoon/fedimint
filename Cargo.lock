@@ -3072,6 +3072,7 @@ dependencies = [
  "rand",
  "reqwest",
  "secp256k1",
+ "secp256k1-zkp",
  "serde",
  "serde_json",
  "thiserror",

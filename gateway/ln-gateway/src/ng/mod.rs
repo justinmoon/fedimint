@@ -217,6 +217,7 @@ pub struct GatewayClientContext {
     lnrpc: Arc<dyn ILnRpcClient>,
     redeem_key: bitcoin::KeyPair,
     timelock_delta: u64,
+    secp: secp256k1_zkp::Secp256k1<secp256k1_zkp::All>,
 }
 
 impl Context for GatewayClientContext {}
@@ -247,6 +248,7 @@ impl ClientModule for GatewayClientModule {
             lnrpc: self.lightning_client.clone(),
             redeem_key: self.redeem_key,
             timelock_delta: self.timelock_delta,
+            secp: secp256k1_zkp::Secp256k1::new(),
         }
     }
 
@@ -302,9 +304,7 @@ impl GatewayClientModule {
             match stream.next().await {
                 Some(GatewayClientStateMachines::Pay(state)) => match state.state {
                     GatewayPayStates::Preimage(outpoint) => return Ok(outpoint),
-                    GatewayPayStates::Cancel => {
-                        return Err(anyhow!("Gateway failed to pay invoice"))
-                    }
+                    // TODO: add Canceled
                     _ => {}
                 },
                 _ => {}

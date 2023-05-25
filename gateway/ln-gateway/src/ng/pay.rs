@@ -1,14 +1,15 @@
 use std::sync::Arc;
 
 use fedimint_client::sm::{ClientSMDatabaseTransaction, OperationId, State, StateTransition};
-use fedimint_client::transaction::ClientInput;
+use fedimint_client::transaction::{ClientInput, ClientOutput};
 use fedimint_client::DynGlobalClientContext;
 use fedimint_core::encoding::{Decodable, Encodable};
 use fedimint_core::{Amount, OutPoint};
+use fedimint_ln_client::contracts::IdentifiableContract;
 use fedimint_ln_common::api::LnFederationApi;
 use fedimint_ln_common::contracts::outgoing::OutgoingContractAccount;
 use fedimint_ln_common::contracts::{ContractId, FundedContract, Preimage};
-use fedimint_ln_common::LightningInput;
+use fedimint_ln_common::{LightningInput, LightningOutput};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::info;
@@ -20,8 +21,9 @@ use crate::gatewaylnrpc::{PayInvoiceRequest, PayInvoiceResponse};
 #[derive(Debug, Clone, Eq, PartialEq, Decodable, Encodable)]
 pub enum GatewayPayStates {
     PayInvoice(GatewayPayInvoice),
-    Cancel,
+    CancelContract(GatewayPayCancelContract),
     Preimage(OutPoint),
+    Canceled,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Decodable, Encodable)]
@@ -51,6 +53,9 @@ impl State for GatewayPayStateMachine {
                 context.clone(),
                 self.common.clone(),
             ),
+            GatewayPayStates::CancelContract(gateway_pay_cancel) => {
+                gateway_pay_cancel.transitions(context.clone())
+            }
             _ => {
                 vec![]
             }
@@ -63,9 +68,7 @@ impl State for GatewayPayStateMachine {
 }
 
 #[derive(Error, Debug, Serialize, Deserialize, Encodable, Decodable, Clone, Eq, PartialEq)]
-pub enum GatewayPayError {
-    #[error("OutgoingContract does not exist {contract_id}")]
-    OutgoingContractDoesNotExist { contract_id: ContractId },
+pub enum OutgoingContractError {
     #[error("Invalid OutgoingContract {contract_id}")]
     InvalidOutgoingContract { contract_id: ContractId },
     #[error("The contract is already cancelled and can't be processed by the gateway")]
@@ -78,10 +81,21 @@ pub enum GatewayPayError {
     Underfunded(Amount, Amount),
     #[error("The contract's timeout is in the past or does not allow for a safety margin")]
     TimeoutTooClose,
-    #[error("An error occurred while paying the lightning invoice.")]
-    LightningPayError,
     #[error("Gateway could not retrieve metadata about the contract.")]
     MissingContractData,
+}
+
+#[derive(Error, Debug, Serialize, Deserialize, Encodable, Decodable, Clone, Eq, PartialEq)]
+pub enum OutgoingPaymentError {
+    #[error("OutgoingContract does not exist {contract_id}")]
+    OutgoingContractDoesNotExist { contract_id: ContractId },
+    #[error("An error occurred while paying the lightning invoice.")]
+    LightningPayError { contract: OutgoingContractAccount },
+    #[error("An invalid contract was specified.")]
+    InvalidOutgoingContract {
+        error: OutgoingContractError,
+        contract: OutgoingContractAccount,
+    },
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Decodable, Encodable)]
@@ -115,28 +129,35 @@ impl GatewayPayInvoice {
         global_context: DynGlobalClientContext,
         contract_id: ContractId,
         context: GatewayClientContext,
-    ) -> Result<(OutgoingContractAccount, Preimage), GatewayPayError> {
-        let consensus_block_height = global_context
-            .module_api()
-            .fetch_consensus_block_height()
-            .await
-            .map_err(|_| GatewayPayError::TimeoutTooClose)?;
-
-        if consensus_block_height.is_none() {
-            return Err(GatewayPayError::MissingContractData);
-        }
-
+    ) -> Result<(OutgoingContractAccount, Preimage), OutgoingPaymentError> {
         info!("await_buy_preimage id={contract_id:?}");
         let account = global_context
             .module_api()
             .fetch_contract(contract_id)
             .await
-            .map_err(|_| GatewayPayError::OutgoingContractDoesNotExist { contract_id })?;
+            .map_err(|_| OutgoingPaymentError::OutgoingContractDoesNotExist { contract_id })?;
+
         if let FundedContract::Outgoing(contract) = account.contract {
             let outgoing_contract_account = OutgoingContractAccount {
                 amount: account.amount,
                 contract,
             };
+
+            let consensus_block_height = global_context
+                .module_api()
+                .fetch_consensus_block_height()
+                .await
+                .map_err(|_| OutgoingPaymentError::InvalidOutgoingContract {
+                    error: OutgoingContractError::TimeoutTooClose,
+                    contract: outgoing_contract_account.clone(),
+                })?;
+
+            if consensus_block_height.is_none() {
+                return Err(OutgoingPaymentError::InvalidOutgoingContract {
+                    error: OutgoingContractError::MissingContractData,
+                    contract: outgoing_contract_account.clone(),
+                });
+            }
 
             let payment_parameters = Self::validate_outgoing_account(
                 &outgoing_contract_account,
@@ -144,19 +165,28 @@ impl GatewayPayInvoice {
                 context.timelock_delta,
                 consensus_block_height.unwrap(),
             )
+            .await
+            .map_err(|e| OutgoingPaymentError::InvalidOutgoingContract {
+                error: e,
+                contract: outgoing_contract_account.clone(),
+            })?;
+            let preimage = Self::await_buy_preimage_over_lightning(
+                context,
+                payment_parameters,
+                outgoing_contract_account.clone(),
+            )
             .await?;
-            let preimage =
-                Self::await_buy_preimage_over_lightning(context, payment_parameters).await?;
             return Ok((outgoing_contract_account, preimage));
         }
 
-        Err(GatewayPayError::OutgoingContractDoesNotExist { contract_id })
+        Err(OutgoingPaymentError::OutgoingContractDoesNotExist { contract_id })
     }
 
     async fn await_buy_preimage_over_lightning(
         context: GatewayClientContext,
         buy_preimage: PaymentParameters,
-    ) -> Result<Preimage, GatewayPayError> {
+        contract: OutgoingContractAccount,
+    ) -> Result<Preimage, OutgoingPaymentError> {
         let invoice = buy_preimage.invoice.clone();
         let max_delay = buy_preimage.max_delay;
         let max_fee_percent = buy_preimage.max_fee_percent();
@@ -175,7 +205,7 @@ impl GatewayPayInvoice {
             }
             Err(e) => {
                 info!("error paying lightning invoice {e:?}");
-                Err(GatewayPayError::LightningPayError)
+                Err(OutgoingPaymentError::LightningPayError { contract })
             }
         }
     }
@@ -183,12 +213,14 @@ impl GatewayPayInvoice {
     async fn transition_bought_preimage(
         global_context: DynGlobalClientContext,
         dbtx: &mut ClientSMDatabaseTransaction<'_, '_>,
-        result: Result<(OutgoingContractAccount, Preimage), GatewayPayError>,
+        result: Result<(OutgoingContractAccount, Preimage), OutgoingPaymentError>,
         common: GatewayPayCommon,
         context: GatewayClientContext,
     ) -> GatewayPayStateMachine {
         match result {
             Ok((contract, preimage)) => {
+                // TODO: Move this to a new state so that we can recover if we crash after we
+                // get the preimage
                 let claim_input = contract.claim(preimage);
                 let client_input = ClientInput::<LightningInput, GatewayClientStateMachines> {
                     input: claim_input,
@@ -203,10 +235,22 @@ impl GatewayPayInvoice {
                     state: GatewayPayStates::Preimage(OutPoint { txid, out_idx: 0 }),
                 }
             }
+            Err(OutgoingPaymentError::InvalidOutgoingContract { error, contract }) => {
+                return GatewayPayStateMachine {
+                    common,
+                    state: GatewayPayStates::CancelContract(GatewayPayCancelContract { contract }),
+                };
+            }
+            Err(OutgoingPaymentError::LightningPayError { contract }) => {
+                return GatewayPayStateMachine {
+                    common,
+                    state: GatewayPayStates::CancelContract(GatewayPayCancelContract { contract }),
+                };
+            }
             Err(_) => {
                 return GatewayPayStateMachine {
                     common,
-                    state: GatewayPayStates::Cancel,
+                    state: GatewayPayStates::Canceled,
                 };
             }
         }
@@ -217,33 +261,36 @@ impl GatewayPayInvoice {
         redeem_key: bitcoin::KeyPair,
         timelock_delta: u64,
         consensus_block_height: u64,
-    ) -> Result<PaymentParameters, GatewayPayError> {
+    ) -> Result<PaymentParameters, OutgoingContractError> {
         let our_pub_key = secp256k1::XOnlyPublicKey::from_keypair(&redeem_key).0;
 
         if account.contract.cancelled {
-            return Err(GatewayPayError::CancelledContract);
+            return Err(OutgoingContractError::CancelledContract);
         }
 
         if account.contract.gateway_key != our_pub_key {
-            return Err(GatewayPayError::NotOurKey);
+            return Err(OutgoingContractError::NotOurKey);
         }
 
         let invoice = account.contract.invoice.clone();
         let invoice_amount = Amount::from_msats(
             invoice
                 .amount_milli_satoshis()
-                .ok_or(GatewayPayError::InvoiceMissingAmount)?,
+                .ok_or(OutgoingContractError::InvoiceMissingAmount)?,
         );
 
         if account.amount < invoice_amount {
-            return Err(GatewayPayError::Underfunded(invoice_amount, account.amount));
+            return Err(OutgoingContractError::Underfunded(
+                invoice_amount,
+                account.amount,
+            ));
         }
 
         let max_delay = (account.contract.timelock as u64)
             .checked_sub(consensus_block_height)
             .and_then(|delta| delta.checked_sub(timelock_delta));
         if max_delay.is_none() {
-            return Err(GatewayPayError::TimeoutTooClose);
+            return Err(OutgoingContractError::TimeoutTooClose);
         }
 
         Ok(PaymentParameters {
@@ -267,5 +314,48 @@ impl PaymentParameters {
     fn max_fee_percent(&self) -> f64 {
         let max_absolute_fee = self.max_send_amount - self.invoice_amount;
         (max_absolute_fee.msats as f64) / (self.invoice_amount.msats as f64)
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Decodable, Encodable)]
+pub struct GatewayPayCancelContract {
+    contract: OutgoingContractAccount,
+}
+
+impl GatewayPayCancelContract {
+    fn transitions(
+        &self,
+        context: GatewayClientContext,
+    ) -> Vec<StateTransition<GatewayPayStateMachine>> {
+        vec![StateTransition::new(
+            Self::await_cancel_transaction(self.contract.clone(), context.clone()),
+            |_dbtx, _, _| Box::pin(Self::transition_canceled()),
+        )]
+    }
+
+    async fn await_cancel_transaction(
+        contract: OutgoingContractAccount,
+        context: GatewayClientContext,
+    ) {
+        let cancel_signature = context.secp.sign_schnorr(
+            &contract.contract.cancellation_message().into(),
+            &context.redeem_key,
+        );
+        let cancel_output = LightningOutput::CancelOutgoing {
+            contract: contract.contract.contract_id(),
+            gateway_signature: cancel_signature,
+        };
+        let client_output = ClientOutput::<LightningOutput, GatewayClientStateMachines> {
+            output: cancel_output,
+            state_machines: Arc::new(|_, _| vec![]),
+        };
+
+        //global_context.fund_output()
+
+        //let (txid, _) = global_context.claim_input(dbtx, client_input).await;
+    }
+
+    async fn transition_canceled() -> GatewayPayStateMachine {
+        todo!()
     }
 }
