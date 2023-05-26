@@ -4,7 +4,7 @@ use fedimint_client::sm::{ClientSMDatabaseTransaction, OperationId, State, State
 use fedimint_client::transaction::{ClientInput, ClientOutput};
 use fedimint_client::DynGlobalClientContext;
 use fedimint_core::encoding::{Decodable, Encodable};
-use fedimint_core::{Amount, OutPoint};
+use fedimint_core::{Amount, OutPoint, TransactionId};
 use fedimint_ln_client::contracts::IdentifiableContract;
 use fedimint_ln_common::api::LnFederationApi;
 use fedimint_ln_common::contracts::outgoing::OutgoingContractAccount;
@@ -18,13 +18,27 @@ use tracing::info;
 use super::{GatewayClientContext, GatewayClientStateMachines};
 use crate::gatewaylnrpc::{PayInvoiceRequest, PayInvoiceResponse};
 
-// TODO: Add diagram
+#[cfg_attr(doc, aquamarine::aquamarine)]
+/// State machine that executes the Lightning payment on behalf of
+/// the fedimint user that requested an invoice to be paid.
+///
+/// ```mermaid
+/// graph LR
+/// classDef virtual fill:#fff,stroke-dasharray: 5 5
+///
+///    PayInvoice -- fetch contract failed --> Canceled
+///    PayInvoice -- validate contract failed --> CancelContract
+///    PayInvoice -- pay invoice unsuccessful --> CancelContract
+///    PayInvoice -- pay invoice successful --> ClaimOutgoingContract
+///    ClaimOutgoingContract -- claim tx submission --> Preimage
+///    CancelContract -- cancel tx submission successful --> Canceled
+///    CancelContract -- cancel tx submission unsuccessful --> Failed
 #[derive(Debug, Clone, Eq, PartialEq, Decodable, Encodable)]
 pub enum GatewayPayStates {
     PayInvoice(GatewayPayInvoice),
     CancelContract(GatewayPayCancelContract),
     Preimage(OutPoint),
-    Canceled(Option<OutPoint>),
+    Canceled(Option<TransactionId>),
     ClaimOutgoingContract(GatewayPayClaimOutgoingContract),
     Failed,
 }
@@ -56,6 +70,13 @@ impl State for GatewayPayStateMachine {
                 context.clone(),
                 self.common.clone(),
             ),
+            GatewayPayStates::ClaimOutgoingContract(gateway_pay_claim_outgoing_contract) => {
+                gateway_pay_claim_outgoing_contract.transitions(
+                    global_context.clone(),
+                    context.clone(),
+                    self.common.clone(),
+                )
+            }
             GatewayPayStates::CancelContract(gateway_pay_cancel) => gateway_pay_cancel.transitions(
                 global_context.clone(),
                 context.clone(),
@@ -118,15 +139,9 @@ impl GatewayPayInvoice {
     ) -> Vec<StateTransition<GatewayPayStateMachine>> {
         vec![StateTransition::new(
             Self::await_buy_preimage(global_context.clone(), self.contract_id, context.clone()),
-            move |dbtx, result, _old_state| {
+            move |_dbtx, result, _old_state| {
                 info!("await_buy_preimage done: {result:?}");
-                Box::pin(Self::transition_bought_preimage(
-                    global_context.clone(),
-                    dbtx,
-                    result,
-                    common.clone(),
-                    context.clone(),
-                ))
+                Box::pin(Self::transition_bought_preimage(result, common.clone()))
             },
         )]
     }
@@ -217,11 +232,8 @@ impl GatewayPayInvoice {
     }
 
     async fn transition_bought_preimage(
-        global_context: DynGlobalClientContext,
-        dbtx: &mut ClientSMDatabaseTransaction<'_, '_>,
         result: Result<(OutgoingContractAccount, Preimage), OutgoingPaymentError>,
         common: GatewayPayCommon,
-        context: GatewayClientContext,
     ) -> GatewayPayStateMachine {
         match result {
             Ok((contract, preimage)) => GatewayPayStateMachine {
@@ -328,9 +340,24 @@ impl GatewayPayClaimOutgoingContract {
     fn transitions(
         &self,
         global_context: DynGlobalClientContext,
+        context: GatewayClientContext,
         common: GatewayPayCommon,
     ) -> Vec<StateTransition<GatewayPayStateMachine>> {
-        vec![]
+        let contract = self.contract.clone();
+        let preimage = self.preimage.clone();
+        vec![StateTransition::new(
+            future::ready(()),
+            move |dbtx, _, _| {
+                Box::pin(Self::transition_claim_outgoing_contract(
+                    dbtx,
+                    global_context.clone(),
+                    context.clone(),
+                    common.clone(),
+                    contract.clone(),
+                    preimage.clone(),
+                ))
+            },
+        )]
     }
 
     async fn transition_claim_outgoing_contract(
@@ -390,7 +417,6 @@ impl GatewayPayCancelContract {
         context: GatewayClientContext,
         common: GatewayPayCommon,
     ) -> GatewayPayStateMachine {
-        info!("transition_canceled");
         let cancel_signature = context.secp.sign_schnorr(
             &contract.contract.cancellation_message().into(),
             &context.redeem_key,
@@ -404,27 +430,15 @@ impl GatewayPayCancelContract {
             state_machines: Arc::new(|_, _| vec![]),
         };
 
-        //GatewayPayStateMachine {
-        //    common,
-        //    state: GatewayPayStates::Failed
-        //}
-
-        info!("transition_canceled fund_output");
         match global_context.fund_output(dbtx, client_output).await {
-            Ok((txid, _)) => {
-                info!("transition_canceled transition to canceled");
-                GatewayPayStateMachine {
-                    common,
-                    state: GatewayPayStates::Canceled(Some(OutPoint { txid, out_idx: 0 })),
-                }
-            }
-            Err(_) => {
-                info!("transition_canceled transition to failed");
-                GatewayPayStateMachine {
-                    common,
-                    state: GatewayPayStates::Failed,
-                }
-            }
+            Ok((txid, _)) => GatewayPayStateMachine {
+                common,
+                state: GatewayPayStates::Canceled(Some(txid)),
+            },
+            Err(_) => GatewayPayStateMachine {
+                common,
+                state: GatewayPayStates::Failed,
+            },
         }
     }
 }

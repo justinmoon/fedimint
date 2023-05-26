@@ -20,7 +20,7 @@ use fedimint_core::core::{IntoDynInstance, ModuleInstanceId};
 use fedimint_core::db::{AutocommitError, Database};
 use fedimint_core::encoding::{Decodable, Encodable};
 use fedimint_core::module::{ExtendsCommonModuleGen, TransactionItemAmount};
-use fedimint_core::{apply, async_trait_maybe_send, Amount, OutPoint};
+use fedimint_core::{apply, async_trait_maybe_send, Amount, OutPoint, TransactionId};
 use fedimint_ln_client::api::LnFederationApi;
 use fedimint_ln_client::contracts::ContractId;
 use fedimint_ln_common::config::{GatewayFee, LightningClientConfig};
@@ -173,14 +173,14 @@ impl GatewayClientExt for Client {
                         yield GatewayExtPayStates::Fail;
                     }
                     Err(e) => {
-                        if let GatewayError::Canceled(cancel_outpoint) = e {
-                            //if let Some(outpoint) = cancel_outpoint {
-                            //    if self.await_primary_module_output(operation_id, outpoint).await.is_ok() {
-                            //        yield GatewayExtPayStates::Canceled;
-                            //        return;
-                            //    }
-                            //}
-                            fedimint_core::task::sleep(Duration::from_secs(120)).await;
+                        if let GatewayError::Canceled(cancel_tx) = e {
+                            if let Some(txid) = cancel_tx {
+                                if self.transaction_updates(operation_id).await.await_tx_accepted(txid).await.is_ok() {
+                                    yield GatewayExtPayStates::Canceled;
+                                }
+                            } else {
+                                yield GatewayExtPayStates::Canceled;
+                            }
                         }
 
                         yield GatewayExtPayStates::Fail;
@@ -331,7 +331,7 @@ impl Context for GatewayClientContext {}
 #[derive(Error, Debug, Serialize, Deserialize)]
 pub enum GatewayError {
     #[error("Gateway canceled the contract")]
-    Canceled(Option<OutPoint>),
+    Canceled(Option<TransactionId>),
     #[error("Unrecoverable error occurred in the gateway")]
     Failed,
 }
