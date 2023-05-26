@@ -1,7 +1,7 @@
 use assert_matches::assert_matches;
 use fedimint_client::module::gen::ClientModuleGenRegistry;
-use fedimint_core::sats;
 use fedimint_core::util::NextOrPending;
+use fedimint_core::{sats, Amount};
 use fedimint_dummy_client::{DummyClientExt, DummyClientGen};
 use fedimint_dummy_common::config::DummyGenParams;
 use fedimint_dummy_server::DummyGen;
@@ -12,7 +12,11 @@ use fedimint_mint_client::MintClientGen;
 use fedimint_mint_common::config::MintGenParams;
 use fedimint_mint_server::MintGen;
 use fedimint_testing::fixtures::Fixtures;
-use ln_gateway::ng::{GatewayClientExt, GatewayClientGen, GatewayExtPayStates};
+use fedimint_wallet_client::WalletClientGen;
+use ln_gateway::ng::receive::Htlc;
+use ln_gateway::ng::{
+    GatewayClientExt, GatewayClientGen, GatewayExtPayStates, GatewayExtReceiveStates,
+};
 
 fn fixtures() -> Fixtures {
     // TODO: Remove dependency on mint (legacy gw client)
@@ -24,7 +28,7 @@ fn fixtures() -> Fixtures {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_gateway_client() -> anyhow::Result<()> {
+async fn test_gateway_client_pay_valid_invoice() -> anyhow::Result<()> {
     let fixtures = fixtures();
     let fed = fixtures.new_fed().await;
     let user_client = fed.new_client().await;
@@ -66,7 +70,7 @@ async fn test_gateway_client() -> anyhow::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_gateway_client_cancel() -> anyhow::Result<()> {
+async fn test_gateway_client_pay_invalid_invoice() -> anyhow::Result<()> {
     let fixtures = fixtures();
     let fed = fixtures.new_fed().await;
     let user_client = fed.new_client().await;
@@ -105,7 +109,57 @@ async fn test_gateway_client_cancel() -> anyhow::Result<()> {
         .await?
         .into_stream();
     assert_eq!(gw_pay_sub.ok().await?, GatewayExtPayStates::Created);
+    tracing::info!("created");
     assert_eq!(gw_pay_sub.ok().await?, GatewayExtPayStates::Fail);
+    tracing::info!("fail");
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_gateway_client_intercept_valid_htlc() -> anyhow::Result<()> {
+    let fixtures = fixtures();
+    let fed = fixtures.new_fed().await;
+    let user_client = fed.new_client().await;
+
+    let mut registry = ClientModuleGenRegistry::new();
+    registry.attach(MintClientGen);
+    registry.attach(WalletClientGen);
+    registry.attach(GatewayClientGen {
+        lightning_client: fixtures.lightning().1,
+    });
+    registry.attach(DummyClientGen);
+    let gateway = fed.new_gateway_client(registry).await;
+    gateway.register_with_federation().await?;
+
+    // Print money for gateway client
+    let (print_op, outpoint) = gateway.print_money(sats(1000)).await?;
+    gateway
+        .await_primary_module_output(print_op, outpoint)
+        .await?;
+
+    // User client creates invoice in federation
+    let (_invoice_op, invoice) = user_client
+        .create_bolt11_invoice(sats(100), "description".into(), None)
+        .await?;
+
+    // Create fake HTLC and run gateway state machine
+    let htlc = Htlc {
+        payment_hash: *invoice.payment_hash(),
+        incoming_amount_msat: Amount::from_msats(invoice.amount_milli_satoshis().unwrap()),
+        outgoing_amount_msat: Amount::from_msats(invoice.amount_milli_satoshis().unwrap()),
+        incoming_expiry: u32::MAX,
+        short_channel_id: 1,
+        incoming_chan_id: 1,
+        htlc_id: 1,
+    };
+    let intercept_op = gateway.gateway_intercept_htlc(htlc).await?;
+    let mut intercept_sub = gateway
+        .gateway_subscribe_ln_receive(intercept_op)
+        .await?
+        .into_stream();
+    assert_eq!(intercept_sub.ok().await?, GatewayExtReceiveStates::Created);
+    assert_eq!(intercept_sub.ok().await?, GatewayExtReceiveStates::Success);
 
     Ok(())
 }

@@ -1,4 +1,5 @@
 pub mod pay;
+pub mod receive;
 
 use std::env;
 use std::sync::Arc;
@@ -35,6 +36,10 @@ use tracing::info;
 use url::Url;
 
 use self::pay::{GatewayPayCommon, GatewayPayInvoice, GatewayPayStateMachine, GatewayPayStates};
+use self::receive::{
+    AwaitingContractAcceptance, GatewayReceiveCommon, GatewayReceiveStateMachine,
+    GatewayReceiveStates, Htlc, HtlcIntercepted,
+};
 use crate::gatewaylnrpc::GetNodeInfoResponse;
 use crate::lnrpc_client::ILnRpcClient;
 
@@ -46,6 +51,15 @@ const GW_ANNOUNCEMENT_TTL: Duration = Duration::from_secs(600);
 pub enum GatewayExtPayStates {
     Created,
     Preimage,
+    Success,
+    Fail,
+}
+
+/// The high-level state of a reissue operation started with
+/// [`LightningClientExt::intercept_htlc`].
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub enum GatewayExtReceiveStates {
+    Created,
     Success,
     Fail,
 }
@@ -68,6 +82,15 @@ pub trait GatewayClientExt {
         &self,
         operation_id: OperationId,
     ) -> anyhow::Result<UpdateStreamOrOutcome<'_, GatewayExtPayStates>>;
+
+    /// Attempt fulfill HTLC by buying preimage from  federation
+    async fn gateway_intercept_htlc(&self, htlc: Htlc) -> anyhow::Result<OperationId>;
+
+    /// Subscribe to update to lightning receive
+    async fn gateway_subscribe_ln_receive(
+        &self,
+        operation_id: OperationId,
+    ) -> anyhow::Result<UpdateStreamOrOutcome<'_, GatewayExtReceiveStates>>;
 
     /// Register gateway with federation
     async fn register_with_federation(&self) -> anyhow::Result<()>;
@@ -149,6 +172,77 @@ impl GatewayClientExt for Client {
                     }
                     Err(_) => {
                         yield GatewayExtPayStates::Fail;
+                    }
+                }
+            }
+        }))
+    }
+
+    /// Pays a LN invoice with our available funds
+    async fn gateway_intercept_htlc(&self, htlc: Htlc) -> anyhow::Result<OperationId> {
+        let (_, instance) = self.get_first_module::<GatewayClientModule>(&KIND);
+
+        self.db()
+            .autocommit(
+                |dbtx| {
+                    let htlc_clone = htlc.clone();
+                    Box::pin(async move {
+                        let operation_id = OperationId(htlc.payment_hash.into_inner());
+
+                        let state_machines = vec![GatewayClientStateMachines::Receive(
+                            GatewayReceiveStateMachine {
+                                common: GatewayReceiveCommon { operation_id },
+                                state: GatewayReceiveStates::HtlcIntercepted(HtlcIntercepted {
+                                    htlc: htlc_clone,
+                                }),
+                            },
+                        )];
+
+                        let dyn_states = state_machines
+                            .into_iter()
+                            .map(|s| s.into_dyn(instance.id))
+                            .collect();
+
+                        self.add_state_machines(dbtx, dyn_states).await?;
+                        self.add_operation_log_entry(
+                            dbtx,
+                            operation_id,
+                            KIND.as_str(),
+                            GatewayMeta::Pay,
+                        )
+                        .await;
+
+                        Ok(operation_id)
+                    })
+                },
+                Some(100),
+            )
+            .await
+            .map_err(|e| match e {
+                AutocommitError::ClosureError { error, .. } => error,
+                AutocommitError::CommitFailed { last_error, .. } => {
+                    anyhow!("Commit to DB failed: {last_error}")
+                }
+            })
+    }
+
+    async fn gateway_subscribe_ln_receive(
+        &self,
+        operation_id: OperationId,
+    ) -> anyhow::Result<UpdateStreamOrOutcome<'_, GatewayExtReceiveStates>> {
+        let (gateway, _instance) = self.get_first_module::<GatewayClientModule>(&KIND);
+        let operation = ln_operation(self, operation_id).await?;
+
+        Ok(operation.outcome_or_updates(self.db(), operation_id, || {
+            stream! {
+                yield GatewayExtReceiveStates::Created;
+
+                match gateway.await_incoming_contract_acceptance(operation_id).await {
+                    Ok(outpoint) => {
+                        yield GatewayExtReceiveStates::Success;
+                    }
+                    Err(_) => {
+                        yield GatewayExtReceiveStates::Fail;
                     }
                 }
             }
@@ -312,59 +406,30 @@ impl GatewayClientModule {
         }
     }
 
-    // async fn subscribe_pay(
-    //     &self,
-    //     operation_id: OperationId,
-    // ) -> anyhow::Result<UpdateStreamOrOutcome<'_, GatewayPayStates>> {
-    //     let mut stream = self.notifier.subscribe(operation_id).await;
-    //     // loop {
-    //     //     match stream.next().await {
-    //     //         Some(LightningClientStateMachines::Pay(state)) => match
-    // state.state {     //
-    // LightningPayStates::Refunded(refund_txid) => {     //
-    // return Ok(refund_txid);     //             }
-    //     //             LightningPayStates::Failure(reason) => {
-    //     //                 return Err(LightningPayError::Failed(reason))
-    //     //             }
-    //     //             _ => {}
-    //     //         },
-    //     //         Some(_) => {}
-    //     //         None =>
-    //     //     }
-    //     // }
-    //     stream! {
-    //         while let Some(state) = stream.next().await {
-    //             yield state
-    //         }
-    //     }
-    // }
-
-    // async fn await_fetched(
-    //     &self,
-    //     operation_id: OperationId,
-    // ) -> Result<TransactionId, LightningPayError> {
-    //     let mut stream = self.notifier.subscribe(operation_id).await;
-    //     loop {
-    //         match stream.next().await {
-    //             Some(LightningClientStateMachines::Pay(state)) => match
-    // state.state {                 LightningPayStates::Refunded(refund_txid)
-    // => {                     return Ok(refund_txid);
-    //                 }
-    //                 LightningPayStates::Failure(reason) => {
-    //                     return Err(LightningPayError::Failed(reason))
-    //                 }
-    //                 _ => {}
-    //             },
-    //             Some(_) => {}
-    //             None => {}
-    //         }
-    //     }
-    // }
+    // FIXME: this is just returning once contract has been broadcast ... should
+    // return once it's accepted
+    async fn await_incoming_contract_acceptance(
+        &self,
+        operation_id: OperationId,
+    ) -> anyhow::Result<AwaitingContractAcceptance> {
+        let mut stream = self.notifier.subscribe(operation_id).await;
+        loop {
+            match stream.next().await {
+                Some(GatewayClientStateMachines::Receive(state)) => match state.state {
+                    GatewayReceiveStates::AwaitingContractAcceptance(data) => return Ok(data),
+                    // TODO: add Canceled
+                    _ => {}
+                },
+                _ => {}
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Decodable, Encodable)]
 pub enum GatewayClientStateMachines {
     Pay(GatewayPayStateMachine),
+    Receive(GatewayReceiveStateMachine),
 }
 
 impl IntoDynInstance for GatewayClientStateMachines {
@@ -391,12 +456,19 @@ impl State for GatewayClientStateMachines {
                     GatewayClientStateMachines::Pay
                 )
             }
+            GatewayClientStateMachines::Receive(receive_state) => {
+                sm_enum_variant_translation!(
+                    receive_state.transitions(context, global_context),
+                    GatewayClientStateMachines::Receive
+                )
+            }
         }
     }
 
     fn operation_id(&self) -> fedimint_client::sm::OperationId {
         match self {
             GatewayClientStateMachines::Pay(pay_state) => pay_state.operation_id(),
+            GatewayClientStateMachines::Receive(receive_state) => receive_state.operation_id(),
         }
     }
 }
