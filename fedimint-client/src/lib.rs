@@ -910,6 +910,7 @@ impl ClientInner {
         if let TransactionBuilderBalance::Underfunded(missing_amount) =
             self.transaction_builder_balance(&partial_transaction)
         {
+            info!("We are underfunded, need to add an input");
             let input = self
                 .primary_module
                 .create_sufficient_input(

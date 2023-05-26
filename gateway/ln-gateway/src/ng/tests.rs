@@ -110,8 +110,8 @@ async fn test_gateway_client_pay_invalid_invoice() -> anyhow::Result<()> {
         .into_stream();
     assert_eq!(gw_pay_sub.ok().await?, GatewayExtPayStates::Created);
     tracing::info!("created");
-    assert_eq!(gw_pay_sub.ok().await?, GatewayExtPayStates::Fail);
-    tracing::info!("fail");
+    assert_eq!(gw_pay_sub.ok().await?, GatewayExtPayStates::Canceled);
+    tracing::info!("canceled");
 
     Ok(())
 }

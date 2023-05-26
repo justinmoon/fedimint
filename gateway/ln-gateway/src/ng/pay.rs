@@ -10,6 +10,7 @@ use fedimint_ln_common::api::LnFederationApi;
 use fedimint_ln_common::contracts::outgoing::OutgoingContractAccount;
 use fedimint_ln_common::contracts::{ContractId, FundedContract, Preimage};
 use fedimint_ln_common::{LightningInput, LightningOutput};
+use futures::future;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::info;
@@ -23,7 +24,9 @@ pub enum GatewayPayStates {
     PayInvoice(GatewayPayInvoice),
     CancelContract(GatewayPayCancelContract),
     Preimage(OutPoint),
-    Canceled,
+    Canceled(Option<OutPoint>),
+    ClaimOutgoingContract(GatewayPayClaimOutgoingContract),
+    Failed,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Decodable, Encodable)]
@@ -53,9 +56,12 @@ impl State for GatewayPayStateMachine {
                 context.clone(),
                 self.common.clone(),
             ),
-            GatewayPayStates::CancelContract(gateway_pay_cancel) => {
-                gateway_pay_cancel.transitions(context.clone())
-            }
+            GatewayPayStates::CancelContract(gateway_pay_cancel) => gateway_pay_cancel.transitions(
+                global_context.clone(),
+                context.clone(),
+                self.common.clone(),
+            ),
+            // TODO: Add claim states here
             _ => {
                 vec![]
             }
@@ -218,30 +224,25 @@ impl GatewayPayInvoice {
         context: GatewayClientContext,
     ) -> GatewayPayStateMachine {
         match result {
-            Ok((contract, preimage)) => {
-                // TODO: Move this to a new state so that we can recover if we crash after we
-                // get the preimage
-                let claim_input = contract.claim(preimage);
-                let client_input = ClientInput::<LightningInput, GatewayClientStateMachines> {
-                    input: claim_input,
-                    state_machines: Arc::new(|_, _| vec![]),
-                    keys: vec![context.redeem_key],
-                };
-
-                let (txid, _) = global_context.claim_input(dbtx, client_input).await;
-
-                GatewayPayStateMachine {
-                    common,
-                    state: GatewayPayStates::Preimage(OutPoint { txid, out_idx: 0 }),
-                }
-            }
-            Err(OutgoingPaymentError::InvalidOutgoingContract { error, contract }) => {
+            Ok((contract, preimage)) => GatewayPayStateMachine {
+                common,
+                state: GatewayPayStates::ClaimOutgoingContract(GatewayPayClaimOutgoingContract {
+                    contract,
+                    preimage,
+                }),
+            },
+            Err(OutgoingPaymentError::InvalidOutgoingContract {
+                error: _error,
+                contract,
+            }) => {
+                // TODO: include the underlying error while canceling the contract
                 return GatewayPayStateMachine {
                     common,
                     state: GatewayPayStates::CancelContract(GatewayPayCancelContract { contract }),
                 };
             }
             Err(OutgoingPaymentError::LightningPayError { contract }) => {
+                info!("transition to CancelContract");
                 return GatewayPayStateMachine {
                     common,
                     state: GatewayPayStates::CancelContract(GatewayPayCancelContract { contract }),
@@ -250,7 +251,7 @@ impl GatewayPayInvoice {
             Err(_) => {
                 return GatewayPayStateMachine {
                     common,
-                    state: GatewayPayStates::Canceled,
+                    state: GatewayPayStates::Canceled(None),
                 };
             }
         }
@@ -318,6 +319,44 @@ impl PaymentParameters {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Decodable, Encodable)]
+pub struct GatewayPayClaimOutgoingContract {
+    contract: OutgoingContractAccount,
+    preimage: Preimage,
+}
+
+impl GatewayPayClaimOutgoingContract {
+    fn transitions(
+        &self,
+        global_context: DynGlobalClientContext,
+        common: GatewayPayCommon,
+    ) -> Vec<StateTransition<GatewayPayStateMachine>> {
+        vec![]
+    }
+
+    async fn transition_claim_outgoing_contract(
+        dbtx: &mut ClientSMDatabaseTransaction<'_, '_>,
+        global_context: DynGlobalClientContext,
+        context: GatewayClientContext,
+        common: GatewayPayCommon,
+        contract: OutgoingContractAccount,
+        preimage: Preimage,
+    ) -> GatewayPayStateMachine {
+        let claim_input = contract.claim(preimage);
+        let client_input = ClientInput::<LightningInput, GatewayClientStateMachines> {
+            input: claim_input,
+            state_machines: Arc::new(|_, _| vec![]),
+            keys: vec![context.redeem_key],
+        };
+
+        let (txid, _) = global_context.claim_input(dbtx, client_input).await;
+        GatewayPayStateMachine {
+            common,
+            state: GatewayPayStates::Preimage(OutPoint { txid, out_idx: 0 }),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Decodable, Encodable)]
 pub struct GatewayPayCancelContract {
     contract: OutgoingContractAccount,
 }
@@ -325,18 +364,33 @@ pub struct GatewayPayCancelContract {
 impl GatewayPayCancelContract {
     fn transitions(
         &self,
+        global_context: DynGlobalClientContext,
         context: GatewayClientContext,
+        common: GatewayPayCommon,
     ) -> Vec<StateTransition<GatewayPayStateMachine>> {
+        let contract = self.contract.clone();
         vec![StateTransition::new(
-            Self::await_cancel_transaction(self.contract.clone(), context.clone()),
-            |_dbtx, _, _| Box::pin(Self::transition_canceled()),
+            future::ready(()),
+            move |dbtx, _, _| {
+                Box::pin(Self::transition_canceled(
+                    dbtx,
+                    contract.clone(),
+                    global_context.clone(),
+                    context.clone(),
+                    common.clone(),
+                ))
+            },
         )]
     }
 
-    async fn await_cancel_transaction(
+    async fn transition_canceled(
+        dbtx: &mut ClientSMDatabaseTransaction<'_, '_>,
         contract: OutgoingContractAccount,
+        global_context: DynGlobalClientContext,
         context: GatewayClientContext,
-    ) {
+        common: GatewayPayCommon,
+    ) -> GatewayPayStateMachine {
+        info!("transition_canceled");
         let cancel_signature = context.secp.sign_schnorr(
             &contract.contract.cancellation_message().into(),
             &context.redeem_key,
@@ -350,12 +404,27 @@ impl GatewayPayCancelContract {
             state_machines: Arc::new(|_, _| vec![]),
         };
 
-        //global_context.fund_output()
+        //GatewayPayStateMachine {
+        //    common,
+        //    state: GatewayPayStates::Failed
+        //}
 
-        //let (txid, _) = global_context.claim_input(dbtx, client_input).await;
-    }
-
-    async fn transition_canceled() -> GatewayPayStateMachine {
-        todo!()
+        info!("transition_canceled fund_output");
+        match global_context.fund_output(dbtx, client_output).await {
+            Ok((txid, _)) => {
+                info!("transition_canceled transition to canceled");
+                GatewayPayStateMachine {
+                    common,
+                    state: GatewayPayStates::Canceled(Some(OutPoint { txid, out_idx: 0 })),
+                }
+            }
+            Err(_) => {
+                info!("transition_canceled transition to failed");
+                GatewayPayStateMachine {
+                    common,
+                    state: GatewayPayStates::Failed,
+                }
+            }
+        }
     }
 }

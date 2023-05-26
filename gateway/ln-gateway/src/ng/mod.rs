@@ -32,6 +32,7 @@ use futures::StreamExt;
 use lightning::routing::gossip::RoutingFees;
 use secp256k1::{KeyPair, PublicKey, Secp256k1};
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 use tracing::info;
 use url::Url;
 
@@ -52,6 +53,7 @@ pub enum GatewayExtPayStates {
     Created,
     Preimage,
     Success,
+    Canceled,
     Fail,
 }
 
@@ -170,7 +172,17 @@ impl GatewayClientExt for Client {
 
                         yield GatewayExtPayStates::Fail;
                     }
-                    Err(_) => {
+                    Err(e) => {
+                        if let GatewayError::Canceled(cancel_outpoint) = e {
+                            //if let Some(outpoint) = cancel_outpoint {
+                            //    if self.await_primary_module_output(operation_id, outpoint).await.is_ok() {
+                            //        yield GatewayExtPayStates::Canceled;
+                            //        return;
+                            //    }
+                            //}
+                            fedimint_core::task::sleep(Duration::from_secs(120)).await;
+                        }
+
                         yield GatewayExtPayStates::Fail;
                     }
                 }
@@ -316,6 +328,14 @@ pub struct GatewayClientContext {
 
 impl Context for GatewayClientContext {}
 
+#[derive(Error, Debug, Serialize, Deserialize)]
+pub enum GatewayError {
+    #[error("Gateway canceled the contract")]
+    Canceled(Option<OutPoint>),
+    #[error("Unrecoverable error occurred in the gateway")]
+    Failed,
+}
+
 #[derive(Debug)]
 pub struct GatewayClientModule {
     cfg: LightningClientConfig,
@@ -392,13 +412,19 @@ impl GatewayClientModule {
         }
     }
 
-    async fn await_paid_invoice(&self, operation_id: OperationId) -> anyhow::Result<OutPoint> {
+    async fn await_paid_invoice(
+        &self,
+        operation_id: OperationId,
+    ) -> Result<OutPoint, GatewayError> {
         let mut stream = self.notifier.subscribe(operation_id).await;
         loop {
             match stream.next().await {
                 Some(GatewayClientStateMachines::Pay(state)) => match state.state {
                     GatewayPayStates::Preimage(outpoint) => return Ok(outpoint),
-                    // TODO: add Canceled
+                    GatewayPayStates::Canceled(cancel_outpoint) => {
+                        return Err(GatewayError::Canceled(cancel_outpoint))
+                    }
+                    GatewayPayStates::Failed => return Err(GatewayError::Failed),
                     _ => {}
                 },
                 _ => {}
