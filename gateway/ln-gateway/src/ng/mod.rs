@@ -10,13 +10,13 @@ use async_stream::stream;
 use bitcoin_hashes::Hash;
 use fedimint_client::derivable_secret::{ChildId, DerivableSecret};
 use fedimint_client::module::gen::ClientModuleGen;
-use fedimint_client::module::ClientModule;
+use fedimint_client::module::{ClientModule, IClientModule};
 use fedimint_client::sm::util::MapStateTransitions;
 use fedimint_client::sm::{Context, DynState, ModuleNotifier, OperationId, State};
 use fedimint_client::{
     sm_enum_variant_translation, Client, DynGlobalClientContext, UpdateStreamOrOutcome,
 };
-use fedimint_core::core::{IntoDynInstance, ModuleInstanceId};
+use fedimint_core::core::{Decoder, IntoDynInstance, ModuleInstanceId};
 use fedimint_core::db::{AutocommitError, Database};
 use fedimint_core::encoding::{Decodable, Encodable};
 use fedimint_core::module::{ExtendsCommonModuleGen, TransactionItemAmount};
@@ -38,8 +38,8 @@ use url::Url;
 
 use self::pay::{GatewayPayCommon, GatewayPayInvoice, GatewayPayStateMachine, GatewayPayStates};
 use self::receive::{
-    AwaitingContractAcceptance, GatewayReceiveCommon, GatewayReceiveStateMachine,
-    GatewayReceiveStates, Htlc, HtlcIntercepted,
+    AwaitingContractAcceptance, AwaitingPreimageDecryption, GatewayReceiveCommon,
+    GatewayReceiveStateMachine, GatewayReceiveStates, Htlc, HtlcIntercepted,
 };
 use crate::gatewaylnrpc::GetNodeInfoResponse;
 use crate::lnrpc_client::ILnRpcClient;
@@ -258,6 +258,17 @@ impl GatewayClientExt for Client {
                         yield GatewayExtReceiveStates::Funding;
                     }
                     Err(_) => {
+                        // FIXME: should this return?
+                        yield GatewayExtReceiveStates::Fail;
+                    }
+                    // TODO: wait for contract to be accepted
+                }
+
+                match gateway.await_incoming_contract_funded(operation_id).await {
+                    Ok(outpoint) => {
+                        yield GatewayExtReceiveStates::Funded;
+                    }
+                    Err(_) => {
                         yield GatewayExtReceiveStates::Fail;
                     }
                     // TODO: wait for contract to be accepted
@@ -329,6 +340,7 @@ pub struct GatewayClientContext {
     redeem_key: bitcoin::KeyPair,
     timelock_delta: u64,
     secp: secp256k1_zkp::Secp256k1<secp256k1_zkp::All>,
+    pub ln_decoder: Decoder,
 }
 
 impl Context for GatewayClientContext {}
@@ -368,6 +380,7 @@ impl ClientModule for GatewayClientModule {
             redeem_key: self.redeem_key,
             timelock_delta: self.timelock_delta,
             secp: secp256k1_zkp::Secp256k1::new(),
+            ln_decoder: self.decoder(),
         }
     }
 
@@ -447,7 +460,24 @@ impl GatewayClientModule {
         loop {
             match stream.next().await {
                 Some(GatewayClientStateMachines::Receive(state)) => match state.state {
-                    GatewayReceiveStates::AwaitingContractAcceptance(data) => return Ok(data),
+                    GatewayReceiveStates::Funding(data) => return Ok(data),
+                    // TODO: add Canceled
+                    _ => {}
+                },
+                _ => {}
+            }
+        }
+    }
+
+    async fn await_incoming_contract_funded(
+        &self,
+        operation_id: OperationId,
+    ) -> anyhow::Result<AwaitingPreimageDecryption> {
+        let mut stream = self.notifier.subscribe(operation_id).await;
+        loop {
+            match stream.next().await {
+                Some(GatewayClientStateMachines::Receive(state)) => match state.state {
+                    GatewayReceiveStates::Funded(data) => return Ok(data),
                     // TODO: add Canceled
                     _ => {}
                 },

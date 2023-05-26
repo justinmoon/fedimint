@@ -5,13 +5,15 @@ use bitcoin_hashes::{sha256, Hash};
 use fedimint_client::sm::{ClientSMDatabaseTransaction, OperationId, State, StateTransition};
 use fedimint_client::transaction::ClientOutput;
 use fedimint_client::DynGlobalClientContext;
+use fedimint_core::api::GlobalFederationApi;
+use fedimint_core::core::Decoder;
 use fedimint_core::encoding::{Decodable, Encodable};
 use fedimint_core::task::timeout;
 use fedimint_core::{Amount, OutPoint, TransactionId};
 use fedimint_ln_client::api::LnFederationApi;
 use fedimint_ln_common::contracts::incoming::{IncomingContract, IncomingContractOffer};
 use fedimint_ln_common::contracts::{Contract, ContractId, DecryptedPreimage, Preimage};
-use fedimint_ln_common::{ContractOutput, LightningInput, LightningOutput};
+use fedimint_ln_common::{ContractOutput, LightningInput, LightningOutput, LightningOutputOutcome};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::info;
@@ -29,12 +31,15 @@ pub enum ReceiveError {
     Timeout,
     #[error("Fetch contract error")]
     FetchContractError,
+    #[error("Incoming contract error")]
+    IncomingContractError,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Decodable, Encodable)]
 pub enum GatewayReceiveStates {
     HtlcIntercepted(HtlcIntercepted),
-    AwaitingContractAcceptance(AwaitingContractAcceptance),
+    Funding(AwaitingContractAcceptance),
+    Funded(AwaitingPreimageDecryption),
     // AwaitingPreimageDecryption(AwaitingPreimageDecryption),
     // SettledHtlc,
     Failed,
@@ -65,9 +70,9 @@ impl State for GatewayReceiveStateMachine {
             GatewayReceiveStates::HtlcIntercepted(state) => {
                 state.transitions(global_context.clone(), context.clone(), self.common.clone())
             }
-            // GatewayReceiveStates::AwaitingContractAcceptance(state) => {
-            //     state.transitions(context.clone())
-            // }
+            GatewayReceiveStates::Funding(state) => {
+                state.transitions(&global_context, &context, &self.common)
+            }
             _ => {
                 vec![]
             }
@@ -193,9 +198,10 @@ impl HtlcIntercepted {
                     .unwrap();
                 GatewayReceiveStateMachine {
                     common,
-                    state: GatewayReceiveStates::AwaitingContractAcceptance(
-                        AwaitingContractAcceptance { txid, change },
-                    ),
+                    state: GatewayReceiveStates::Funding(AwaitingContractAcceptance {
+                        txid,
+                        change,
+                    }),
                 }
             }
             Err(e) => GatewayReceiveStateMachine {
@@ -208,6 +214,93 @@ impl HtlcIntercepted {
 
 #[derive(Debug, Clone, Eq, PartialEq, Decodable, Encodable)]
 pub struct AwaitingContractAcceptance {
+    txid: TransactionId,
+    change: Option<OutPoint>,
+}
+
+impl AwaitingContractAcceptance {
+    fn transitions(
+        &self,
+        global_context: &DynGlobalClientContext,
+        context: &GatewayClientContext,
+        common: &GatewayReceiveCommon,
+    ) -> Vec<StateTransition<GatewayReceiveStateMachine>> {
+        // let contract_id = self.contract_id;
+        let funded_common = common.clone();
+        let success_context = global_context.clone();
+        let txid = self.txid.clone();
+        let change = self.change.clone();
+        // let gateway = self.gateway.clone();
+        vec![StateTransition::new(
+            Self::await_incoming_contract_funded(
+                context.ln_decoder.clone(),
+                success_context,
+                txid.clone(),
+            ),
+            move |_dbtx, result, old_state| {
+                Box::pin(Self::transition_incoming_contract_funded(
+                    result,
+                    old_state,
+                    funded_common.clone(),
+                    txid,
+                    change,
+                ))
+            },
+        )]
+    }
+
+    async fn await_incoming_contract_funded(
+        module_decoder: Decoder,
+        global_context: DynGlobalClientContext,
+        txid: TransactionId,
+    ) -> Result<(), ReceiveError> {
+        let out_point = OutPoint { txid, out_idx: 0 };
+        global_context
+            .api()
+            .await_output_outcome::<LightningOutputOutcome>(
+                out_point,
+                Duration::from_millis(i32::MAX as u64), // FIXME: is this a good timeout?
+                &module_decoder,
+            )
+            .await
+            .map_err(|_| ReceiveError::IncomingContractError)?;
+
+        Ok(())
+    }
+
+    async fn transition_incoming_contract_funded(
+        result: Result<(), ReceiveError>,
+        old_state: GatewayReceiveStateMachine,
+        common: GatewayReceiveCommon,
+        txid: TransactionId,
+        change: Option<OutPoint>,
+    ) -> GatewayReceiveStateMachine {
+        assert!(matches!(old_state.state, GatewayReceiveStates::Funding(_)));
+
+        match result {
+            Ok(_) => {
+                // Success case: funding transaction is accepted
+                GatewayReceiveStateMachine {
+                    common: old_state.common,
+                    state: GatewayReceiveStates::Funded(AwaitingPreimageDecryption {
+                        txid,
+                        change,
+                    }),
+                }
+            }
+            Err(_) => {
+                // Failure case: funding transaction is rejected
+                GatewayReceiveStateMachine {
+                    common: old_state.common,
+                    state: GatewayReceiveStates::Failed, // FIXME: where to send this?
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Decodable, Encodable)]
+pub struct AwaitingPreimageDecryption {
     txid: TransactionId,
     change: Option<OutPoint>,
 }
