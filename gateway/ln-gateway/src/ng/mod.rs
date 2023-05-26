@@ -39,7 +39,7 @@ use url::Url;
 use self::pay::{GatewayPayCommon, GatewayPayInvoice, GatewayPayStateMachine, GatewayPayStates};
 use self::receive::{
     AwaitingContractAcceptance, AwaitingPreimageDecryption, GatewayReceiveCommon,
-    GatewayReceiveStateMachine, GatewayReceiveStates, Htlc, HtlcIntercepted,
+    GatewayReceiveStateMachine, GatewayReceiveStates, Htlc, HtlcIntercepted, PreimageState,
 };
 use crate::gatewaylnrpc::GetNodeInfoResponse;
 use crate::lnrpc_client::ILnRpcClient;
@@ -264,9 +264,9 @@ impl GatewayClientExt for Client {
                     // TODO: wait for contract to be accepted
                 }
 
-                match gateway.await_incoming_contract_funded(operation_id).await {
+                match gateway.await_preimage_decryption(operation_id).await {
                     Ok(outpoint) => {
-                        yield GatewayExtReceiveStates::Funded;
+                        yield GatewayExtReceiveStates::Preimage;
                     }
                     Err(_) => {
                         yield GatewayExtReceiveStates::Fail;
@@ -469,15 +469,15 @@ impl GatewayClientModule {
         }
     }
 
-    async fn await_incoming_contract_funded(
+    async fn await_preimage_decryption(
         &self,
         operation_id: OperationId,
-    ) -> anyhow::Result<AwaitingPreimageDecryption> {
+    ) -> anyhow::Result<PreimageState> {
         let mut stream = self.notifier.subscribe(operation_id).await;
         loop {
             match stream.next().await {
                 Some(GatewayClientStateMachines::Receive(state)) => match state.state {
-                    GatewayReceiveStates::Funded(data) => return Ok(data),
+                    GatewayReceiveStates::Preimage(data) => return Ok(data),
                     // TODO: add Canceled
                     _ => {}
                 },

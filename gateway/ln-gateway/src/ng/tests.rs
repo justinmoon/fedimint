@@ -160,7 +160,7 @@ async fn test_gateway_client_intercept_valid_htlc() -> anyhow::Result<()> {
         .into_stream();
     assert_eq!(intercept_sub.ok().await?, GatewayExtReceiveStates::Created);
     assert_eq!(intercept_sub.ok().await?, GatewayExtReceiveStates::Funding);
-    assert_eq!(intercept_sub.ok().await?, GatewayExtReceiveStates::Funded);
+    assert_eq!(intercept_sub.ok().await?, GatewayExtReceiveStates::Preimage);
 
     Ok(())
 }

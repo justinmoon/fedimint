@@ -1,3 +1,4 @@
+use std::ops::Add;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -6,9 +7,9 @@ use fedimint_client::sm::{ClientSMDatabaseTransaction, OperationId, State, State
 use fedimint_client::transaction::ClientOutput;
 use fedimint_client::DynGlobalClientContext;
 use fedimint_core::api::GlobalFederationApi;
-use fedimint_core::core::Decoder;
+use fedimint_core::core::{Decoder, OutputOutcome};
 use fedimint_core::encoding::{Decodable, Encodable};
-use fedimint_core::task::timeout;
+use fedimint_core::task::{sleep, timeout};
 use fedimint_core::{Amount, OutPoint, TransactionId};
 use fedimint_ln_client::api::LnFederationApi;
 use fedimint_ln_common::contracts::incoming::{IncomingContract, IncomingContractOffer};
@@ -16,6 +17,7 @@ use fedimint_ln_common::contracts::{Contract, ContractId, DecryptedPreimage, Pre
 use fedimint_ln_common::{ContractOutput, LightningInput, LightningOutput, LightningOutputOutcome};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use tokio::time::Instant;
 use tracing::info;
 
 use super::{GatewayClientContext, GatewayClientStateMachines};
@@ -33,6 +35,10 @@ pub enum ReceiveError {
     FetchContractError,
     #[error("Incoming contract error")]
     IncomingContractError,
+    #[error("Invalid preimage")]
+    InvalidPreimage,
+    #[error("Output outcome error")]
+    OutputOutcomeError,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Decodable, Encodable)]
@@ -40,6 +46,7 @@ pub enum GatewayReceiveStates {
     HtlcIntercepted(HtlcIntercepted),
     Funding(AwaitingContractAcceptance),
     Funded(AwaitingPreimageDecryption),
+    Preimage(PreimageState),
     // AwaitingPreimageDecryption(AwaitingPreimageDecryption),
     // SettledHtlc,
     Failed,
@@ -129,6 +136,7 @@ impl HtlcIntercepted {
         context: GatewayClientContext,
         common: GatewayReceiveCommon,
     ) -> Vec<StateTransition<GatewayReceiveStateMachine>> {
+        let htlc = self.htlc.clone();
         vec![StateTransition::new(
             Self::intercept_htlc(global_context.clone(), context.clone(), self.htlc.clone()),
             move |dbtx, result, _old_state| {
@@ -139,6 +147,7 @@ impl HtlcIntercepted {
                     result,
                     common.clone(),
                     context.clone(),
+                    htlc.clone(),
                 ))
             },
         )]
@@ -171,6 +180,7 @@ impl HtlcIntercepted {
         result: Result<IncomingContractOffer, ReceiveError>,
         common: GatewayReceiveCommon,
         context: GatewayClientContext,
+        htlc: Htlc,
     ) -> GatewayReceiveStateMachine {
         match result {
             Ok(offer) => {
@@ -201,6 +211,7 @@ impl HtlcIntercepted {
                     state: GatewayReceiveStates::Funding(AwaitingContractAcceptance {
                         txid,
                         change,
+                        htlc,
                     }),
                 }
             }
@@ -216,6 +227,7 @@ impl HtlcIntercepted {
 pub struct AwaitingContractAcceptance {
     txid: TransactionId,
     change: Option<OutPoint>,
+    htlc: Htlc,
 }
 
 impl AwaitingContractAcceptance {
@@ -232,11 +244,7 @@ impl AwaitingContractAcceptance {
         let change = self.change.clone();
         // let gateway = self.gateway.clone();
         vec![StateTransition::new(
-            Self::await_incoming_contract_funded(
-                context.ln_decoder.clone(),
-                success_context,
-                txid.clone(),
-            ),
+            Self::await_preimage_decryption(success_context, self.htlc.clone()),
             move |_dbtx, result, old_state| {
                 Box::pin(Self::transition_incoming_contract_funded(
                     result,
@@ -249,27 +257,36 @@ impl AwaitingContractAcceptance {
         )]
     }
 
-    async fn await_incoming_contract_funded(
-        module_decoder: Decoder,
+    async fn await_preimage_decryption(
         global_context: DynGlobalClientContext,
-        txid: TransactionId,
-    ) -> Result<(), ReceiveError> {
-        let out_point = OutPoint { txid, out_idx: 0 };
-        global_context
-            .api()
-            .await_output_outcome::<LightningOutputOutcome>(
-                out_point,
-                Duration::from_millis(i32::MAX as u64), // FIXME: is this a good timeout?
-                &module_decoder,
-            )
-            .await
-            .map_err(|_| ReceiveError::IncomingContractError)?;
+        htlc: Htlc,
+    ) -> Result<Preimage, ReceiveError> {
+        // TODO: Get rid of polling
+        loop {
+            let contract_id = htlc.payment_hash.into();
+            let contract = global_context
+                .module_api()
+                .get_incoming_contract(contract_id)
+                .await;
 
-        Ok(())
+            if let Ok(contract) = contract {
+                match contract.contract.decrypted_preimage {
+                    DecryptedPreimage::Pending => {}
+                    DecryptedPreimage::Some(preimage) => {
+                        return Ok(preimage);
+                    }
+                    DecryptedPreimage::Invalid => {
+                        return Err(ReceiveError::InvalidPreimage);
+                    }
+                }
+            }
+
+            sleep(Duration::from_secs(1)).await;
+        }
     }
 
     async fn transition_incoming_contract_funded(
-        result: Result<(), ReceiveError>,
+        result: Result<Preimage, ReceiveError>,
         old_state: GatewayReceiveStateMachine,
         common: GatewayReceiveCommon,
         txid: TransactionId,
@@ -278,14 +295,11 @@ impl AwaitingContractAcceptance {
         assert!(matches!(old_state.state, GatewayReceiveStates::Funding(_)));
 
         match result {
-            Ok(_) => {
+            Ok(preimage) => {
                 // Success case: funding transaction is accepted
                 GatewayReceiveStateMachine {
                     common: old_state.common,
-                    state: GatewayReceiveStates::Funded(AwaitingPreimageDecryption {
-                        txid,
-                        change,
-                    }),
+                    state: GatewayReceiveStates::Preimage(PreimageState { preimage }),
                 }
             }
             Err(_) => {
@@ -303,4 +317,9 @@ impl AwaitingContractAcceptance {
 pub struct AwaitingPreimageDecryption {
     txid: TransactionId,
     change: Option<OutPoint>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Decodable, Encodable)]
+pub struct PreimageState {
+    preimage: Preimage,
 }
