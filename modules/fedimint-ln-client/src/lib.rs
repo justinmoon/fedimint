@@ -377,7 +377,7 @@ impl LightningClientExt for Client {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-enum LightningMeta {
+pub enum LightningMeta {
     Pay {
         out_point: OutPoint,
         invoice: Invoice,
@@ -424,7 +424,7 @@ impl Context for LightningClientContext {}
 
 #[derive(Debug)]
 pub struct LightningClientModule {
-    cfg: LightningClientConfig,
+    pub cfg: LightningClientConfig,
     notifier: ModuleNotifier<DynGlobalClientContext, LightningClientStateMachines>,
     secp: Secp256k1<All>,
 }

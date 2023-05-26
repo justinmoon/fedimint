@@ -1,12 +1,26 @@
+use std::sync::Arc;
+
 use assert_matches::assert_matches;
+use bitcoin::Network;
+use bitcoin_hashes::{sha256, Hash};
 use fedimint_client::module::gen::ClientModuleGenRegistry;
+use fedimint_client::module::ClientModule;
+use fedimint_client::sm::OperationId;
+use fedimint_client::transaction::{ClientOutput, TransactionBuilder};
+use fedimint_core::core::IntoDynInstance;
 use fedimint_core::util::NextOrPending;
-use fedimint_core::{sats, Amount};
+use fedimint_core::{sats, Amount, OutPoint, TransactionId};
 use fedimint_dummy_client::{DummyClientExt, DummyClientGen};
 use fedimint_dummy_common::config::DummyGenParams;
 use fedimint_dummy_server::DummyGen;
-use fedimint_ln_client::{LightningClientExt, LightningClientGen, LnPayState};
+use fedimint_ln_client::{
+    LightningClientExt, LightningClientGen, LightningClientModule, LightningClientStateMachines,
+    LightningMeta, LnPayState,
+};
 use fedimint_ln_common::config::LightningGenParams;
+use fedimint_ln_common::contracts::incoming::IncomingContractOffer;
+use fedimint_ln_common::contracts::{EncryptedPreimage, Preimage};
+use fedimint_ln_common::{LightningCommonGen, LightningOutput};
 use fedimint_ln_server::LightningGen;
 use fedimint_mint_client::MintClientGen;
 use fedimint_mint_common::config::MintGenParams;
@@ -17,6 +31,20 @@ use ln_gateway::ng::receive::Htlc;
 use ln_gateway::ng::{
     GatewayClientExt, GatewayClientGen, GatewayExtPayStates, GatewayExtReceiveStates,
 };
+use rand::rngs::OsRng;
+use secp256k1::KeyPair;
+
+pub fn rng() -> OsRng {
+    OsRng
+}
+
+pub fn sha256(data: &[u8]) -> sha256::Hash {
+    bitcoin::hashes::sha256::Hash::hash(data)
+}
+
+pub fn secp() -> secp256k1::Secp256k1<secp256k1::All> {
+    bitcoin::secp256k1::Secp256k1::new()
+}
 
 fn fixtures() -> Fixtures {
     // TODO: Remove dependency on mint (legacy gw client)
@@ -161,6 +189,116 @@ async fn test_gateway_client_intercept_valid_htlc() -> anyhow::Result<()> {
     assert_eq!(intercept_sub.ok().await?, GatewayExtReceiveStates::Created);
     assert_eq!(intercept_sub.ok().await?, GatewayExtReceiveStates::Funding);
     assert_eq!(intercept_sub.ok().await?, GatewayExtReceiveStates::Settled);
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_gateway_client_intercept_htlc_invalid_offer() -> anyhow::Result<()> {
+    let fixtures = fixtures();
+    let fed = fixtures.new_fed().await;
+    let user_client = fed.new_client().await;
+
+    let mut registry = ClientModuleGenRegistry::new();
+    registry.attach(MintClientGen);
+    registry.attach(WalletClientGen);
+    registry.attach(GatewayClientGen {
+        lightning_client: fixtures.lightning().1,
+    });
+    registry.attach(DummyClientGen);
+    let gateway = fed.new_gateway_client(registry).await;
+    gateway.register_with_federation().await?;
+
+    // Print money for gateway client
+    let (print_op, outpoint) = gateway.print_money(sats(1000)).await?;
+    gateway
+        .await_primary_module_output(print_op, outpoint)
+        .await?;
+
+    // Create test invoice
+    let invoice = fixtures
+        .lightning()
+        .0
+        .invalid_invoice(sats(250), None)
+        .await?;
+
+    //
+    // Create offer with bad preimage
+    //
+
+    let (lightning, instance) =
+        user_client.get_first_module::<LightningClientModule>(&fedimint_ln_client::KIND);
+    let active_gateway = user_client.select_active_gateway().await?;
+
+    let amount = sats(100);
+    // let kp = KeyPair::new(&secp(), &mut rng());
+    let preimage = sha256(&[0]);
+    let ln_output = LightningOutput::Offer(IncomingContractOffer {
+        amount,
+        hash: *invoice.payment_hash(),
+        encrypted_preimage: EncryptedPreimage::new(
+            Preimage(preimage.into_inner()),
+            &lightning.cfg.threshold_pub_key,
+        ),
+        expiry_time: None,
+    });
+    let states: Vec<LightningClientStateMachines> = vec![];
+    let state_machines = Arc::new(move |_txid: TransactionId, _input_idx: u64| states.clone());
+    let client_output = ClientOutput {
+        output: ln_output,
+        state_machines,
+    };
+    let tx = TransactionBuilder::new().with_output(client_output.into_dyn(instance.id));
+    let operation_meta_gen = |txid, _| LightningMeta::Receive {
+        out_point: OutPoint { txid, out_idx: 0 },
+        invoice: invoice.clone(),
+    };
+    let operation_id = OperationId(invoice.payment_hash().into_inner());
+    let txid = user_client
+        .finalize_and_submit_transaction(
+            operation_id,
+            fedimint_ln_client::KIND.as_str(),
+            operation_meta_gen,
+            tx,
+        )
+        .await?;
+    tracing::info!("waiting");
+    user_client
+        .transaction_updates(operation_id)
+        .await
+        .await_tx_accepted(txid)
+        .await
+        .unwrap();
+    tracing::info!("done waiting");
+
+    // Create fake HTLC and run gateway state machine
+    let htlc = Htlc {
+        payment_hash: *invoice.payment_hash(),
+        incoming_amount_msat: Amount::from_msats(invoice.amount_milli_satoshis().unwrap()),
+        outgoing_amount_msat: Amount::from_msats(invoice.amount_milli_satoshis().unwrap()),
+        incoming_expiry: u32::MAX,
+        short_channel_id: 1,
+        incoming_chan_id: 1,
+        htlc_id: 1,
+    };
+
+    tracing::info!("intercepting");
+    let intercept_op = gateway.gateway_intercept_htlc(htlc).await?;
+    tracing::info!("subscribing");
+    let mut intercept_sub = gateway
+        .gateway_subscribe_ln_receive(intercept_op)
+        .await?
+        .into_stream();
+    tracing::info!("asserting");
+    assert_eq!(intercept_sub.ok().await?, GatewayExtReceiveStates::Created);
+    tracing::info!("created");
+    assert_matches!(intercept_sub.ok().await?, GatewayExtReceiveStates::Funding);
+    tracing::info!("funding");
+    assert_matches!(
+        intercept_sub.ok().await?,
+        GatewayExtReceiveStates::RefundSuccess
+    );
+    tracing::info!("refundsuccess");
 
     Ok(())
 }

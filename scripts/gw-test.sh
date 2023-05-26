@@ -4,4 +4,4 @@
 export FM_GATEWAY_API_ADDR=http://127.0.0.1:8175 
 export FM_GATEWAY_FEES=0,0
 export RUST_BACKTRACE=1
-cargo test -p ln-gateway test_gateway_client_intercept_valid_htlc
+cargo test -p ln-gateway test_gateway_client_intercept_htlc_invalid_offer

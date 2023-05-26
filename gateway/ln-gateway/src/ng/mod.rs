@@ -67,6 +67,8 @@ pub enum GatewayExtReceiveStates {
     Funded,
     Preimage,
     Settled,
+    RefundSuccess,
+    RefundError,
     Fail,
 }
 
@@ -260,19 +262,34 @@ impl GatewayClientExt for Client {
                     Err(_) => {
                         // FIXME: should this return?
                         yield GatewayExtReceiveStates::Fail;
+                        return
                     }
                     // TODO: wait for contract to be accepted
                 }
+                let mut stream = gateway.notifier.subscribe(operation_id).await;
+                let state = loop {
+                    match stream.next().await {
+                        Some(GatewayClientStateMachines::Receive(state)) => match state.state {
+                            GatewayReceiveStates::Settled => break GatewayExtReceiveStates::Settled,
+                            GatewayReceiveStates::RefundSuccess(_) => break GatewayExtReceiveStates::RefundSuccess,
+                            GatewayReceiveStates::RefundError(_) => break GatewayExtReceiveStates::RefundError,
+                            // TODO: add Canceled
+                            _ => {}
+                        },
+                        _ => {}
+                    }
+                };
+                yield state;
 
-                match gateway.await_incoming_settled(operation_id).await {
-                    Ok(outpoint) => {
-                        yield GatewayExtReceiveStates::Settled;
-                    }
-                    Err(_) => {
-                        yield GatewayExtReceiveStates::Fail;
-                    }
-                    // TODO: wait for contract to be accepted
-                }
+                // match gateway.await_incoming_settled(operation_id).await {
+                //     Ok(outpoint) => {
+                //         yield GatewayExtReceiveStates::Settled;
+                //     }
+                //     Err(_) => {
+                //         yield GatewayExtReceiveStates::Fail;
+                //     }
+                //     // TODO: wait for contract to be accepted
+                // }
             }
         }))
     }

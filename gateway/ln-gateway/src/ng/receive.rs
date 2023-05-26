@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use bitcoin_hashes::{sha256, Hash};
 use fedimint_client::sm::{ClientSMDatabaseTransaction, OperationId, State, StateTransition};
-use fedimint_client::transaction::ClientOutput;
+use fedimint_client::transaction::{ClientInput, ClientOutput, TxSubmissionError};
 use fedimint_client::DynGlobalClientContext;
 use fedimint_core::api::GlobalFederationApi;
 use fedimint_core::core::{Decoder, OutputOutcome};
@@ -12,7 +12,9 @@ use fedimint_core::encoding::{Decodable, Encodable};
 use fedimint_core::task::{sleep, timeout};
 use fedimint_core::{Amount, OutPoint, TransactionId};
 use fedimint_ln_client::api::LnFederationApi;
-use fedimint_ln_common::contracts::incoming::{IncomingContract, IncomingContractOffer};
+use fedimint_ln_common::contracts::incoming::{
+    IncomingContract, IncomingContractAccount, IncomingContractOffer,
+};
 use fedimint_ln_common::contracts::{Contract, ContractId, DecryptedPreimage, Preimage};
 use fedimint_ln_common::{ContractOutput, LightningInput, LightningOutput, LightningOutputOutcome};
 use serde::{Deserialize, Serialize};
@@ -44,18 +46,20 @@ pub enum ReceiveError {
     OutputOutcomeError,
     #[error("Route htlc error")]
     RouteHtlcError,
+    #[error("Incoming contract not found")]
+    IncomingContractNotFound,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Decodable, Encodable)]
 pub enum GatewayReceiveStates {
     HtlcIntercepted(HtlcIntercepted),
     Funding(AwaitingContractAcceptance),
-    Funded(AwaitingPreimageDecryption),
     Preimage(PreimageState),
     Settled,
-    Refund,
-    // AwaitingPreimageDecryption(AwaitingPreimageDecryption),
-    // SettledHtlc,
+    Refund(RefundState),
+    // TODO: include txid
+    RefundSuccess(RefundSuccessState),
+    RefundError(RefundErrorState),
     Failed,
 }
 
@@ -87,6 +91,7 @@ impl State for GatewayReceiveStateMachine {
             GatewayReceiveStates::Funding(state) => {
                 state.transitions(&global_context, &context, &self.common)
             }
+            GatewayReceiveStates::Refund(state) => state.transitions(&self.common, &global_context),
             _ => {
                 vec![]
             }
@@ -253,14 +258,25 @@ impl AwaitingContractAcceptance {
         let gateway_context = context.clone();
         // let gateway = self.gateway.clone();
         vec![StateTransition::new(
-            Self::await_preimage_decryption(success_context, gateway_context, htlc),
-            move |_dbtx, result, old_state| {
+            Self::await_preimage_decryption(
+                success_context.clone(),
+                gateway_context.clone(),
+                htlc.clone(),
+            ),
+            move |dbtx, result, old_state| {
+                let htlc = htlc.clone();
+                let gateway_context = gateway_context.clone();
+                let success_context = success_context.clone();
                 Box::pin(Self::transition_incoming_contract_funded(
                     result,
                     old_state,
                     funded_common.clone(),
                     txid,
                     change,
+                    htlc,
+                    dbtx,
+                    success_context,
+                    gateway_context,
                 ))
             },
         )]
@@ -273,6 +289,7 @@ impl AwaitingContractAcceptance {
         htlc: Htlc,
     ) -> Result<(), ReceiveError> {
         // TODO: Get rid of polling
+        // TODO: distinguish between
         let preimage = loop {
             let contract_id = htlc.payment_hash.into();
             let contract = global_context
@@ -315,12 +332,46 @@ impl AwaitingContractAcceptance {
         Ok(())
     }
 
+    async fn refund_incoming_contract(
+        dbtx: &mut ClientSMDatabaseTransaction<'_, '_>,
+        global_context: DynGlobalClientContext,
+        context: GatewayClientContext,
+        htlc: Htlc,
+        old_state: GatewayReceiveStateMachine,
+    ) -> GatewayReceiveStateMachine {
+        info!("calling refund");
+        let contract_id = htlc.payment_hash.into();
+        let contract: IncomingContractAccount = global_context
+            .module_api()
+            .get_incoming_contract(contract_id)
+            .await
+            .unwrap(); // FIXME
+
+        let claim_input = contract.claim();
+        let client_input = ClientInput::<LightningInput, GatewayClientStateMachines> {
+            input: claim_input,
+            state_machines: Arc::new(|_, _| vec![]),
+            keys: vec![context.redeem_key],
+        };
+
+        let (refund_txid, _) = global_context.claim_input(dbtx, client_input).await;
+
+        GatewayReceiveStateMachine {
+            common: old_state.common,
+            state: GatewayReceiveStates::Refund(RefundState { htlc, refund_txid }),
+        }
+    }
+
     async fn transition_incoming_contract_funded(
         result: Result<(), ReceiveError>,
         old_state: GatewayReceiveStateMachine,
         common: GatewayReceiveCommon,
         txid: TransactionId,
         change: Option<OutPoint>,
+        htlc: Htlc,
+        dbtx: &mut ClientSMDatabaseTransaction<'_, '_>,
+        global_context: DynGlobalClientContext,
+        context: GatewayClientContext,
     ) -> GatewayReceiveStateMachine {
         assert!(matches!(old_state.state, GatewayReceiveStates::Funding(_)));
 
@@ -332,7 +383,9 @@ impl AwaitingContractAcceptance {
                     state: GatewayReceiveStates::Settled,
                 }
             }
-            // TODO: cover failure case where lightning node couldn't settle the htlc
+            Err(ReceiveError::InvalidPreimage) => {
+                Self::refund_incoming_contract(dbtx, global_context, context, htlc, old_state).await
+            }
             Err(_) => {
                 // Failure case: funding transaction is rejected
                 GatewayReceiveStateMachine {
@@ -353,4 +406,73 @@ pub struct AwaitingPreimageDecryption {
 #[derive(Debug, Clone, Eq, PartialEq, Decodable, Encodable)]
 pub struct PreimageState {
     preimage: Preimage,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Decodable, Encodable)]
+pub struct RefundState {
+    htlc: Htlc,
+    refund_txid: TransactionId,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Decodable, Encodable)]
+pub struct RefundSuccessState {
+    refund_txid: TransactionId,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Decodable, Encodable)]
+pub struct RefundErrorState {
+    error: String,
+}
+
+impl RefundState {
+    fn transitions(
+        &self,
+        common: &GatewayReceiveCommon,
+        global_context: &DynGlobalClientContext,
+    ) -> Vec<StateTransition<GatewayReceiveStateMachine>> {
+        vec![StateTransition::new(
+            Self::await_refund_success(common.clone(), global_context.clone(), self.refund_txid),
+            |_dbtx, result, old_state| Box::pin(Self::transition_refund_success(result, old_state)),
+        )]
+    }
+
+    async fn await_refund_success(
+        common: GatewayReceiveCommon,
+        global_context: DynGlobalClientContext,
+        refund_txid: TransactionId,
+    ) -> Result<(), TxSubmissionError> {
+        global_context
+            .await_tx_accepted(common.operation_id, refund_txid)
+            .await
+    }
+
+    async fn transition_refund_success(
+        result: Result<(), TxSubmissionError>,
+        old_state: GatewayReceiveStateMachine,
+    ) -> GatewayReceiveStateMachine {
+        let refund_txid = match old_state.state {
+            GatewayReceiveStates::Refund(refund) => refund.refund_txid,
+            _ => panic!("Invalid state transition"),
+        };
+
+        match result {
+            Ok(_) => {
+                // Refund successful
+                GatewayReceiveStateMachine {
+                    common: old_state.common,
+                    state: GatewayReceiveStates::RefundSuccess(RefundSuccessState { refund_txid }),
+                }
+            }
+            Err(_) => {
+                // Refund failed
+                // TODO: include e-cash notes for recovery? Although, they are in the log …
+                GatewayReceiveStateMachine {
+                    common: old_state.common,
+                    state: GatewayReceiveStates::RefundError(RefundErrorState {
+                        error: format!("Refund transaction {refund_txid} was rejected"),
+                    }),
+                }
+            }
+        }
+    }
 }
