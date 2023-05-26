@@ -63,6 +63,10 @@ pub enum GatewayExtPayStates {
 pub enum GatewayExtReceiveStates {
     Created,
     Success,
+    Funding,
+    Funded,
+    Preimage,
+    Settled,
     Fail,
 }
 
@@ -249,13 +253,14 @@ impl GatewayClientExt for Client {
             stream! {
                 yield GatewayExtReceiveStates::Created;
 
-                match gateway.await_incoming_contract_acceptance(operation_id).await {
+                match gateway.await_incoming_contract_funding(operation_id).await {
                     Ok(outpoint) => {
-                        yield GatewayExtReceiveStates::Success;
+                        yield GatewayExtReceiveStates::Funding;
                     }
                     Err(_) => {
                         yield GatewayExtReceiveStates::Fail;
                     }
+                    // TODO: wait for contract to be accepted
                 }
             }
         }))
@@ -434,7 +439,7 @@ impl GatewayClientModule {
 
     // FIXME: this is just returning once contract has been broadcast ... should
     // return once it's accepted
-    async fn await_incoming_contract_acceptance(
+    async fn await_incoming_contract_funding(
         &self,
         operation_id: OperationId,
     ) -> anyhow::Result<AwaitingContractAcceptance> {
