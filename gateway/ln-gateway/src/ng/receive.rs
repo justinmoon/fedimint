@@ -21,7 +21,10 @@ use tokio::time::Instant;
 use tracing::info;
 
 use super::{GatewayClientContext, GatewayClientStateMachines};
-use crate::gatewaylnrpc::SubscribeInterceptHtlcsResponse;
+use crate::gatewaylnrpc::complete_htlcs_request::{Action, Settle};
+use crate::gatewaylnrpc::{
+    route_htlc_request, CompleteHtlcsRequest, RouteHtlcRequest, SubscribeInterceptHtlcsResponse,
+};
 
 #[derive(Error, Debug, Serialize, Deserialize, Encodable, Decodable, Clone, Eq, PartialEq)]
 pub enum ReceiveError {
@@ -39,6 +42,8 @@ pub enum ReceiveError {
     InvalidPreimage,
     #[error("Output outcome error")]
     OutputOutcomeError,
+    #[error("Route htlc error")]
+    RouteHtlcError,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Decodable, Encodable)]
@@ -47,6 +52,8 @@ pub enum GatewayReceiveStates {
     Funding(AwaitingContractAcceptance),
     Funded(AwaitingPreimageDecryption),
     Preimage(PreimageState),
+    Settled,
+    Refund,
     // AwaitingPreimageDecryption(AwaitingPreimageDecryption),
     // SettledHtlc,
     Failed,
@@ -242,9 +249,11 @@ impl AwaitingContractAcceptance {
         let success_context = global_context.clone();
         let txid = self.txid.clone();
         let change = self.change.clone();
+        let htlc = self.htlc.clone();
+        let gateway_context = context.clone();
         // let gateway = self.gateway.clone();
         vec![StateTransition::new(
-            Self::await_preimage_decryption(success_context, self.htlc.clone()),
+            Self::await_preimage_decryption(success_context, gateway_context, htlc),
             move |_dbtx, result, old_state| {
                 Box::pin(Self::transition_incoming_contract_funded(
                     result,
@@ -257,12 +266,14 @@ impl AwaitingContractAcceptance {
         )]
     }
 
+    /// await preimage decryption,
     async fn await_preimage_decryption(
         global_context: DynGlobalClientContext,
+        context: GatewayClientContext,
         htlc: Htlc,
-    ) -> Result<Preimage, ReceiveError> {
+    ) -> Result<(), ReceiveError> {
         // TODO: Get rid of polling
-        loop {
+        let preimage = loop {
             let contract_id = htlc.payment_hash.into();
             let contract = global_context
                 .module_api()
@@ -272,9 +283,7 @@ impl AwaitingContractAcceptance {
             if let Ok(contract) = contract {
                 match contract.contract.decrypted_preimage {
                     DecryptedPreimage::Pending => {}
-                    DecryptedPreimage::Some(preimage) => {
-                        return Ok(preimage);
-                    }
+                    DecryptedPreimage::Some(preimage) => break preimage,
                     DecryptedPreimage::Invalid => {
                         return Err(ReceiveError::InvalidPreimage);
                     }
@@ -282,11 +291,32 @@ impl AwaitingContractAcceptance {
             }
 
             sleep(Duration::from_secs(1)).await;
-        }
+        };
+
+        // TODO: should we check the preimage validity ourselves here?
+        let response = RouteHtlcRequest {
+            action: Some(route_htlc_request::Action::CompleteRequest(
+                CompleteHtlcsRequest {
+                    action: Some(Action::Settle(Settle {
+                        preimage: preimage.0.to_vec(),
+                    })),
+                    incoming_chan_id: htlc.incoming_chan_id,
+                    htlc_id: htlc.htlc_id,
+                },
+            )),
+        };
+
+        context
+            .lnrpc
+            .route_htlc(response)
+            .await
+            .map_err(|e| ReceiveError::RouteHtlcError)?;
+
+        Ok(())
     }
 
     async fn transition_incoming_contract_funded(
-        result: Result<Preimage, ReceiveError>,
+        result: Result<(), ReceiveError>,
         old_state: GatewayReceiveStateMachine,
         common: GatewayReceiveCommon,
         txid: TransactionId,
@@ -295,13 +325,14 @@ impl AwaitingContractAcceptance {
         assert!(matches!(old_state.state, GatewayReceiveStates::Funding(_)));
 
         match result {
-            Ok(preimage) => {
+            Ok(()) => {
                 // Success case: funding transaction is accepted
                 GatewayReceiveStateMachine {
                     common: old_state.common,
-                    state: GatewayReceiveStates::Preimage(PreimageState { preimage }),
+                    state: GatewayReceiveStates::Settled,
                 }
             }
+            // TODO: cover failure case where lightning node couldn't settle the htlc
             Err(_) => {
                 // Failure case: funding transaction is rejected
                 GatewayReceiveStateMachine {

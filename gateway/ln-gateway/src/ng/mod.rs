@@ -264,9 +264,9 @@ impl GatewayClientExt for Client {
                     // TODO: wait for contract to be accepted
                 }
 
-                match gateway.await_preimage_decryption(operation_id).await {
+                match gateway.await_incoming_settled(operation_id).await {
                     Ok(outpoint) => {
-                        yield GatewayExtReceiveStates::Preimage;
+                        yield GatewayExtReceiveStates::Settled;
                     }
                     Err(_) => {
                         yield GatewayExtReceiveStates::Fail;
@@ -478,6 +478,20 @@ impl GatewayClientModule {
             match stream.next().await {
                 Some(GatewayClientStateMachines::Receive(state)) => match state.state {
                     GatewayReceiveStates::Preimage(data) => return Ok(data),
+                    // TODO: add Canceled
+                    _ => {}
+                },
+                _ => {}
+            }
+        }
+    }
+
+    async fn await_incoming_settled(&self, operation_id: OperationId) -> anyhow::Result<()> {
+        let mut stream = self.notifier.subscribe(operation_id).await;
+        loop {
+            match stream.next().await {
+                Some(GatewayClientStateMachines::Receive(state)) => match state.state {
+                    GatewayReceiveStates::Settled => return Ok(()),
                     // TODO: add Canceled
                     _ => {}
                 },

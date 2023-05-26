@@ -168,6 +168,10 @@ impl ILnRpcClient for FakeLightningTest {
 
         Ok(Box::pin(stream::iter(vec![])))
     }
+
+    async fn route_htlc(&self, event: RouteHtlcRequest) -> Result<(), GatewayError> {
+        return Ok(());
+    }
 }
 
 /// A proxy for the underlying LnRpc which can be used to add behavior to it

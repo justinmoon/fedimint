@@ -35,6 +35,11 @@ pub trait ILnRpcClient: Debug + Send + Sync {
         &mut self,
         events: ReceiverStream<RouteHtlcRequest>,
     ) -> Result<RouteHtlcStream<'a>>;
+
+    async fn route_htlc(&self, event: RouteHtlcRequest) -> Result<()> {
+        tracing::info!("ILnRpcClient.route_htlc is not implemented");
+        unimplemented!()
+    }
 }
 
 /// An `ILnRpcClient` that wraps around `GatewayLightningClient` for
