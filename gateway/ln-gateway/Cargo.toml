@@ -82,6 +82,7 @@ fedimint-ln-common = { path = "../../modules/fedimint-ln-common" }
 fedimint-testing = { path = "../../fedimint-testing" }
 fedimint-mint-common = { path = "../../modules/fedimint-mint-common" }
 fedimint-mint-server = { path = "../../modules/fedimint-mint-server" }
+fedimint-wallet-server = { path = "../../modules/fedimint-wallet-server" }
 portpicker = "0.1.1"
 threshold_crypto = { git = "https://github.com/fedimint/threshold_crypto" }
 assert_matches = "1.5.0"

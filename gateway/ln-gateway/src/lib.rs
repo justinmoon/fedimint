@@ -41,11 +41,13 @@ use fedimint_core::config::{load_from_file, ClientConfig, FederationId};
 use fedimint_core::db::mem_impl::MemDatabase;
 use fedimint_core::module::registry::ModuleDecoderRegistry;
 use fedimint_core::task::{self, RwLock, TaskGroup, TaskHandle};
+use fedimint_core::time::now;
 use fedimint_core::{Amount, TransactionId};
 use fedimint_dummy_client::DummyClientGen;
 use fedimint_ln_client::contracts::Preimage;
 use fedimint_mint_client::MintClientGen;
-use fedimint_wallet_client::WalletClientGen;
+use fedimint_wallet_client::{WalletClientExt, WalletClientGen};
+use futures::StreamExt;
 use gatewaylnrpc::GetNodeInfoResponse;
 use lightning::routing::gossip::RoutingFees;
 use lnrpc_client::ILnRpcClient;
@@ -470,11 +472,23 @@ impl Gateway {
     }
 
     async fn handle_address_msg(&self, payload: DepositAddressPayload) -> Result<Address> {
-        todo!();
-        // self.select_actor(payload.federation_id)
-        //     .await?
-        //     .get_deposit_address()
-        //     .await
+        let client = self.select_client(payload.federation_id).await?;
+        let (operation_id, address) = client
+            .get_deposit_address(now() + Duration::from_secs(600))
+            .await?;
+        let mut task_group = self.task_group.clone();
+        task_group
+            .spawn("deposit task", move |_handle| async move {
+                let mut updates = client
+                    .subscribe_deposit_updates(operation_id)
+                    .await
+                    .unwrap();
+                while let Some(update) = updates.next().await {
+                    info!("Deposit update: {update:?}");
+                }
+            })
+            .await;
+        Ok(address)
     }
 
     async fn handle_deposit_msg(&self, payload: DepositPayload) -> Result<TransactionId> {

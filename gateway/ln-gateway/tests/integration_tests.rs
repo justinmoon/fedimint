@@ -4,11 +4,14 @@
 //! and business logic.
 mod fixtures;
 
+use std::time::Duration;
+
 use fedimint_core::sats;
+use fedimint_core::task::sleep;
 use fedimint_ln_client::LightningClientExt;
 use fedimint_testing::federation::FederationTest;
 use ln_gateway::rpc::rpc_client::GatewayRpcClient;
-use ln_gateway::rpc::{BalancePayload, ConnectFedPayload};
+use ln_gateway::rpc::{BalancePayload, ConnectFedPayload, DepositAddressPayload};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn gatewayd_supports_connecting_multiple_federations() {
@@ -81,9 +84,33 @@ async fn gatewayd_shows_balance_for_any_connected_federation() -> anyhow::Result
 
 #[tokio::test(flavor = "multi_thread")]
 async fn gatewayd_allows_deposit_to_any_connected_federation() -> anyhow::Result<()> {
-    // todo: implement test case
+    let (_, rpc, fed1, _, bitcoin) = fixtures::fixtures(None).await;
+    let federation_id = fed1.connection_code().id;
+    connect_federations(&rpc, &[&fed1]).await.unwrap();
 
-    Ok(())
+    let address = rpc
+        .get_deposit_address(DepositAddressPayload { federation_id })
+        .await?;
+    let amount_sent = bitcoin::Amount::from_sat(100_000);
+    bitcoin.send_and_mine_block(&address, amount_sent).await;
+    bitcoin.mine_blocks(11).await;
+
+    // Loop for 60 seconds checking to see if the balance updated as expect,
+    // and fail the test after 60 seconds without balance update
+    let mut count = 0;
+    loop {
+        if rpc
+            .get_balance(BalancePayload { federation_id })
+            .await
+            .unwrap()
+            == sats(100_000)
+        {
+            return Ok(());
+        }
+        count += 1;
+        assert!(count < 60, "deposit didn't complete in time");
+        sleep(Duration::from_secs(1)).await;
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]

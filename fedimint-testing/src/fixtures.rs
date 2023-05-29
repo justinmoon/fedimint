@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::{env, fs};
 
+use fedimint_bitcoind::create_bitcoind;
 use fedimint_client::module::gen::{ClientModuleGenRegistry, DynClientModuleGen, IClientModuleGen};
 use fedimint_core::bitcoinrpc::BitcoinRpcConfig;
 use fedimint_core::config::{
@@ -11,11 +12,12 @@ use fedimint_core::config::{
 };
 use fedimint_core::core::ModuleInstanceId;
 use fedimint_core::module::{DynServerModuleGen, IServerModuleGen};
-use fedimint_core::task::{MaybeSend, MaybeSync};
+use fedimint_core::task::{MaybeSend, MaybeSync, TaskGroup};
 use ln_gateway::lnrpc_client::ILnRpcClient;
 use tempfile::TempDir;
 
 use crate::btc::mock::FakeBitcoinFactory;
+use crate::btc::real::RealBitcoinTest;
 use crate::btc::BitcoinTest;
 use crate::federation::FederationTest;
 use crate::gateway::GatewayTest;
@@ -49,12 +51,24 @@ impl Fixtures {
         server: impl IServerModuleGen + MaybeSend + MaybeSync + 'static,
         params: impl ModuleGenParams,
     ) -> Self {
+        let task_group = TaskGroup::new();
         let real_testing = env::var("FM_TEST_USE_REAL_DAEMONS") == Ok("1".to_string());
         let num_peers = match real_testing {
             true => 2,
             false => 1,
         };
-        let FakeBitcoinFactory { bitcoin, config } = FakeBitcoinFactory::register_new();
+        let (bitcoin, config): (Arc<dyn BitcoinTest>, BitcoinRpcConfig) = match real_testing {
+            true => {
+                let rpc_config = BitcoinRpcConfig::from_env_vars().unwrap();
+                let bitcoin_rpc = create_bitcoind(&rpc_config, task_group.make_handle()).unwrap();
+                let bitcoin = RealBitcoinTest::new(&rpc_config.url, bitcoin_rpc.clone());
+                (Arc::new(bitcoin), rpc_config)
+            }
+            false => {
+                let FakeBitcoinFactory { bitcoin, config } = FakeBitcoinFactory::register_new();
+                (Arc::new(bitcoin), config)
+            }
+        };
 
         let lightning = Arc::new(FakeLightningTest::new());
         Self {
@@ -65,7 +79,7 @@ impl Fixtures {
             params: Default::default(),
             primary_client: id,
             bitcoin_rpc: config,
-            bitcoin: Arc::new(bitcoin),
+            bitcoin: bitcoin,
             lightning: lightning.clone(),
             lightning_client: lightning.clone(),
         }
