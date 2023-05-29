@@ -302,6 +302,10 @@ impl GatewayClientExt for Client {
 #[derive(Debug, Clone)]
 pub struct GatewayClientGen {
     pub lightning_client: Arc<dyn ILnRpcClient>,
+    pub timelock_delta: u64,
+    pub api: Url,
+    pub mint_channel_id: u64,
+    pub fees: RoutingFees,
 }
 
 impl ExtendsCommonModuleGen for GatewayClientGen {
@@ -323,13 +327,6 @@ impl ClientModuleGen for GatewayClientGen {
         let GetNodeInfoResponse { pub_key, alias: _ } = self.lightning_client.info().await?;
         let node_pub_key =
             PublicKey::from_slice(&pub_key).map_err(|e| anyhow!("Invalid node pubkey {}", e))?;
-        info!("pubkey: {node_pub_key:?}");
-        let api: Url = env::var("FM_GATEWAY_API_ADDR")
-            .context("FM_GATEWAY_API_ADDR not found")?
-            .parse()?;
-        let fees: GatewayFee = env::var("FM_GATEWAY_FEES")
-            .context("FM_GATEWAY_FEES not found")?
-            .parse()?;
         Ok(GatewayClientModule {
             cfg,
             notifier,
@@ -338,10 +335,10 @@ impl ClientModuleGen for GatewayClientGen {
                 .to_secp_key(&Secp256k1::new()),
             node_pub_key,
             lightning_client: self.lightning_client.clone(),
-            timelock_delta: 10, // FIXME: don't hardcode
-            api,
-            mint_channel_id: 1, // FIXME: don't hardcode
-            fees: fees.0,
+            timelock_delta: self.timelock_delta,
+            api: self.api.clone(),
+            mint_channel_id: self.mint_channel_id,
+            fees: self.fees,
         })
     }
 }

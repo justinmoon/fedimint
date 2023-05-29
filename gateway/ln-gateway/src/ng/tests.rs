@@ -1,3 +1,4 @@
+use std::str::FromStr;
 use std::sync::Arc;
 
 use assert_matches::assert_matches;
@@ -5,6 +6,7 @@ use bitcoin_hashes::{sha256, Hash};
 use fedimint_client::module::gen::ClientModuleGenRegistry;
 use fedimint_client::sm::OperationId;
 use fedimint_client::transaction::{ClientOutput, TransactionBuilder};
+use fedimint_client::Client;
 use fedimint_core::core::IntoDynInstance;
 use fedimint_core::util::NextOrPending;
 use fedimint_core::{sats, Amount, OutPoint, TransactionId};
@@ -23,13 +25,16 @@ use fedimint_ln_server::LightningGen;
 use fedimint_mint_client::MintClientGen;
 use fedimint_mint_common::config::MintGenParams;
 use fedimint_mint_server::MintGen;
+use fedimint_testing::federation::FederationTest;
 use fedimint_testing::fixtures::Fixtures;
 use fedimint_wallet_client::WalletClientGen;
+use lightning::routing::gossip::RoutingFees;
 use ln_gateway::ng::receive::Htlc;
 use ln_gateway::ng::{
     GatewayClientExt, GatewayClientGen, GatewayExtPayStates, GatewayExtReceiveStates,
 };
 use rand::rngs::OsRng;
+use url::Url;
 
 pub fn rng() -> OsRng {
     OsRng
@@ -52,19 +57,32 @@ fn fixtures() -> Fixtures {
         .with_module(0, LightningClientGen, LightningGen, ln_params)
 }
 
+async fn new_gateway_client(fed: &FederationTest, fixtures: &Fixtures) -> anyhow::Result<Client> {
+    let mut registry = ClientModuleGenRegistry::new();
+    registry.attach(MintClientGen);
+    registry.attach(WalletClientGen);
+    registry.attach(GatewayClientGen {
+        lightning_client: fixtures.lightning().1,
+        fees: RoutingFees {
+            base_msat: 0,
+            proportional_millionths: 0,
+        },
+        timelock_delta: 10,
+        api: Url::from_str("http://127.0.0.1:8175").unwrap(),
+        mint_channel_id: 1,
+    });
+    registry.attach(DummyClientGen);
+    let gateway = fed.new_gateway_client(registry).await;
+    gateway.register_with_federation().await?;
+    Ok(gateway)
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn test_gateway_client_pay_valid_invoice() -> anyhow::Result<()> {
     let fixtures = fixtures();
     let fed = fixtures.new_fed().await;
     let user_client = fed.new_client().await;
-
-    let mut registry = ClientModuleGenRegistry::new();
-    registry.attach(MintClientGen);
-    registry.attach(GatewayClientGen {
-        lightning_client: fixtures.lightning().1,
-    });
-    let gateway = fed.new_gateway_client(registry).await;
-    gateway.register_with_federation().await?;
+    let gateway = new_gateway_client(&fed, &fixtures).await?;
 
     // Print money for client2
     let (print_op, outpoint) = user_client.print_money(sats(1000)).await?;
@@ -99,14 +117,7 @@ async fn test_gateway_client_pay_invalid_invoice() -> anyhow::Result<()> {
     let fixtures = fixtures();
     let fed = fixtures.new_fed().await;
     let user_client = fed.new_client().await;
-
-    let mut registry = ClientModuleGenRegistry::new();
-    registry.attach(MintClientGen);
-    registry.attach(GatewayClientGen {
-        lightning_client: fixtures.lightning().1,
-    });
-    let gateway = fed.new_gateway_client(registry).await;
-    gateway.register_with_federation().await?;
+    let gateway = new_gateway_client(&fed, &fixtures).await?;
 
     // Print money for client2
     let (print_op, outpoint) = user_client.print_money(sats(1000)).await?;
@@ -146,16 +157,7 @@ async fn test_gateway_client_intercept_valid_htlc() -> anyhow::Result<()> {
     let fixtures = fixtures();
     let fed = fixtures.new_fed().await;
     let user_client = fed.new_client().await;
-
-    let mut registry = ClientModuleGenRegistry::new();
-    registry.attach(MintClientGen);
-    registry.attach(WalletClientGen);
-    registry.attach(GatewayClientGen {
-        lightning_client: fixtures.lightning().1,
-    });
-    registry.attach(DummyClientGen);
-    let gateway = fed.new_gateway_client(registry).await;
-    gateway.register_with_federation().await?;
+    let gateway = new_gateway_client(&fed, &fixtures).await?;
 
     // Print money for gateway client
     let initial_gateway_balance = sats(1000);
@@ -206,16 +208,7 @@ async fn test_gateway_client_intercept_valid_htlc() -> anyhow::Result<()> {
 async fn test_gateway_client_intercept_offer_does_not_exist() -> anyhow::Result<()> {
     let fixtures = fixtures();
     let fed = fixtures.new_fed().await;
-
-    let mut registry = ClientModuleGenRegistry::new();
-    registry.attach(MintClientGen);
-    registry.attach(WalletClientGen);
-    registry.attach(GatewayClientGen {
-        lightning_client: fixtures.lightning().1,
-    });
-    registry.attach(DummyClientGen);
-    let gateway = fed.new_gateway_client(registry).await;
-    gateway.register_with_federation().await?;
+    let gateway = new_gateway_client(&fed, &fixtures).await?;
 
     // Create HTLC that doesn't correspond to an offer in the federation
     let htlc = Htlc {
@@ -253,16 +246,7 @@ async fn test_gateway_client_intercept_htlc_no_funds() -> anyhow::Result<()> {
     let fixtures = fixtures();
     let fed = fixtures.new_fed().await;
     let user_client = fed.new_client().await;
-
-    let mut registry = ClientModuleGenRegistry::new();
-    registry.attach(MintClientGen);
-    registry.attach(WalletClientGen);
-    registry.attach(GatewayClientGen {
-        lightning_client: fixtures.lightning().1,
-    });
-    registry.attach(DummyClientGen);
-    let gateway = fed.new_gateway_client(registry).await;
-    gateway.register_with_federation().await?;
+    let gateway = new_gateway_client(&fed, &fixtures).await?;
 
     // User client creates invoice in federation
     let (_invoice_op, invoice) = user_client
@@ -303,16 +287,7 @@ async fn test_gateway_client_intercept_htlc_invalid_offer() -> anyhow::Result<()
     let fixtures = fixtures();
     let fed = fixtures.new_fed().await;
     let user_client = fed.new_client().await;
-
-    let mut registry = ClientModuleGenRegistry::new();
-    registry.attach(MintClientGen);
-    registry.attach(WalletClientGen);
-    registry.attach(GatewayClientGen {
-        lightning_client: fixtures.lightning().1,
-    });
-    registry.attach(DummyClientGen);
-    let gateway = fed.new_gateway_client(registry).await;
-    gateway.register_with_federation().await?;
+    let gateway = new_gateway_client(&fed, &fixtures).await?;
 
     // Print money for gateway client
     let initial_gateway_balance = sats(1000);

@@ -110,19 +110,11 @@ impl Fixtures {
 
     /// Starts a new gateway
     pub async fn new_gateway(&self, password: Option<String>) -> GatewayTest {
-        // TODO: Make construction easier
-        let server_gens = ServerModuleGenRegistry::from(self.servers.clone());
-        let module_kinds = self.params.iter_modules().map(|(id, kind, _)| (id, kind));
-        let decoders = server_gens.decoders(module_kinds).unwrap();
-
         let password = password.unwrap_or_else(|| rand::random::<u64>().to_string());
-
         GatewayTest::new(
             BASE_PORT.fetch_add(1, Ordering::Relaxed),
             password,
             FakeLightningTest::new(),
-            decoders,
-            ClientModuleGenRegistry::from(self.clients.clone()),
         )
         .await
     }

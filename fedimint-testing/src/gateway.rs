@@ -52,25 +52,17 @@ impl GatewayTest {
         base_port: u16,
         password: String,
         lightning: impl ILnRpcClient + 'static,
-        decoders: ModuleDecoderRegistry,
-        module_gens: ClientModuleGenRegistry,
     ) -> Self {
         let listen: SocketAddr = format!("127.0.0.1:{base_port}").parse().unwrap();
         let address: Url = format!("http://{listen}").parse().unwrap();
         let mut task = TaskGroup::new();
         let (path, _config_dir) = test_dir("gateway-cfg");
 
-        // Create federation client builder for the gateway
-        let client_builder: DynGatewayClientBuilder =
-            StandardGatewayClientBuilder::new(path, MemDbFactory.into(), address.clone()).into();
-
         let gateway = Gateway::new_with_lightning_connection(
-            Arc::new(RwLock::new(lightning)),
-            client_builder.clone(),
-            decoders.clone(),
-            module_gens.clone(),
+            Arc::new(lightning),
             task.make_subgroup().await,
             DEFAULT_FEES,
+            path,
         )
         .await
         .unwrap();

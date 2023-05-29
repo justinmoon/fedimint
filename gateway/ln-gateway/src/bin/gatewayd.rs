@@ -88,47 +88,15 @@ async fn main() -> Result<(), anyhow::Error> {
         data_dir, listen, api_addr
     );
 
-    // Create federation client builder
-    let client_builder: DynGatewayClientBuilder =
-        StandardGatewayClientBuilder::new(data_dir.clone(), RocksDbFactory.into(), api_addr).into();
-
     // Create task group for controlled shutdown of the gateway
     let task_group = TaskGroup::new();
-
-    // Create module decoder registry
-    let decoders = ModuleDecoderRegistry::from_iter([
-        (
-            LEGACY_HARDCODED_INSTANCE_ID_LN,
-            LightningCommonGen::KIND,
-            LightningModuleTypes::decoder(),
-        ),
-        (
-            LEGACY_HARDCODED_INSTANCE_ID_MINT,
-            MintCommonGen::KIND,
-            MintModuleTypes::decoder(),
-        ),
-        (
-            LEGACY_HARDCODED_INSTANCE_ID_WALLET,
-            WalletCommonGen::KIND,
-            WalletModuleTypes::decoder(),
-        ),
-    ]);
-
-    // Create module generator registry
-    let module_gens = ClientModuleGenRegistry::from(vec![
-        DynClientModuleGen::from(WalletClientGen),
-        DynClientModuleGen::from(MintClientGen),
-        DynClientModuleGen::from(LightningClientGen),
-    ]);
 
     // Create gateway instance
     let gateway = Gateway::new(
         mode,
-        client_builder,
-        decoders,
-        module_gens,
         task_group.make_subgroup().await,
         fees.unwrap_or(GatewayFee(DEFAULT_FEES)).0,
+        data_dir,
     )
     .await
     .unwrap_or_else(|e| {
