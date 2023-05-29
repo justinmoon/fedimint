@@ -32,6 +32,9 @@ async fn gatewayd_supports_connecting_multiple_federations() {
         .await
         .unwrap();
     assert_eq!(info.federation_id, connection2.id);
+
+    // FIXME: it would be nice if GatewayTest had a reference to the gateway so
+    // I could assert that these were saved into .clients
 }
 
 #[tokio::test(flavor = "multi_thread")]

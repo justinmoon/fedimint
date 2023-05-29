@@ -14,6 +14,7 @@ pub mod gatewaylnrpc {
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::env;
+use std::fs::File;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -33,18 +34,22 @@ use fedimint_client::{Client, ClientBuilder};
 use fedimint_client_legacy::ln::PayInvoicePayload;
 use fedimint_client_legacy::modules::ln::route_hints::RouteHint;
 use fedimint_client_legacy::{ClientError, GatewayClient, GatewayClientConfig};
-use fedimint_core::api::{FederationError, WsClientConnectInfo};
+use fedimint_core::api::{
+    DynGlobalApi, FederationError, GlobalFederationApi, WsClientConnectInfo, WsFederationApi,
+};
 use fedimint_core::config::{load_from_file, ClientConfig, FederationId};
 use fedimint_core::db::mem_impl::MemDatabase;
 use fedimint_core::module::registry::ModuleDecoderRegistry;
 use fedimint_core::task::{self, RwLock, TaskGroup, TaskHandle};
 use fedimint_core::{Amount, TransactionId};
+use fedimint_dummy_client::DummyClientGen;
 use fedimint_ln_client::contracts::Preimage;
 use fedimint_mint_client::MintClientGen;
 use fedimint_wallet_client::WalletClientGen;
 use gatewaylnrpc::GetNodeInfoResponse;
 use lightning::routing::gossip::RoutingFees;
 use lnrpc_client::ILnRpcClient;
+use ng::{GatewayClientModule, GW_ANNOUNCEMENT_TTL};
 use rpc::{FederationInfo, LightningReconnectPayload};
 use secp256k1::PublicKey;
 use serde::{Deserialize, Serialize};
@@ -130,6 +135,7 @@ impl IntoResponse for GatewayError {
         err
     }
 }
+
 pub struct Gateway {
     lnrpc: Arc<dyn ILnRpcClient>,
     lightning_mode: Option<LightningMode>,
@@ -232,6 +238,19 @@ impl Gateway {
         Ok(lnrpc)
     }
 
+    async fn save_config(&self, config: ClientConfig) -> anyhow::Result<()> {
+        let id = config.federation_id.to_string();
+        let path: PathBuf = self.data_dir.join(format!("{id}.json"));
+        debug!("Saving gateway cfg in {}", path.display());
+        let file = File::options()
+            .create_new(true)
+            .write(true)
+            .open(path)
+            .map_err(anyhow::Error::from)?;
+        serde_json::to_writer_pretty(file, &config).map_err(anyhow::Error::from)?;
+        Ok(())
+    }
+
     async fn build_client(&self, config: ClientConfig) -> anyhow::Result<fedimint_client::Client> {
         // create database
         let federation_id = config.federation_id;
@@ -253,6 +272,7 @@ impl Gateway {
             api: Url::from_str("http://127.0.0.1:8175").unwrap(),
             mint_channel_id: 1,
         });
+        registry.attach(DummyClientGen);
 
         let mut client_builder = ClientBuilder::default();
         client_builder.with_module_gens(registry);
@@ -299,6 +319,15 @@ impl Gateway {
             .collect())
     }
 
+    async fn load_client(&mut self, client: Client) {
+        // TODO: "join federation"
+        // TODO: use route hints
+        self.clients
+            .write()
+            .await
+            .insert(client.federation_id(), client);
+    }
+
     async fn load_clients(&mut self) -> Result<()> {
         // TODO: do somehting with these route hints
         // Fetch route hints form the LN node
@@ -329,12 +358,7 @@ impl Gateway {
 
             for config in configs {
                 let client = self.build_client(config.client_config).await?;
-                // TODO: "join federation"
-                // TODO: use route hints
-                self.clients
-                    .write()
-                    .await
-                    .insert(client.federation_id(), client);
+                self.load_client(client);
                 if config.mint_channel_id > next_channel_id {
                     next_channel_id = config.mint_channel_id + 1;
                 }
@@ -390,82 +414,63 @@ impl Gateway {
             GatewayError::Other(anyhow::anyhow!("Invalid federation member string {}", e))
         })?;
 
-        todo!();
-
         // if let Ok(actor) = self.select_actor(connect.id).await {
         //     info!("Federation {} already connected", connect.id);
         //     return actor.get_info();
         // }
 
-        // let GetNodeInfoResponse { pub_key, alias: _ } =
-        // self.lnrpc.read().await.info().await?; let node_pub_key =
-        // PublicKey::from_slice(&pub_key)     .map_err(|e|
-        // GatewayError::Other(anyhow!("Invalid node pubkey {}", e)))?;
+        let GetNodeInfoResponse { pub_key, alias: _ } = self.lnrpc.info().await?;
+        let node_pub_key = PublicKey::from_slice(&pub_key)
+            .map_err(|e| GatewayError::Other(anyhow!("Invalid node pubkey {}", e)))?;
 
-        // // The gateway deterministically assigns a channel id (u64) to each
-        // federation // connected. TODO: explicitly handle the case
-        // where the channel id // overflows
-        // let channel_id = self.channel_id_generator.fetch_add(1,
-        // Ordering::SeqCst);
+        // The gateway deterministically assigns a channel id (u64) to each
+        // federation connected. TODO: explicitly handle the case where
+        // the channel id overflows let channel_id =
+        self.channel_id_generator.fetch_add(1, Ordering::SeqCst);
 
-        // let gw_client_cfg = self
-        //     .client_builder
-        //     .create_config(
-        //         connect,
-        //         channel_id,
-        //         node_pub_key,
-        //         self.module_gens.clone(),
-        //         fees,
-        //     )
-        //     .await?;
+        // download client config
+        let api: DynGlobalApi = WsFederationApi::from_connect_info(&[connect.clone()]).into();
+        let client_config = api.download_client_config(&connect).await?;
 
-        // let client = Arc::new(
-        //     self.client_builder
-        //         .build(
-        //             gw_client_cfg.clone(),
-        //             self.decoders.clone(),
-        //             self.module_gens.clone(),
-        //         )
-        //         .await
-        //         .expect("Failed to build gateway client"),
-        // );
+        // build and save client
+        let client = self.build_client(client_config.clone()).await?;
+        self.save_config(client_config).await?;
+        self.load_client(client.clone()).await;
 
-        // let actor = self
-        //     .load_actor(client.clone(), route_hints)
-        //     .await
-        //     .map_err(|e| {
-        //         GatewayError::Other(anyhow::anyhow!("Failed to connect
-        // federation {}", e))     })?;
-
-        // if let Err(e) = self.client_builder.save_config(client.config()) {
-        //     warn!(
-        //         "Failed to save default federation client configuration: {}",
-        //         e
-        //     );
-        // }
-
-        // let federation_info = actor.get_info()?;
-
-        // Ok(federation_info)
+        // return info
+        let (gateway_mod, _) =
+            client.get_first_module::<GatewayClientModule>(&fedimint_ln_common::KIND);
+        let registration = gateway_mod.to_gateway_registration_info(vec![], GW_ANNOUNCEMENT_TTL);
+        Ok(FederationInfo {
+            federation_id: client.federation_id(),
+            registration,
+        })
     }
 
     async fn handle_get_info(&self, _payload: InfoPayload) -> Result<GatewayInfo> {
-        todo!();
-        // let actors = self.actors.read().await;
-        // let mut federations: Vec<FederationInfo> = Vec::new();
-        // for actor in actors.values() {
-        //     federations.push(actor.get_info()?);
-        // }
+        let clients = self.clients.read().await;
+        let mut federations: Vec<FederationInfo> = Vec::new();
+        for client in clients.values() {
+            // FIXME: this code is duplicated
+            let (gateway_mod, _) =
+                client.get_first_module::<GatewayClientModule>(&fedimint_ln_common::KIND);
+            let registration =
+                gateway_mod.to_gateway_registration_info(vec![], GW_ANNOUNCEMENT_TTL);
+            federations.push(FederationInfo {
+                federation_id: client.federation_id(),
+                registration,
+            })
+        }
 
-        // let ln_info = self.lnrpc.read().await.info().await?;
+        let ln_info = self.lnrpc.info().await?;
 
-        // Ok(GatewayInfo {
-        //     federations,
-        //     version_hash: env!("CODE_VERSION").to_string(),
-        //     lightning_pub_key: ln_info.pub_key.to_hex(),
-        //     lightning_alias: ln_info.alias,
-        //     fees: self.fees,
-        // })
+        Ok(GatewayInfo {
+            federations,
+            version_hash: env!("CODE_VERSION").to_string(),
+            lightning_pub_key: ln_info.pub_key.to_hex(),
+            lightning_alias: ln_info.alias,
+            fees: self.fees,
+        })
     }
 
     async fn handle_pay_invoice_msg(&self, payload: PayInvoicePayload) -> Result<Preimage> {

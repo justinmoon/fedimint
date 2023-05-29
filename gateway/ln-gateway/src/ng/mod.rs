@@ -46,7 +46,7 @@ use self::receive::{
 use crate::gatewaylnrpc::GetNodeInfoResponse;
 use crate::lnrpc_client::ILnRpcClient;
 
-const GW_ANNOUNCEMENT_TTL: Duration = Duration::from_secs(600);
+pub const GW_ANNOUNCEMENT_TTL: Duration = Duration::from_secs(600);
 
 /// The high-level state of a reissue operation started with
 /// [`LightningClientExt::pay_bolt11_invoice`].
