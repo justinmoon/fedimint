@@ -13,6 +13,7 @@ use fedimint_core::config::{
 use fedimint_core::core::ModuleInstanceId;
 use fedimint_core::module::{DynServerModuleGen, IServerModuleGen};
 use fedimint_core::task::{MaybeSend, MaybeSync, TaskGroup};
+use ln_gateway::lnd::GatewayLndClient;
 use ln_gateway::lnrpc_client::ILnRpcClient;
 use tempfile::TempDir;
 
@@ -22,7 +23,8 @@ use crate::btc::BitcoinTest;
 use crate::federation::FederationTest;
 use crate::gateway::GatewayTest;
 use crate::ln::mock::FakeLightningTest;
-use crate::ln::LightningTest;
+use crate::ln::real::RealLightningTest;
+use crate::ln::{GatewayNode, LightningTest};
 
 /// A default timeout for things happening in tests
 pub const TIMEOUT: Duration = Duration::from_secs(10);
@@ -45,7 +47,7 @@ pub struct Fixtures {
 }
 
 impl Fixtures {
-    pub fn new_primary(
+    pub async fn new_primary(
         id: ModuleInstanceId,
         client: impl IClientModuleGen + MaybeSend + MaybeSync + 'static,
         server: impl IServerModuleGen + MaybeSend + MaybeSync + 'static,
@@ -70,7 +72,31 @@ impl Fixtures {
             }
         };
 
-        let lightning = Arc::new(FakeLightningTest::new());
+        let (lightning, lightning_client): (Arc<dyn LightningTest>, Arc<dyn ILnRpcClient>) =
+            match real_testing {
+                true => {
+                    let dir =
+                        env::var("FM_TEST_DIR").expect("Must have test dir defined for real tests");
+                    // FIXME: don't hard-code
+                    let gateway_node = GatewayNode::Lnd;
+                    let lightning = RealLightningTest::new(&dir, &gateway_node).await;
+                    let gateway_lnd_client = GatewayLndClient::new(
+                        env::var("FM_LND_RPC_ADDR").unwrap(),
+                        env::var("FM_LND_TLS_CERT").unwrap(),
+                        env::var("FM_LND_MACAROON").unwrap(),
+                        task_group.make_subgroup().await,
+                    )
+                    .await
+                    .unwrap();
+                    (Arc::new(lightning), Arc::new(gateway_lnd_client))
+                }
+                false => {
+                    // FakeLightningTest impls LightningTest and ILnRpcClient so we can just return
+                    // it twice
+                    let lightning = Arc::new(FakeLightningTest::new());
+                    (lightning.clone(), lightning.clone())
+                }
+            };
         Self {
             num_peers,
             ids: vec![],
@@ -80,8 +106,8 @@ impl Fixtures {
             primary_client: id,
             bitcoin_rpc: config,
             bitcoin: bitcoin,
-            lightning: lightning.clone(),
-            lightning_client: lightning.clone(),
+            lightning,
+            lightning_client,
         }
         .with_module(id, client, server, params)
     }

@@ -48,9 +48,9 @@ pub fn secp() -> secp256k1::Secp256k1<secp256k1::All> {
     bitcoin::secp256k1::Secp256k1::new()
 }
 
-fn fixtures() -> Fixtures {
+async fn fixtures() -> Fixtures {
     // TODO: Remove dependency on mint (legacy gw client)
-    let fixtures = Fixtures::new_primary(1, MintClientGen, MintGen, MintGenParams::default());
+    let fixtures = Fixtures::new_primary(1, MintClientGen, MintGen, MintGenParams::default()).await;
     let ln_params = LightningGenParams::regtest(fixtures.bitcoin_rpc());
     fixtures
         .with_module(3, DummyClientGen, DummyGen, DummyGenParams::default())
@@ -79,7 +79,7 @@ async fn new_gateway_client(fed: &FederationTest, fixtures: &Fixtures) -> anyhow
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_gateway_client_pay_valid_invoice() -> anyhow::Result<()> {
-    let fixtures = fixtures();
+    let fixtures = fixtures().await;
     let fed = fixtures.new_fed().await;
     let user_client = fed.new_client().await;
     let gateway = new_gateway_client(&fed, &fixtures).await?;
@@ -114,7 +114,7 @@ async fn test_gateway_client_pay_valid_invoice() -> anyhow::Result<()> {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_gateway_client_pay_invalid_invoice() -> anyhow::Result<()> {
-    let fixtures = fixtures();
+    let fixtures = fixtures().await;
     let fed = fixtures.new_fed().await;
     let user_client = fed.new_client().await;
     let gateway = new_gateway_client(&fed, &fixtures).await?;
@@ -154,7 +154,7 @@ async fn test_gateway_client_pay_invalid_invoice() -> anyhow::Result<()> {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_gateway_client_intercept_valid_htlc() -> anyhow::Result<()> {
-    let fixtures = fixtures();
+    let fixtures = fixtures().await;
     let fed = fixtures.new_fed().await;
     let user_client = fed.new_client().await;
     let gateway = new_gateway_client(&fed, &fixtures).await?;
@@ -206,7 +206,7 @@ async fn test_gateway_client_intercept_valid_htlc() -> anyhow::Result<()> {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_gateway_client_intercept_offer_does_not_exist() -> anyhow::Result<()> {
-    let fixtures = fixtures();
+    let fixtures = fixtures().await;
     let fed = fixtures.new_fed().await;
     let gateway = new_gateway_client(&fed, &fixtures).await?;
 
@@ -243,7 +243,7 @@ async fn test_gateway_client_intercept_offer_does_not_exist() -> anyhow::Result<
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_gateway_client_intercept_htlc_no_funds() -> anyhow::Result<()> {
-    let fixtures = fixtures();
+    let fixtures = fixtures().await;
     let fed = fixtures.new_fed().await;
     let user_client = fed.new_client().await;
     let gateway = new_gateway_client(&fed, &fixtures).await?;
@@ -284,7 +284,7 @@ async fn test_gateway_client_intercept_htlc_no_funds() -> anyhow::Result<()> {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_gateway_client_intercept_htlc_invalid_offer() -> anyhow::Result<()> {
-    let fixtures = fixtures();
+    let fixtures = fixtures().await;
     let fed = fixtures.new_fed().await;
     let user_client = fed.new_client().await;
     let gateway = new_gateway_client(&fed, &fixtures).await?;

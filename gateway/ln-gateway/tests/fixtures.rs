@@ -33,7 +33,8 @@ pub async fn fixtures(
     // using the ecash module which didn't have this problem. let mut fixtures =
     //     Fixtures::new_primary(1, DummyClientGen, DummyGen,
     // DummyGenParams::default());
-    let mut fixtures = Fixtures::new_primary(1, MintClientGen, MintGen, MintGenParams::default());
+    let mut fixtures =
+        Fixtures::new_primary(1, MintClientGen, MintGen, MintGenParams::default()).await;
     let ln_params = LightningGenParams::regtest(fixtures.bitcoin_rpc());
     fixtures = fixtures.with_module(0, LightningClientGen, LightningGen, ln_params);
     let wallet_params = WalletGenParams::regtest(fixtures.bitcoin_rpc());

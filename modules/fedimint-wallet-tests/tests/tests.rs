@@ -8,15 +8,16 @@ use fedimint_wallet_client::{WalletClientExt, WalletClientGen};
 use fedimint_wallet_common::config::WalletGenParams;
 use fedimint_wallet_server::WalletGen;
 
-fn fixtures() -> Fixtures {
-    let fixtures = Fixtures::new_primary(0, DummyClientGen, DummyGen, DummyGenParams::default());
+async fn fixtures() -> Fixtures {
+    let fixtures =
+        Fixtures::new_primary(0, DummyClientGen, DummyGen, DummyGenParams::default()).await;
     let wallet_params = WalletGenParams::regtest(fixtures.bitcoin_rpc());
     fixtures.with_module(1, WalletClientGen, WalletGen, wallet_params)
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn on_chain_deposits() -> anyhow::Result<()> {
-    let fixtures = fixtures();
+    let fixtures = fixtures().await;
     let fed = fixtures.new_fed().await;
     let client = fed.new_client().await;
     let bitcoin = fixtures.bitcoin();
