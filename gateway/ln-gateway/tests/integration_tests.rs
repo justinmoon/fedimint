@@ -5,6 +5,7 @@
 mod fixtures;
 
 use fedimint_core::sats;
+use fedimint_ln_client::LightningClientExt;
 use fedimint_testing::federation::FederationTest;
 use ln_gateway::rpc::rpc_client::GatewayRpcClient;
 use ln_gateway::rpc::{BalancePayload, ConnectFedPayload};
@@ -47,7 +48,7 @@ async fn gatewayd_shows_info_about_all_connected_federations() {
     let id1 = fed1.connection_code().id;
     let id2 = fed2.connection_code().id;
 
-    connect_federations(&rpc, &[fed1, fed2]).await.unwrap();
+    connect_federations(&rpc, &[&fed1, &fed2]).await.unwrap();
 
     let info = rpc.get_info().await.unwrap();
 
@@ -66,7 +67,7 @@ async fn gatewayd_shows_info_about_all_connected_federations() {
 async fn gatewayd_shows_balance_for_any_connected_federation() -> anyhow::Result<()> {
     let (_, rpc, fed1, fed2, _) = fixtures::fixtures(None).await;
     let id1 = fed1.connection_code().id;
-    connect_federations(&rpc, &[fed1, fed2]).await.unwrap();
+    connect_federations(&rpc, &[&fed1, &fed2]).await.unwrap();
 
     assert_eq!(
         rpc.get_balance(BalancePayload { federation_id: id1 })
@@ -131,14 +132,22 @@ async fn gatewayd_pays_outgoing_invoice_between_federations_connected() -> anyho
 
 #[tokio::test(flavor = "multi_thread")]
 async fn gatewayd_intercepts_htlc_and_settles_to_connected_federation() -> anyhow::Result<()> {
-    // todo: implement test case
+    let (_, rpc, fed1, fed2, _) = fixtures::fixtures(None).await;
+
+    connect_federations(&rpc, &[&fed1]).await.unwrap();
+
+    let user_client = fed1.new_client().await;
+    let invoice_amount = sats(100);
+    let (_invoice_op, invoice) = user_client
+        .create_bolt11_invoice(invoice_amount, "description".into(), None)
+        .await?;
 
     Ok(())
 }
 
 pub async fn connect_federations(
     rpc: &GatewayRpcClient,
-    feds: &[FederationTest],
+    feds: &[&FederationTest],
 ) -> anyhow::Result<()> {
     for fed in feds {
         let connect = fed.connection_code().to_string();

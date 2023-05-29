@@ -101,7 +101,7 @@ pub trait GatewayClientExt {
     ) -> anyhow::Result<UpdateStreamOrOutcome<'_, GatewayExtReceiveStates>>;
 
     /// Register gateway with federation
-    async fn register_with_federation(&self) -> anyhow::Result<()>;
+    async fn register_with_federation(&self) -> anyhow::Result<LightningGateway>;
 }
 
 #[apply(async_trait_maybe_send!)]
@@ -290,12 +290,12 @@ impl GatewayClientExt for Client {
     }
 
     /// Register this gateway with the federation
-    async fn register_with_federation(&self) -> anyhow::Result<()> {
+    async fn register_with_federation(&self) -> anyhow::Result<LightningGateway> {
         let (gateway, instance) = self.get_first_module::<GatewayClientModule>(&KIND);
         let route_hints = vec![];
-        let config = gateway.to_gateway_registration_info(route_hints, GW_ANNOUNCEMENT_TTL);
-        instance.api.register_gateway(&config).await?;
-        Ok(())
+        let registration = gateway.to_gateway_registration_info(route_hints, GW_ANNOUNCEMENT_TTL);
+        instance.api.register_gateway(&registration).await?;
+        Ok(registration)
     }
 }
 

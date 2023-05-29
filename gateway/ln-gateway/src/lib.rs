@@ -49,7 +49,7 @@ use fedimint_wallet_client::WalletClientGen;
 use gatewaylnrpc::GetNodeInfoResponse;
 use lightning::routing::gossip::RoutingFees;
 use lnrpc_client::ILnRpcClient;
-use ng::{GatewayClientModule, GW_ANNOUNCEMENT_TTL};
+use ng::{GatewayClientExt, GatewayClientModule, GW_ANNOUNCEMENT_TTL};
 use rpc::{FederationInfo, LightningReconnectPayload};
 use secp256k1::PublicKey;
 use serde::{Deserialize, Serialize};
@@ -373,27 +373,6 @@ impl Gateway {
         Ok(())
     }
 
-    // pub async fn load_actor(
-    //     &mut self,
-    //     client: Arc<GatewayClient>,
-    //     route_hints: Vec<RouteHint>,
-    // ) -> Result<GatewayActor> {
-    //     let actor = GatewayActor::new(
-    //         client.clone(),
-    //         self.lnrpc.clone(),
-    //         route_hints,
-    //         self.task_group.clone(),
-    //         GatewayRpcSender::new(self.sender.clone()),
-    //     )
-    //     .await?;
-
-    //     self.actors.write().await.insert(
-    //         client.config().client_config.federation_id.to_string(),
-    //         actor.clone(),
-    //     );
-    //     Ok(actor)
-    // }
-
     async fn select_client(&self, federation_id: FederationId) -> Result<Client> {
         self.clients
             .read()
@@ -437,9 +416,7 @@ impl Gateway {
         self.load_client(client.clone()).await;
 
         // return info
-        let (gateway_mod, _) =
-            client.get_first_module::<GatewayClientModule>(&fedimint_ln_common::KIND);
-        let registration = gateway_mod.to_gateway_registration_info(vec![], GW_ANNOUNCEMENT_TTL);
+        let registration = client.register_with_federation().await?;
         Ok(FederationInfo {
             federation_id: client.federation_id(),
             registration,
