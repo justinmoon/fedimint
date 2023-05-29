@@ -119,6 +119,8 @@ pub enum GatewayError {
     Other(#[from] anyhow::Error),
     #[error("Failed to fetch route hints")]
     FailedToFetchRouteHints,
+    #[error("Federation not found: {0}")]
+    FederationNotFound(FederationId),
 }
 
 impl GatewayError {
@@ -392,17 +394,14 @@ impl Gateway {
     //     Ok(actor)
     // }
 
-    // async fn select_actor(&self, federation_id: FederationId) ->
-    // Result<GatewayActor> {     self.actors
-    //         .read()
-    //         .await
-    //         .get(&federation_id.to_string())
-    //         .cloned()
-    //         .ok_or(GatewayError::Other(anyhow::anyhow!(
-    //             "No federation with id {}",
-    //             federation_id.to_string()
-    //         )))
-    // }
+    async fn select_client(&self, federation_id: FederationId) -> Result<Client> {
+        self.clients
+            .read()
+            .await
+            .get(&federation_id)
+            .cloned()
+            .ok_or(GatewayError::FederationNotFound(federation_id))
+    }
 
     async fn handle_connect_federation(
         &mut self,
@@ -489,11 +488,8 @@ impl Gateway {
     }
 
     async fn handle_balance_msg(&self, payload: BalancePayload) -> Result<Amount> {
-        todo!();
-        // self.select_actor(payload.federation_id)
-        //     .await?
-        //     .get_balance()
-        //     .await
+        let client = self.select_client(payload.federation_id).await?;
+        Ok(client.get_balance().await)
     }
 
     async fn handle_address_msg(&self, payload: DepositAddressPayload) -> Result<Address> {

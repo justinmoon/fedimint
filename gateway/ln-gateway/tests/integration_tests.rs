@@ -4,9 +4,10 @@
 //! and business logic.
 mod fixtures;
 
+use fedimint_core::sats;
 use fedimint_testing::federation::FederationTest;
 use ln_gateway::rpc::rpc_client::GatewayRpcClient;
-use ln_gateway::rpc::ConnectFedPayload;
+use ln_gateway::rpc::{BalancePayload, ConnectFedPayload};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn gatewayd_supports_connecting_multiple_federations() {
@@ -63,7 +64,16 @@ async fn gatewayd_shows_info_about_all_connected_federations() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn gatewayd_shows_balance_for_any_connected_federation() -> anyhow::Result<()> {
-    // todo: implement test case
+    let (_, rpc, fed1, fed2, _) = fixtures::fixtures(None).await;
+    let id1 = fed1.connection_code().id;
+    connect_federations(&rpc, &[fed1, fed2]).await.unwrap();
+
+    assert_eq!(
+        rpc.get_balance(BalancePayload { federation_id: id1 })
+            .await
+            .unwrap(),
+        sats(0)
+    );
 
     Ok(())
 }
