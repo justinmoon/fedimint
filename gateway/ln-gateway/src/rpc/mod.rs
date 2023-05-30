@@ -19,6 +19,8 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tokio::sync::{mpsc, oneshot};
 use tracing::error;
 
+use crate::gatewaylnrpc::SubscribeInterceptHtlcsResponse;
+use crate::ng::receive::Htlc;
 use crate::{Gateway, GatewayError, LightningMode, Result};
 
 #[derive(Debug, Clone)]
@@ -84,6 +86,11 @@ pub struct LightningReconnectPayload {
     pub node_type: Option<LightningMode>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct HtlcPayload {
+    pub htlc: Htlc,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct BalancePayload {
     pub federation_id: FederationId,
@@ -144,6 +151,7 @@ pub enum GatewayRequest {
     Backup(GatewayRequestInner<BackupPayload>),
     Restore(GatewayRequestInner<RestorePayload>),
     LightningReconnect(GatewayRequestInner<LightningReconnectPayload>),
+    Htlc(GatewayRequestInner<HtlcPayload>),
     Shutdown,
 }
 
@@ -195,6 +203,7 @@ impl_gateway_request_trait!(
     (),
     GatewayRequest::LightningReconnect
 );
+impl_gateway_request_trait!(HtlcPayload, (), GatewayRequest::Htlc);
 
 impl<T> GatewayRequestInner<T>
 where

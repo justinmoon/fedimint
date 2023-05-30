@@ -46,7 +46,11 @@ use fedimint_ln_client::contracts::Preimage;
 use fedimint_mint_client::MintClientGen;
 use fedimint_wallet_client::{WalletClientExt, WalletClientGen};
 use futures::StreamExt;
-use gatewaylnrpc::{GetNodeInfoResponse, RouteHtlcRequest};
+use gatewaylnrpc::route_htlc_response::Action;
+use gatewaylnrpc::{
+    complete_htlcs_request, route_htlc_request, CompleteHtlcsRequest, GetNodeInfoResponse,
+    RouteHtlcRequest, RouteHtlcResponse,
+};
 use lightning::routing::gossip::RoutingFees;
 use lnrpc_client::ILnRpcClient;
 use ng::{GatewayClientExt, GatewayClientModule, GW_ANNOUNCEMENT_TTL};
@@ -58,13 +62,16 @@ use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 use url::Url;
 
+use crate::gatewaylnrpc::route_htlc_response;
 use crate::lnd::GatewayLndClient;
 use crate::lnrpc_client::NetworkLnRpcClient;
+use crate::ng::receive::Htlc;
 use crate::ng::{GatewayClientGen, GatewayExtPayStates};
 use crate::rpc::rpc_server::run_webserver;
 use crate::rpc::{
     BackupPayload, BalancePayload, ConnectFedPayload, DepositAddressPayload, DepositPayload,
-    GatewayInfo, GatewayRequest, GatewayRpcSender, InfoPayload, RestorePayload, WithdrawPayload,
+    GatewayInfo, GatewayRequest, GatewayRpcSender, HtlcPayload, InfoPayload, RestorePayload,
+    WithdrawPayload,
 };
 
 // const ROUTE_HINT_RETRIES: usize = 10;
@@ -119,6 +126,8 @@ pub enum GatewayError {
     FailedToFetchRouteHints,
     #[error("Federation not found: {0}")]
     FederationNotFound(FederationId),
+    #[error("Short channel id not found: {0}")]
+    ShortChannelIdNotFound(u64),
 }
 
 impl GatewayError {
@@ -140,8 +149,11 @@ pub struct Gateway {
     lnrpc: Arc<dyn ILnRpcClient>,
     lightning_mode: Option<LightningMode>,
     clients: Arc<RwLock<BTreeMap<FederationId, Client>>>,
+    scid_to_federation: Arc<RwLock<BTreeMap<u64, FederationId>>>,
+    // these two communicate with gateway event loop
     sender: mpsc::Sender<GatewayRequest>,
     receiver: mpsc::Receiver<GatewayRequest>,
+    ln_sender: Arc<RwLock<Option<mpsc::Sender<RouteHtlcRequest>>>>,
     task_group: TaskGroup,
     channel_id_generator: AtomicU64,
     fees: RoutingFees,
@@ -160,7 +172,6 @@ impl Gateway {
     ) -> Result<Self> {
         // Create message channels for the webserver
         let (sender, receiver) = mpsc::channel::<GatewayRequest>(100);
-
         let lnrpc =
             Self::create_lightning_client(lightning_mode.clone(), task_group.make_subgroup().await)
                 .await?;
@@ -168,8 +179,10 @@ impl Gateway {
         let mut gw = Self {
             lnrpc,
             clients: Arc::new(RwLock::new(BTreeMap::new())),
+            scid_to_federation: Arc::new(RwLock::new(BTreeMap::new())),
             sender,
             receiver,
+            ln_sender: Arc::new(RwLock::new(None)),
             task_group,
             channel_id_generator: AtomicU64::new(INITIAL_SCID),
             lightning_mode: Some(lightning_mode),
@@ -198,8 +211,10 @@ impl Gateway {
         let mut gw = Self {
             lnrpc,
             clients: Arc::new(RwLock::new(BTreeMap::new())),
+            scid_to_federation: Arc::new(RwLock::new(BTreeMap::new())),
             sender,
             receiver,
+            ln_sender: Arc::new(RwLock::new(None)),
             task_group,
             channel_id_generator: AtomicU64::new(INITIAL_SCID),
             lightning_mode: None,
@@ -216,14 +231,30 @@ impl Gateway {
 
     async fn route_htlcs(&self) -> Result<()> {
         let (ln_sender, ln_receiver) = mpsc::channel::<RouteHtlcRequest>(100);
-        let (gw_sender, gw_receiver) = mpsc::channel::<Result<RouteHtlcRequest>>(100);
+        *self.ln_sender.write().await = Some(ln_sender);
         // FIXME: unwrap
         let mut stream = self.lnrpc.route_htlcs(ln_receiver.into()).await?;
         let mut task_group = self.task_group.make_subgroup().await;
+        let gateway_rpc_sender = GatewayRpcSender::new(self.sender.clone());
         task_group
             .spawn("Gateway route htlcs", |_handle| async move {
-                while let Some(Ok(request)) = stream.next().await {
-                    info!("request {request:?}");
+                while let Some(Ok(RouteHtlcResponse { action })) = stream.next().await {
+                    info!("request {action:?}");
+                        match action {
+                            Some(route_htlc_response::Action::SubscribeResponse(htlc)) => {
+                                info!("subscribe response: {htlc:?}");
+                                let htlc: Htlc = htlc.into();
+                                // FIXME: don't swallow
+                                let _ = gateway_rpc_sender.send(HtlcPayload{ htlc }).await;
+                            }
+                            Some(route_htlc_response::Action::CompleteResponse(_complete_response)) => {
+                                // TODO: Might need to add some error handling here
+                                info!("Successfully handled HTLC");
+                            }
+                            None => {
+                                error!("Error: Action received from Lightning node was None. This should never happen");
+                            }
+                        }
                 }
             })
             .await;
@@ -342,14 +373,14 @@ impl Gateway {
             .collect())
     }
 
-    async fn load_client(&mut self, client: Client) {
-        // TODO: "join federation"
-        // TODO: use route hints
-        tracing::info!("load_client {}", client.federation_id());
-        self.clients
+    async fn load_client(&mut self, client: Client, scid: u64) {
+        let federation_id = client.federation_id();
+        tracing::info!("load_client {}", federation_id);
+        self.clients.write().await.insert(federation_id, client);
+        self.scid_to_federation
             .write()
             .await
-            .insert(client.federation_id(), client);
+            .insert(scid, federation_id);
     }
 
     async fn load_clients(&mut self) -> Result<()> {
@@ -382,7 +413,7 @@ impl Gateway {
 
             for config in configs {
                 let client = self.build_client(config.client_config).await?;
-                self.load_client(client).await;
+                self.load_client(client, next_channel_id).await;
                 if config.mint_channel_id > next_channel_id {
                     next_channel_id = config.mint_channel_id + 1;
                 }
@@ -402,6 +433,17 @@ impl Gateway {
             .get(&federation_id)
             .cloned()
             .ok_or(GatewayError::FederationNotFound(federation_id))
+    }
+
+    async fn select_client_by_scid(&self, short_channel_id: u64) -> Result<Client> {
+        let federation_id = self
+            .scid_to_federation
+            .read()
+            .await
+            .get(&short_channel_id)
+            .cloned()
+            .ok_or(GatewayError::ShortChannelIdNotFound(short_channel_id))?;
+        self.select_client(federation_id).await
     }
 
     async fn handle_connect_federation(
@@ -437,7 +479,8 @@ impl Gateway {
         // build and save client
         let client = self.build_client(client_config.clone()).await?;
         self.save_config(client_config).await?;
-        self.load_client(client.clone()).await;
+        let next_channel_id = self.channel_id_generator.load(Ordering::SeqCst);
+        self.load_client(client.clone(), next_channel_id).await;
 
         // return info
         let registration = client.register_with_federation().await?;
@@ -571,6 +614,31 @@ impl Gateway {
         //     .await?
         //     .restore(self.task_group.make_subgroup().await)
         //     .await
+    }
+
+    async fn handle_htlc(&mut self, payload: HtlcPayload) -> Result<()> {
+        if let Some(ln_sender) = &*self.ln_sender.read().await {
+            ln_sender
+                .send(RouteHtlcRequest {
+                    action: Some(route_htlc_request::Action::CompleteRequest(
+                        CompleteHtlcsRequest {
+                            action: Some(complete_htlcs_request::Action::Cancel(
+                                complete_htlcs_request::Cancel {
+                                    reason: "oops".into(),
+                                },
+                            )),
+                            incoming_chan_id: payload.htlc.incoming_chan_id,
+                            htlc_id: payload.htlc.htlc_id,
+                        },
+                    )),
+                })
+                .await
+                .expect("couldn't send"); // FIXME: don't unwra
+            info!("cancelled htlc");
+        } else {
+            info!("handl_htlc: no sender");
+        }
+        Ok(())
     }
 
     async fn handle_lightning_reconnect(
@@ -730,6 +798,11 @@ impl Gateway {
                         .handle(&mut self, |gateway, payload| {
                             gateway.handle_lightning_reconnect(payload)
                         })
+                        .await;
+                }
+                GatewayRequest::Htlc(inner) => {
+                    inner
+                        .handle(&mut self, |gateway, payload| gateway.handle_htlc(payload))
                         .await;
                 }
                 GatewayRequest::Shutdown => {

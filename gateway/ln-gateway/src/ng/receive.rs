@@ -104,7 +104,7 @@ impl State for GatewayReceiveStateMachine {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Decodable, Encodable)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Decodable, Encodable)]
 pub struct Htlc {
     /// The HTLC payment hash.
     pub payment_hash: sha256::Hash,
