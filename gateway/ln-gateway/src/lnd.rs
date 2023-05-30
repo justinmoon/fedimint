@@ -357,7 +357,7 @@ impl ILnRpcClient for GatewayLndClient {
     }
 
     async fn route_htlcs<'a>(
-        &mut self,
+        &self,
         events: ReceiverStream<RouteHtlcRequest>,
     ) -> Result<RouteHtlcStream<'a>, GatewayError> {
         const CHANNEL_SIZE: usize = 100;
@@ -370,7 +370,9 @@ impl ILnRpcClient for GatewayLndClient {
         let mut stream = events.into_inner();
         let subs = self.subscriptions.clone();
         let lnd_sender = self.lnd_tx.clone();
-        self.task_group.spawn("LND Route HTLCs", |_handle| async move {
+
+        let mut task_group = self.task_group.make_subgroup().await;
+        task_group.spawn("LND Route HTLCs", |_handle| async move {
             while let Some(request) = stream.recv().await {
                 match request.action {
                     Some(route_htlc_request::Action::SubscribeRequest(subscribe_request)) => {

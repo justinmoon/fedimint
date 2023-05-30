@@ -32,7 +32,7 @@ pub trait ILnRpcClient: Debug + Send + Sync {
     async fn pay(&self, invoice: PayInvoiceRequest) -> Result<PayInvoiceResponse>;
 
     async fn route_htlcs<'a>(
-        &mut self,
+        &self,
         events: ReceiverStream<RouteHtlcRequest>,
     ) -> Result<RouteHtlcStream<'a>>;
 }
@@ -98,7 +98,7 @@ impl ILnRpcClient for NetworkLnRpcClient {
     }
 
     async fn route_htlcs<'a>(
-        &mut self,
+        &self,
         events: ReceiverStream<RouteHtlcRequest>,
     ) -> Result<RouteHtlcStream<'a>> {
         let mut client = self.client.clone();

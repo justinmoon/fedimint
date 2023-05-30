@@ -50,7 +50,7 @@ pub enum BuyPreimage {
 }
 
 #[derive(Clone)]
-struct LightningSenderStream {
+pub struct LightningSenderStream {
     /// Channel used to stream subscribe and complete requests back to the
     /// Lightning implementation
     ln_sender: Sender<RouteHtlcRequest>,
@@ -61,7 +61,7 @@ struct LightningSenderStream {
 type RouteHTLCStream = BoxStream<'static, std::result::Result<RouteHtlcResponse, Status>>;
 
 impl LightningSenderStream {
-    async fn subscribe_to_htlcs(
+    pub async fn subscribe_to_htlcs(
         &self,
         short_channel_id: u64,
         ln_receiver: Receiver<RouteHtlcRequest>,

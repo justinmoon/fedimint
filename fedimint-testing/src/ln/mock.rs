@@ -155,10 +155,11 @@ impl ILnRpcClient for FakeLightningTest {
     }
 
     async fn route_htlcs<'a>(
-        &mut self,
+        &self,
         events: ReceiverStream<RouteHtlcRequest>,
     ) -> Result<RouteHtlcStream<'a>, GatewayError> {
-        self.task_group
+        let mut task_group = self.task_group.make_subgroup().await;
+        task_group
             .spawn("FakeRoutingThread", |handle| async move {
                 let mut stream = events.into_inner();
                 while let Some(route_htlc) = stream.recv().await {
@@ -234,7 +235,7 @@ impl ILnRpcClient for LnRpcAdapter {
     }
 
     async fn route_htlcs<'a>(
-        &mut self,
+        &self,
         events: ReceiverStream<RouteHtlcRequest>,
     ) -> Result<RouteHtlcStream<'a>, GatewayError> {
         self.client.write().await.route_htlcs(events).await
