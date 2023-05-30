@@ -66,7 +66,7 @@ use crate::gatewaylnrpc::route_htlc_response;
 use crate::lnd::GatewayLndClient;
 use crate::lnrpc_client::NetworkLnRpcClient;
 use crate::ng::receive::Htlc;
-use crate::ng::{GatewayClientGen, GatewayExtPayStates};
+use crate::ng::{GatewayClientGen, GatewayExtPayStates, GatewayExtReceiveStates};
 use crate::rpc::rpc_server::run_webserver;
 use crate::rpc::{
     BackupPayload, BalancePayload, ConnectFedPayload, DepositAddressPayload, DepositPayload,
@@ -324,7 +324,7 @@ impl Gateway {
             },
             timelock_delta: 10,
             api: self.webserver_url.clone(),
-            mint_channel_id: 1,
+            mint_channel_id: INITIAL_SCID,
         });
         registry.attach(DummyClientGen);
 
@@ -373,14 +373,16 @@ impl Gateway {
             .collect())
     }
 
+    /// FIXME: don't hard-code INITIAL_SCID
     async fn load_client(&mut self, client: Client, scid: u64) {
         let federation_id = client.federation_id();
         tracing::info!("load_client {}", federation_id);
+        tracing::info!("load_client scid {scid}");
         self.clients.write().await.insert(federation_id, client);
         self.scid_to_federation
             .write()
             .await
-            .insert(scid, federation_id);
+            .insert(INITIAL_SCID, federation_id);
     }
 
     async fn load_clients(&mut self) -> Result<()> {
@@ -436,6 +438,11 @@ impl Gateway {
     }
 
     async fn select_client_by_scid(&self, short_channel_id: u64) -> Result<Client> {
+        {
+            let scids = self.scid_to_federation.read().await;
+            info!("scids {:?}", scids.keys());
+        }
+
         let federation_id = self
             .scid_to_federation
             .read()
@@ -616,24 +623,58 @@ impl Gateway {
         //     .await
     }
 
+    async fn handle_htlc_inner(
+        &self,
+        htlc: Htlc,
+        ln_sender: &mpsc::Sender<RouteHtlcRequest>,
+    ) -> Result<Preimage> {
+        let client = self.select_client_by_scid(htlc.short_channel_id).await?;
+        info!("found client");
+        let op = client.gateway_intercept_htlc(htlc).await?;
+        let mut sub = client.gateway_subscribe_ln_receive(op).await?.into_stream();
+        while let Some(update) = sub.next().await {
+            info!("handle_htlc_inner {update:?}");
+            // match update {
+            // GatewayExtReceiveStates::Preimage(preimage) => {
+            //     return get_note_summary(&client).await;
+            // }
+            // LnReceiveState::Canceled { reason } => {
+            //     return Err(reason.into());
+            // }
+            // _ => {}
+            // }
+
+            info!("Update: {:?}", update);
+        }
+        // Ok(())
+        // FIXME: stub
+        Err(GatewayError::FailedToFetchRouteHints)
+    }
+
     async fn handle_htlc(&mut self, payload: HtlcPayload) -> Result<()> {
         if let Some(ln_sender) = &*self.ln_sender.read().await {
-            ln_sender
-                .send(RouteHtlcRequest {
-                    action: Some(route_htlc_request::Action::CompleteRequest(
-                        CompleteHtlcsRequest {
-                            action: Some(complete_htlcs_request::Action::Cancel(
-                                complete_htlcs_request::Cancel {
-                                    reason: "oops".into(),
-                                },
-                            )),
-                            incoming_chan_id: payload.htlc.incoming_chan_id,
-                            htlc_id: payload.htlc.htlc_id,
-                        },
-                    )),
-                })
-                .await
-                .expect("couldn't send"); // FIXME: don't unwra
+            // FIXME: this method probably shouldn't just throw errors ... need to always
+            // send a response
+            match self.handle_htlc_inner(payload.htlc, ln_sender).await {
+                Ok(result) => info!("handle_htlc ok {:?}", result),
+                Err(error) => info!("handle_htlc err {:?}", error),
+            };
+            // ln_sender
+            //     .send(RouteHtlcRequest {
+            //         action: Some(route_htlc_request::Action::CompleteRequest(
+            //             CompleteHtlcsRequest {
+            //                 action: Some(complete_htlcs_request::Action::Cancel(
+            //                     complete_htlcs_request::Cancel {
+            //                         reason: "oops".into(),
+            //                     },
+            //                 )),
+            //                 incoming_chan_id: payload.htlc.incoming_chan_id,
+            //                 htlc_id: payload.htlc.htlc_id,
+            //             },
+            //         )),
+            //     })
+            //     .await
+            //     .expect("couldn't send"); // FIXME: don't unwra
             info!("cancelled htlc");
         } else {
             info!("handl_htlc: no sender");
