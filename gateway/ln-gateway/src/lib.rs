@@ -46,7 +46,7 @@ use fedimint_ln_client::contracts::Preimage;
 use fedimint_mint_client::MintClientGen;
 use fedimint_wallet_client::{WalletClientExt, WalletClientGen};
 use futures::StreamExt;
-use gatewaylnrpc::GetNodeInfoResponse;
+use gatewaylnrpc::{GetNodeInfoResponse, RouteHtlcRequest};
 use lightning::routing::gossip::RoutingFees;
 use lnrpc_client::ILnRpcClient;
 use ng::{GatewayClientExt, GatewayClientModule, GW_ANNOUNCEMENT_TTL};
@@ -179,6 +179,7 @@ impl Gateway {
         };
 
         gw.load_clients().await?;
+        gw.route_htlcs().await?;
 
         Ok(gw)
     }
@@ -208,8 +209,25 @@ impl Gateway {
         };
 
         gw.load_clients().await?;
+        gw.route_htlcs().await?;
 
         Ok(gw)
+    }
+
+    async fn route_htlcs(&self) -> Result<()> {
+        let (ln_sender, ln_receiver) = mpsc::channel::<RouteHtlcRequest>(100);
+        let (gw_sender, gw_receiver) = mpsc::channel::<Result<RouteHtlcRequest>>(100);
+        // FIXME: unwrap
+        let mut stream = self.lnrpc.route_htlcs(ln_receiver.into()).await?;
+        let mut task_group = self.task_group.make_subgroup().await;
+        task_group
+            .spawn("Gateway route htlcs", |_handle| async move {
+                while let Some(Ok(request)) = stream.next().await {
+                    info!("request {request:?}");
+                }
+            })
+            .await;
+        Ok(())
     }
 
     async fn create_lightning_client(

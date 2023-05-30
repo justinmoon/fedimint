@@ -35,7 +35,8 @@ pub struct GatewayLndClient {
     /// Used to spawn a task handling HTLC subscriptions
     task_group: TaskGroup,
     /// Map of short channel id to the actor that is subscribed to HTLC updates
-    subscriptions: Arc<Mutex<HashMap<u64, HtlcSubscriptionSender>>>,
+    /// TODO: replace this with just one sender which gateway has other side of
+    gateway_sender: Arc<Mutex<Option<HtlcSubscriptionSender>>>,
     /// Sender that is used to send HTLC updates to LND (Resume, Reject, Settle)
     lnd_tx: mpsc::Sender<ForwardHtlcInterceptResponse>,
 }
@@ -51,12 +52,12 @@ impl GatewayLndClient {
         let (lnd_tx, lnd_rx) = mpsc::channel::<ForwardHtlcInterceptResponse>(CHANNEL_SIZE);
 
         let client = Self::connect(address, tls_cert, macaroon).await?;
-        let subscriptions = Arc::new(Mutex::new(HashMap::new()));
+        let gateway_sender = Arc::new(Mutex::new(None));
 
         let mut gw_rpc = GatewayLndClient {
             client,
             task_group,
-            subscriptions,
+            gateway_sender,
             lnd_tx,
         };
 
@@ -85,7 +86,7 @@ impl GatewayLndClient {
     async fn spawn_interceptor(&mut self, lnd_rx: mpsc::Receiver<ForwardHtlcInterceptResponse>) {
         let lnd_sender = self.lnd_tx.clone();
         let mut client = self.client.clone();
-        let subs = self.subscriptions.clone();
+        let gateway_sender = self.gateway_sender.clone();
         self.task_group
             .spawn("LND HTLC Subscription", move |_handle| async move {
                 let mut htlc_stream = match client
@@ -110,7 +111,7 @@ impl GatewayLndClient {
                         None
                     }
                 } {
-                    trace!("handling htlc {:?}", htlc);
+                    info!("handling htlc {:?}", htlc.incoming_circuit_key);
 
                     if htlc.incoming_circuit_key.is_none() {
                         error!("Cannot route htlc with None incoming_circuit_key");
@@ -118,10 +119,8 @@ impl GatewayLndClient {
                     }
 
                     let incoming_circuit_key = htlc.incoming_circuit_key.unwrap();
-
-                    if let Some(actor_sender) =
-                        Self::can_route_htlc(htlc.outgoing_requested_chan_id, subs.clone()).await
-                    {
+                    let guard = gateway_sender.lock().await;
+                    if let Some(gateway_sender) = &*guard {
                         let intercept = SubscribeInterceptHtlcsResponse {
                             payment_hash: htlc.payment_hash,
                             incoming_amount_msat: htlc.incoming_amount_msat,
@@ -132,7 +131,7 @@ impl GatewayLndClient {
                             htlc_id: incoming_circuit_key.htlc_id,
                         };
 
-                        match actor_sender
+                        match gateway_sender
                             .send(Ok(RouteHtlcResponse {
                                 action: Some(route_htlc_response::Action::SubscribeResponse(
                                     intercept,
@@ -161,6 +160,10 @@ impl GatewayLndClient {
                 }
             })
             .await;
+    }
+
+    async fn set_gateway_sender(&self, sender: HtlcSubscriptionSender) {
+        *self.gateway_sender.lock().await = Some(sender);
     }
 
     async fn can_route_htlc(
@@ -364,11 +367,12 @@ impl ILnRpcClient for GatewayLndClient {
 
         // Channel to send intercepted htlc to actor for processing
         // actor_sender needs to be saved when the scid is received
-        let (actor_sender, actor_receiver) =
+        let (gateway_sender, gateway_receiver) =
             mpsc::channel::<Result<RouteHtlcResponse, tonic::Status>>(CHANNEL_SIZE);
+        self.set_gateway_sender(gateway_sender).await;
 
         let mut stream = events.into_inner();
-        let subs = self.subscriptions.clone();
+        // let subs = self.subscriptions.clone();
         let lnd_sender = self.lnd_tx.clone();
 
         let mut task_group = self.task_group.make_subgroup().await;
@@ -378,10 +382,11 @@ impl ILnRpcClient for GatewayLndClient {
                     Some(route_htlc_request::Action::SubscribeRequest(subscribe_request)) => {
                         // Save the channel to the actor so that the interceptor thread can send
                         // HTLCs to it
-                        subs
-                            .lock()
-                            .await
-                            .insert(subscribe_request.short_channel_id, actor_sender.clone());
+                        info!("ignoring SubscribeRequest {}", subscribe_request.short_channel_id);
+                        // subs
+                        //     .lock()
+                        //     .await
+                        //     .insert(subscribe_request.short_channel_id, actor_sender.clone());
                     }
                     Some(route_htlc_request::Action::CompleteRequest(complete_request)) => {
                         let CompleteHtlcsRequest {
@@ -417,6 +422,6 @@ impl ILnRpcClient for GatewayLndClient {
         })
         .await;
 
-        Ok(Box::pin(ReceiverStream::new(actor_receiver)))
+        Ok(Box::pin(ReceiverStream::new(gateway_receiver)))
     }
 }
