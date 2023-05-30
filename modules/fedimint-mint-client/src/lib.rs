@@ -810,7 +810,9 @@ impl MintClientModule {
 
                 match state.state {
                     MintOutputStates::Succeeded(succeeded) => Some(Ok(succeeded.amount)),
-                    MintOutputStates::Aborted(_) => Some(Err(anyhow!("Transaction was rejected"))),
+                    MintOutputStates::Aborted(e) => {
+                        Some(Err(anyhow!("Transaction was rejected {e:?}")))
+                    }
                     MintOutputStates::Failed(failed) => Some(Err(anyhow!(
                         "Failed to finalize transaction: {}",
                         failed.error

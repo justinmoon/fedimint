@@ -154,7 +154,7 @@ impl Fixtures {
         GatewayTest::new(
             BASE_PORT.fetch_add(1, Ordering::Relaxed),
             password,
-            FakeLightningTest::new(),
+            self.lightning_client.clone(),
         )
         .await
     }

@@ -97,6 +97,7 @@ async fn main() -> Result<(), anyhow::Error> {
         task_group.make_subgroup().await,
         fees.unwrap_or(GatewayFee(DEFAULT_FEES)).0,
         data_dir,
+        api_addr,
     )
     .await
     .unwrap_or_else(|e| {

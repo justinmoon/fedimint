@@ -6,9 +6,12 @@ mod fixtures;
 
 use std::time::Duration;
 
+use assert_matches::assert_matches;
 use fedimint_core::sats;
 use fedimint_core::task::sleep;
-use fedimint_ln_client::LightningClientExt;
+use fedimint_core::util::NextOrPending;
+use fedimint_dummy_client::DummyClientExt;
+use fedimint_ln_client::{LightningClientExt, LnPayState};
 use fedimint_testing::federation::FederationTest;
 use ln_gateway::rpc::rpc_client::GatewayRpcClient;
 use ln_gateway::rpc::{BalancePayload, ConnectFedPayload, DepositAddressPayload};
@@ -145,7 +148,30 @@ async fn gatewayd_pays_internal_invoice_within_a_connected_federation() -> anyho
 
 #[tokio::test(flavor = "multi_thread")]
 async fn gatewayd_pays_outgoing_invoice_to_generic_ln() -> anyhow::Result<()> {
-    // todo: implement test case
+    let fixtures = fixtures::base_fixtures().await;
+    let fed = fixtures.new_fed().await;
+    let user_client = fed.new_client().await;
+    let _gateway = fixtures.new_connected_gateway(&fed).await;
+    let (lightning, _lnrpc) = fixtures.lightning();
+
+    // Give user some funds
+    let (print_op, outpoint) = user_client.print_money(sats(100_000)).await?;
+    user_client
+        .await_primary_module_output(print_op, outpoint)
+        .await?;
+
+    // Create invoice and have user pay it
+    let invoice = lightning
+        .invoice(fedimint_core::Amount::from_sats(10_000), None)
+        .await?;
+    let (pay_op, _contract_id) = user_client.pay_bolt11_invoice(invoice.clone()).await?;
+    let mut pay_sub = user_client.subscribe_ln_pay(pay_op).await?.into_stream();
+    assert_eq!(pay_sub.ok().await?, LnPayState::Created);
+    assert_eq!(pay_sub.ok().await?, LnPayState::Funded);
+    assert_matches!(pay_sub.ok().await?, LnPayState::Success { .. });
+
+    // TODO: assert that the returned preimage is correct (it's hard-coded to zeros
+    // right now)
 
     Ok(())
 }
@@ -178,8 +204,22 @@ pub async fn connect_federations(
 ) -> anyhow::Result<()> {
     for fed in feds {
         let connect = fed.connection_code().to_string();
-        rpc.connect_federation(ConnectFedPayload { connect })
-            .await?;
+        rpc.connect_federation(ConnectFedPayload {
+            connect: connect.clone(),
+        })
+        .await?;
+        tracing::info!(
+            "connected federation: {:?}\n\n\n\n\n\n",
+            fed.connection_code()
+        );
+        tracing::info!(
+            "connected federation: {:?}\n\n\n\n\n\n",
+            fed.connection_code().to_string()
+        );
+        tracing::info!(
+            "connected federation id : {}\n\n\n\n\n\n",
+            fed.connection_code().id
+        );
     }
     Ok(())
 }

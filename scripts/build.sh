@@ -37,6 +37,7 @@ export PATH="$PWD/target/${CARGO_PROFILE:-debug}:$PATH"
 # Function for killing processes stored in FM_PID_FILE in reverse-order they were created in
 function kill_fedimint_processes {
   echo "Killing fedimint processes"
+  echo "Logs -> $FM_LOGS_DIR"
   PIDS=$(cat $FM_PID_FILE | sed '1!G;h;$!d') # sed reverses order
   if [ -n "$PIDS" ]
   then

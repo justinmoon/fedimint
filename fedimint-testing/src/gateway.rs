@@ -51,7 +51,7 @@ impl GatewayTest {
     pub(crate) async fn new(
         base_port: u16,
         password: String,
-        lightning: impl ILnRpcClient + 'static,
+        lightning: Arc<dyn ILnRpcClient>,
     ) -> Self {
         let listen: SocketAddr = format!("127.0.0.1:{base_port}").parse().unwrap();
         let address: Url = format!("http://{listen}").parse().unwrap();
@@ -59,10 +59,11 @@ impl GatewayTest {
         let (path, _config_dir) = test_dir("gateway-cfg");
 
         let gateway = Gateway::new_with_lightning_connection(
-            Arc::new(lightning),
+            lightning,
             task.make_subgroup().await,
             DEFAULT_FEES,
             path,
+            address.clone(),
         )
         .await
         .unwrap();

@@ -180,6 +180,8 @@ impl LightningClientExt for Client {
         let operation_id = OperationId(invoice.payment_hash().into_inner());
         let active_gateway = self.select_active_gateway().await?;
 
+        let fed_id = self.get_config().await.federation_id;
+        tracing::info!("pay_bolt11_invoice federation id: {}", fed_id);
         let (output, contract_id) = lightning
             .create_outgoing_output(
                 operation_id,

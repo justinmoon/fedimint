@@ -68,6 +68,7 @@ async fn new_gateway_client(fed: &FederationTest, fixtures: &Fixtures) -> anyhow
             proportional_millionths: 0,
         },
         timelock_delta: 10,
+        // FIXME: this isn't assumed to be correct. in these tests the webserver isn't running ...
         api: Url::from_str("http://127.0.0.1:8175").unwrap(),
         mint_channel_id: 1,
     });

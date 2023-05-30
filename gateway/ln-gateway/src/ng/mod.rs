@@ -175,6 +175,7 @@ impl GatewayClientExt for Client {
                             yield GatewayExtPayStates::Success;
                             return;
                         }
+                        tracing::info!("await_primary_module_output {:?}", self.await_primary_module_output(operation_id, outpoint).await);
 
                         yield GatewayExtPayStates::Fail;
                     }

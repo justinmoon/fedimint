@@ -18,7 +18,7 @@ use std::fs::File;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -28,19 +28,17 @@ use axum::response::{IntoResponse, Response};
 use bitcoin::Address;
 use bitcoin_hashes::hex::ToHex;
 use clap::Subcommand;
-use fedimint_client::module::gen::{ClientModuleGenRegistry, IClientModuleGen};
+use fedimint_client::module::gen::ClientModuleGenRegistry;
 use fedimint_client::secret::PlainRootSecretStrategy;
 use fedimint_client::{Client, ClientBuilder};
 use fedimint_client_legacy::ln::PayInvoicePayload;
 use fedimint_client_legacy::modules::ln::route_hints::RouteHint;
-use fedimint_client_legacy::{ClientError, GatewayClient, GatewayClientConfig};
+use fedimint_client_legacy::{ClientError, GatewayClientConfig};
 use fedimint_core::api::{
     DynGlobalApi, FederationError, GlobalFederationApi, WsClientConnectInfo, WsFederationApi,
 };
 use fedimint_core::config::{load_from_file, ClientConfig, FederationId};
-use fedimint_core::db::mem_impl::MemDatabase;
-use fedimint_core::module::registry::ModuleDecoderRegistry;
-use fedimint_core::task::{self, RwLock, TaskGroup, TaskHandle};
+use fedimint_core::task::{RwLock, TaskGroup, TaskHandle};
 use fedimint_core::time::now;
 use fedimint_core::{Amount, TransactionId};
 use fedimint_dummy_client::DummyClientGen;
@@ -60,19 +58,17 @@ use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 use url::Url;
 
-use crate::actor::GatewayActor;
-use crate::client::DynGatewayClientBuilder;
 use crate::lnd::GatewayLndClient;
 use crate::lnrpc_client::NetworkLnRpcClient;
-use crate::ng::GatewayClientGen;
+use crate::ng::{GatewayClientGen, GatewayExtPayStates};
 use crate::rpc::rpc_server::run_webserver;
 use crate::rpc::{
     BackupPayload, BalancePayload, ConnectFedPayload, DepositAddressPayload, DepositPayload,
     GatewayInfo, GatewayRequest, GatewayRpcSender, InfoPayload, RestorePayload, WithdrawPayload,
 };
 
-const ROUTE_HINT_RETRIES: usize = 10;
-const ROUTE_HINT_RETRY_SLEEP: Duration = Duration::from_secs(2);
+// const ROUTE_HINT_RETRIES: usize = 10;
+// const ROUTE_HINT_RETRY_SLEEP: Duration = Duration::from_secs(2);
 /// LND HTLC interceptor can't handle SCID of 0, so start from 1
 const INITIAL_SCID: u64 = 1;
 
@@ -150,6 +146,7 @@ pub struct Gateway {
     channel_id_generator: AtomicU64,
     fees: RoutingFees,
     data_dir: PathBuf,
+    webserver_url: Url,
 }
 
 impl Gateway {
@@ -159,6 +156,7 @@ impl Gateway {
         task_group: TaskGroup,
         fees: RoutingFees,
         data_dir: PathBuf,
+        webserver_url: Url,
     ) -> Result<Self> {
         // Create message channels for the webserver
         let (sender, receiver) = mpsc::channel::<GatewayRequest>(100);
@@ -177,6 +175,7 @@ impl Gateway {
             lightning_mode: Some(lightning_mode),
             fees,
             data_dir,
+            webserver_url,
         };
 
         gw.load_clients().await?;
@@ -190,6 +189,7 @@ impl Gateway {
         task_group: TaskGroup,
         fees: RoutingFees,
         data_dir: PathBuf,
+        webserver_url: Url,
     ) -> Result<Self> {
         // Create message channels for the webserver
         let (sender, receiver) = mpsc::channel::<GatewayRequest>(100);
@@ -204,6 +204,7 @@ impl Gateway {
             lightning_mode: None,
             fees,
             data_dir,
+            webserver_url,
         };
 
         gw.load_clients().await?;
@@ -273,7 +274,7 @@ impl Gateway {
                 proportional_millionths: 0,
             },
             timelock_delta: 10,
-            api: Url::from_str("http://127.0.0.1:8175").unwrap(),
+            api: self.webserver_url.clone(),
             mint_channel_id: 1,
         });
         registry.attach(DummyClientGen);
@@ -326,6 +327,7 @@ impl Gateway {
     async fn load_client(&mut self, client: Client) {
         // TODO: "join federation"
         // TODO: use route hints
+        tracing::info!("load_client {}", client.federation_id());
         self.clients
             .write()
             .await
@@ -362,7 +364,7 @@ impl Gateway {
 
             for config in configs {
                 let client = self.build_client(config.client_config).await?;
-                self.load_client(client);
+                self.load_client(client).await;
                 if config.mint_channel_id > next_channel_id {
                     next_channel_id = config.mint_channel_id + 1;
                 }
@@ -394,9 +396,11 @@ impl Gateway {
             GatewayError::Other(anyhow::anyhow!("Invalid federation member string {}", e))
         })?;
 
-        // if let Ok(actor) = self.select_actor(connect.id).await {
-        //     info!("Federation {} already connected", connect.id);
-        //     return actor.get_info();
+        // TODO: check if we've already joined this federation ... this could benefit
+        // from actor-style struct with get_info() method
+        // if let Ok(actor) =
+        // self.select_actor(connect.id).await {     info!("Federation {}
+        // already connected", connect.id);     return actor.get_info();
         // }
 
         let GetNodeInfoResponse { pub_key, alias: _ } = self.lnrpc.info().await?;
@@ -452,18 +456,31 @@ impl Gateway {
     }
 
     async fn handle_pay_invoice_msg(&self, payload: PayInvoicePayload) -> Result<Preimage> {
-        todo!();
-        // let PayInvoicePayload {
-        //     federation_id,
-        //     contract_id,
-        // } = payload;
-
-        // let actor = self.select_actor(federation_id).await?;
-        // let (outpoint, preimage) = actor.pay_invoice(contract_id).await?;
-        // actor
-        //     .await_outgoing_contract_claimed(contract_id, outpoint)
-        //     .await?;
-        // Ok(preimage)
+        let client = self.select_client(payload.federation_id).await?;
+        let operation_id = client
+            .gateway_pay_bolt11_invoice(payload.contract_id)
+            .await?;
+        let mut updates = client
+            .gateway_subscribe_ln_pay(operation_id)
+            .await?
+            .into_stream();
+        // FIXME: don't hard-code preimage
+        let preimage = Preimage([0; 32]);
+        while let Some(update) = updates.next().await {
+            match update {
+                GatewayExtPayStates::Success => return Ok(preimage),
+                GatewayExtPayStates::Fail => {
+                    return Err(GatewayError::Other(anyhow!("Payment failed")))
+                }
+                GatewayExtPayStates::Canceled => {
+                    return Err(GatewayError::Other(anyhow!("Outgoing contract canceled")))
+                }
+                _ => {}
+            };
+        }
+        return Err(GatewayError::Other(anyhow!(
+            "pay listener unexpectely stoppped"
+        )));
     }
 
     async fn handle_balance_msg(&self, payload: BalancePayload) -> Result<Amount> {
