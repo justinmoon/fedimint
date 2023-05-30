@@ -93,6 +93,38 @@ impl LightningTest for RealLightningTest {
         }
     }
 
+    async fn pay_invoice(&self, invoice: &Invoice) -> ln_gateway::Result<()> {
+        match self.gateway_node {
+            GatewayNode::Cln => {
+                unimplemented!()
+            }
+            GatewayNode::Lnd => {
+                // TODO: return preimage
+                let _response = self
+                    .rpc_cln
+                    .lock()
+                    .await
+                    .call_typed(cln_rpc::model::PayRequest {
+                        bolt11: invoice.to_string(),
+                        amount_msat: None,
+                        label: None,
+                        riskfactor: None,
+                        maxfeepercent: None,
+                        retry_for: None,
+                        maxdelay: None,
+                        exemptfee: None,
+                        localinvreqid: None,
+                        exclude: None,
+                        maxfee: None,
+                        description: None,
+                    })
+                    .await
+                    .expect("CLN failed to pay invoice");
+                Ok(())
+            }
+        }
+    }
+
     async fn invalid_invoice(
         &self,
         _amount: Amount,

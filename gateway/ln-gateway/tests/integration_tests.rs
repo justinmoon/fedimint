@@ -4,6 +4,7 @@
 //! and business logic.
 mod fixtures;
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use assert_matches::assert_matches;
@@ -12,6 +13,7 @@ use fedimint_core::task::sleep;
 use fedimint_core::util::NextOrPending;
 use fedimint_dummy_client::DummyClientExt;
 use fedimint_ln_client::{LightningClientExt, LnPayState};
+use fedimint_testing::btc::BitcoinTest;
 use fedimint_testing::federation::FederationTest;
 use ln_gateway::rpc::rpc_client::GatewayRpcClient;
 use ln_gateway::rpc::{BalancePayload, ConnectFedPayload, DepositAddressPayload};
@@ -85,13 +87,14 @@ async fn gatewayd_shows_balance_for_any_connected_federation() -> anyhow::Result
     Ok(())
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn gatewayd_allows_deposit_to_any_connected_federation() -> anyhow::Result<()> {
-    let (_, rpc, fed1, _, bitcoin) = fixtures::fixtures(None).await;
-    let federation_id = fed1.connection_code().id;
-    connect_federations(&rpc, &[&fed1]).await.unwrap();
-
-    let address = rpc
+/// FIXME: assumes that the gateway's balance is 0 when funciton is called ...
+async fn pegin_gateway(
+    gateway_rpc: &GatewayRpcClient,
+    fed: &FederationTest,
+    bitcoin: &Arc<dyn BitcoinTest>,
+) -> anyhow::Result<()> {
+    let federation_id = fed.connection_code().id;
+    let address = gateway_rpc
         .get_deposit_address(DepositAddressPayload { federation_id })
         .await?;
     let amount_sent = bitcoin::Amount::from_sat(100_000);
@@ -102,7 +105,7 @@ async fn gatewayd_allows_deposit_to_any_connected_federation() -> anyhow::Result
     // and fail the test after 60 seconds without balance update
     let mut count = 0;
     loop {
-        if rpc
+        if gateway_rpc
             .get_balance(BalancePayload { federation_id })
             .await
             .unwrap()
@@ -114,6 +117,14 @@ async fn gatewayd_allows_deposit_to_any_connected_federation() -> anyhow::Result
         assert!(count < 60, "deposit didn't complete in time");
         sleep(Duration::from_secs(1)).await;
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn gatewayd_allows_deposit_to_any_connected_federation() -> anyhow::Result<()> {
+    let (_, gateway_rpc, fed, _, bitcoin) = fixtures::fixtures(None).await;
+    connect_federations(&gateway_rpc, &[&fed]).await.unwrap();
+    pegin_gateway(&gateway_rpc, &fed, &bitcoin).await?;
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -185,15 +196,31 @@ async fn gatewayd_pays_outgoing_invoice_between_federations_connected() -> anyho
 
 #[tokio::test(flavor = "multi_thread")]
 async fn gatewayd_intercepts_htlc_and_settles_to_connected_federation() -> anyhow::Result<()> {
-    let (_, rpc, fed1, fed2, _) = fixtures::fixtures(None).await;
+    let fixtures = fixtures::base_fixtures().await;
+    let fed = fixtures.new_fed().await;
+    let user_client = fed.new_client().await;
+    let gateway = fixtures.new_connected_gateway(&fed).await;
+    let gateway_rpc = gateway.get_rpc().await;
+    let bitcoin = fixtures.bitcoin();
+    let (lightning, _lnrpc) = fixtures.lightning();
 
-    connect_federations(&rpc, &[&fed1]).await.unwrap();
+    pegin_gateway(&gateway_rpc, &fed, &bitcoin).await?;
 
-    let user_client = fed1.new_client().await;
     let invoice_amount = sats(100);
-    let (_invoice_op, invoice) = user_client
+    let (invoice_op, invoice) = user_client
         .create_bolt11_invoice(invoice_amount, "description".into(), None)
         .await?;
+
+    lightning.pay_invoice(&invoice).await?;
+
+    let mut invoice_sub = user_client
+        .subscribe_ln_pay(invoice_op)
+        .await?
+        .into_stream();
+    assert_eq!(invoice_sub.ok().await?, LnPayState::Created);
+    assert_eq!(invoice_sub.ok().await?, LnPayState::Funded);
+    assert_matches!(invoice_sub.ok().await?, LnPayState::Success { .. });
+    assert_eq!(invoice_amount, user_client.get_balance().await);
 
     Ok(())
 }
@@ -208,18 +235,6 @@ pub async fn connect_federations(
             connect: connect.clone(),
         })
         .await?;
-        tracing::info!(
-            "connected federation: {:?}\n\n\n\n\n\n",
-            fed.connection_code()
-        );
-        tracing::info!(
-            "connected federation: {:?}\n\n\n\n\n\n",
-            fed.connection_code().to_string()
-        );
-        tracing::info!(
-            "connected federation id : {}\n\n\n\n\n\n",
-            fed.connection_code().id
-        );
     }
     Ok(())
 }

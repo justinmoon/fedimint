@@ -85,6 +85,10 @@ impl LightningTest for FakeLightningTest {
             .unwrap())
     }
 
+    async fn pay_invoice(&self, invoice: &Invoice) -> ln_gateway::Result<()> {
+        unimplemented!()
+    }
+
     async fn invalid_invoice(
         &self,
         amount: Amount,

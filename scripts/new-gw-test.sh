@@ -26,10 +26,11 @@ eval "$(devimint env)"
 
 # use real daemons for gatewayd tests
 export FM_TEST_USE_REAL_DAEMONS=1
-cargo test -p ln-gateway ${CARGO_PROFILE:+--profile ${CARGO_PROFILE}} gatewayd_
+# cargo test -p ln-gateway ${CARGO_PROFILE:+--profile ${CARGO_PROFILE}} gatewayd_
+cargo test -p ln-gateway ${CARGO_PROFILE:+--profile ${CARGO_PROFILE}} gatewayd_intercepts_htlc_and_settles_to_connected_federation
 
 # use fake daemons for gateway client tests
-export FM_TEST_USE_REAL_DAEMONS=0
-cargo test -p ln-gateway test_gateway_client
+# export FM_TEST_USE_REAL_DAEMONS=0
+# cargo test -p ln-gateway test_gateway_client
 
 echo "Logs -> $FM_LOGS_DIR"

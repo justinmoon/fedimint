@@ -15,6 +15,11 @@ pub trait LightningTest {
         expiry_time: Option<u64>,
     ) -> ln_gateway::Result<Invoice>;
 
+    /// Pays invoice from a non-gateway LN node
+    /// TODO: optional "preimage" parameter
+    /// TODO: return preimage
+    async fn pay_invoice(&self, invoice: &Invoice) -> ln_gateway::Result<()>;
+
     /// Creates invoice from a non-gateway LN node
     async fn invalid_invoice(
         &self,
