@@ -21,7 +21,7 @@ on:
 jobs:
   lint:
     name: "Lint"
-    runs-on: buildjet-2vcpu-ubuntu-2004
+    runs-on: [self-hosted, linux]
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v3
@@ -57,12 +57,12 @@ jobs:
           - macos
         include:
           - on: linux
-            runs-on: buildjet-8vcpu-ubuntu-2004
+            runs-on: [self-hosted, linux]
             build-in-pr: true
             timeout: 60
             run-tests: true
           - host: macos
-            runs-on: self-hosted
+            runs-on: [self-hosted, macos]
             build-in-pr: false
             # TODO: Too slow; see https://github.com/actions/runner-images/issues/1336
             timeout: 60
@@ -135,7 +135,7 @@ jobs:
   audit:
     if: github.repository == 'fedimint/fedimint'
     name: "Audit"
-    runs-on: buildjet-2vcpu-ubuntu-2004
+    runs-on: [self-hosted, linux]
     timeout-minutes: 10
     # sometimes we can't fix these immediately, yet
     # we don't want to stop the world because of it
@@ -161,7 +161,7 @@ jobs:
   ccov:
     if: github.repository == 'fedimint/fedimint'
     name: "Code coverage"
-    runs-on: buildjet-8vcpu-ubuntu-2004
+    runs-on: [self-hosted, linux]
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v3
@@ -205,11 +205,11 @@ jobs:
           - wasm32-unknown-unknown
         include:
           - host: linux
-            runs-on: buildjet-4vcpu-ubuntu-2004
+            runs-on: [self-hosted, linux]
             build-in-pr: true
             timeout: 20
           - host: macos
-            runs-on: self-hosted
+            runs-on: [self-hosted, macos]
             build-in-pr: false
             # TODO: Too slow; see https://github.com/actions/runner-images/issues/1336
             timeout: 60
@@ -251,7 +251,7 @@ jobs:
   containers:
     if: github.repository == 'fedimint/fedimint'
     name: "Containers"
-    runs-on: buildjet-8vcpu-ubuntu-2004
+    runs-on: [self-hosted, linux]
     timeout-minutes: 30
     steps:
       - name: Checkout Code
@@ -334,7 +334,7 @@ jobs:
             bins: gateway-cli,gatewayd
             deb: fedimint-gateway
 
-    runs-on: buildjet-4vcpu-ubuntu-2004
+    runs-on: [self-hosted, linux]
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v3
@@ -406,7 +406,7 @@ jobs:
     if: always() && github.repository == 'fedimint/fedimint'
     name: "Notifications"
     timeout-minutes: 1
-    runs-on: ubuntu-22.04
+    runs-on: [self-hosted, linux]
     # note: we don't depend on `audit` because it will
     # be often broken, and we can't fix it immediately
     needs: [ build, cross, ccov, containers, pkgs ]
