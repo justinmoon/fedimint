@@ -127,7 +127,7 @@ pub struct UserClientConfig(pub ClientConfig);
 pub struct GatewayClientConfig {
     pub client_config: ClientConfig,
     #[serde(with = "serde_keypair")]
-    // generate on start, store in db
+    // derivable from secret
     pub redeem_key: bitcoin::KeyPair,
     // env var
     pub timelock_delta: u64,

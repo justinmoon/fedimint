@@ -146,6 +146,7 @@ impl IntoResponse for GatewayError {
 }
 
 pub struct Gateway {
+    // TODO: move the lnd / cln specific LightningMode fields into ILnRpcClient structs
     lnrpc: Arc<dyn ILnRpcClient>,
     lightning_mode: Option<LightningMode>,
     clients: Arc<RwLock<BTreeMap<FederationId, Client>>>,
@@ -238,6 +239,8 @@ impl Gateway {
         let gateway_rpc_sender = GatewayRpcSender::new(self.sender.clone());
         task_group
             .spawn("Gateway route htlcs", |_handle| async move {
+                // TODO: if the stream ends, re-create the stream. New while loop here.
+                // TODO: poll all 
                 while let Some(Ok(RouteHtlcResponse { action })) = stream.next().await {
                     info!("request {action:?}");
                         match action {
@@ -245,6 +248,7 @@ impl Gateway {
                                 info!("subscribe response: {htlc:?}");
                                 let htlc: Htlc = htlc.into();
                                 // FIXME: don't swallow
+                                // run client state machines directly here
                                 let _ = gateway_rpc_sender.send(HtlcPayload{ htlc }).await;
                             }
                             Some(route_htlc_response::Action::CompleteResponse(_complete_response)) => {
@@ -256,6 +260,7 @@ impl Gateway {
                             }
                         }
                 }
+                // TODO: handle None (disconnection)
             })
             .await;
         Ok(())
@@ -559,6 +564,7 @@ impl Gateway {
     async fn handle_address_msg(&self, payload: DepositAddressPayload) -> Result<Address> {
         let client = self.select_client(payload.federation_id).await?;
         let (operation_id, address) = client
+            // FIXME: increase timeout
             .get_deposit_address(now() + Duration::from_secs(600))
             .await?;
         let mut task_group = self.task_group.clone();
