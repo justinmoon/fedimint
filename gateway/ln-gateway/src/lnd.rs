@@ -361,7 +361,13 @@ impl ILnRpcClient for GatewayLndClient {
             });
         }
 
-        Ok(GetRouteHintsResponse { route_hints })
+        if std::env::var("FM_DISABLE_ROUTE_HINTS").is_ok() {
+            Ok(GetRouteHintsResponse {
+                route_hints: vec![],
+            })
+        } else {
+            Ok(GetRouteHintsResponse { route_hints })
+        }
     }
 
     async fn pay(
