@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use bitcoin_hashes::sha256::HashEngine;
@@ -21,7 +22,7 @@ use fedimint_core::encoding::Encodable;
 use fedimint_core::module::{
     api_endpoint, ApiAuth, ApiEndpoint, ApiEndpointContext, ApiError, ApiRequestErased,
 };
-use fedimint_core::task::TaskGroup;
+use fedimint_core::task::{sleep, TaskGroup};
 use fedimint_core::util::write_new;
 use fedimint_core::PeerId;
 use itertools::Itertools;
@@ -188,15 +189,38 @@ impl ConfigGenApi {
         // Update our state to running DKG
         let request = self.get_requested_params()?;
         let response = self.get_consensus_config_gen_params(&request).await?;
-        let (params, registry) = {
+        let (params, registry, leader) = {
             let mut state = self.require_status(ServerStatus::SharingConfigGenParams)?;
             state.status = ServerStatus::ReadyForConfigGen;
             (
                 state.get_config_gen_params(&request, response.consensus)?,
                 state.settings.registry.clone(),
+                // Create a WSClient for the leader. This will be None if we are the leader
+                match state.auth() {
+                    Ok(auth) => state.local.clone().and_then(|local| {
+                        local
+                            .leader_api_url
+                            .map(|url| WsAdminClient::new(url, PeerId::from(0), auth))
+                    }),
+                    Err(_) => None,
+                },
             )
         };
+
         self.update_leader().await?;
+
+        if let Some(client) = leader {
+            // Wait for leader to signal readiness for DKG
+            loop {
+                let status = client.status().await.map_err(|_| {
+                    ApiError::not_found("Unable to connect to the leader".to_string())
+                })?;
+                if status.server == ServerStatus::ReadyForConfigGen {
+                    break;
+                }
+                sleep(Duration::from_millis(10)).await;
+            }
+        }
 
         // Run DKG
         let mut task_group = self.task_group.make_subgroup().await;
