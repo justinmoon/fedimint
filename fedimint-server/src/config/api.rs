@@ -191,31 +191,22 @@ impl ConfigGenApi {
     /// Once configs are generated, starts DKG and await its
     /// completion, calling a second time will return an error
     pub async fn run_dkg(&self) -> ApiResult<()> {
-        // Update our state to running DKG
-        let request = self.get_requested_params()?;
-        let response = self.get_consensus_config_gen_params(&request).await?;
-        let (params, registry, leader) = {
+        let leader = {
             let mut state = self.require_status(ServerStatus::SharingConfigGenParams)?;
+            // Update our state
             state.status = ServerStatus::ReadyForConfigGen;
-            (
-                state.get_config_gen_params(&request, response.consensus)?,
-                state.settings.registry.clone(),
-                // Create a WSClient for the leader. This will be None if we are the leader
-                match state.auth() {
-                    Ok(auth) => state.local.clone().and_then(|local| {
-                        local
-                            .leader_api_url
-                            .map(|url| WsAdminClient::new(url, PeerId::from(0), auth))
-                    }),
-                    Err(_) => None,
-                },
-            )
+            // Create a WSClient for the leader
+            state.local.clone().and_then(|local| {
+                local
+                    .leader_api_url
+                    .map(|url| WsAdminClient::unauthenticated(url, PeerId::from(0)))
+            })
         };
 
         self.update_leader().await?;
 
+        // Followers wait for leader to signal readiness for DKG
         if let Some(client) = leader {
-            // Wait for leader to signal readiness for DKG
             loop {
                 let status = client.status().await.map_err(|_| {
                     ApiError::not_found("Unable to connect to the leader".to_string())
@@ -225,10 +216,21 @@ impl ConfigGenApi {
                 }
                 sleep(Duration::from_millis(10)).await;
             }
-        }
+        };
+
+        // Get params and registry
+        let request = self.get_requested_params()?;
+        let response = self.get_consensus_config_gen_params(&request).await?;
+        let (params, registry) = {
+            let state: MutexGuard<'_, ConfigGenState> =
+                self.require_status(ServerStatus::ReadyForConfigGen)?;
+            let params = state.get_config_gen_params(&request, response.consensus)?;
+            let registry = state.settings.registry.clone();
+            (params, registry)
+        };
 
         // Run DKG
-        let mut task_group = self.task_group.make_subgroup().await;
+        let mut task_group: TaskGroup = self.task_group.make_subgroup().await;
         let config = ServerConfig::distributed_gen(
             &params,
             registry,
