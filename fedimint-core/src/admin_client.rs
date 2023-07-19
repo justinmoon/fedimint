@@ -20,12 +20,12 @@ use crate::PeerId;
 
 /// For a guardian to communicate with their server
 // TODO: Maybe should have it's own CLI client so it doesn't need to be in core
-pub struct WsAdminClient {
+pub struct AuthenticatedAdminClient {
     inner: DynGlobalApi,
     auth: ApiAuth,
 }
 
-impl WsAdminClient {
+impl AuthenticatedAdminClient {
     pub fn new(url: Url, our_id: PeerId, auth: ApiAuth) -> Self {
         Self {
             inner: WsFederationApi::new(vec![(our_id, url)]).into(),
@@ -37,7 +37,7 @@ impl WsAdminClient {
     ///
     /// Must be called first before any other calls to the API
     pub async fn set_password(&self) -> FederationResult<()> {
-        self.request_auth("set_password", ApiRequestErased::default())
+        self.request("set_password", ApiRequestErased::default())
             .await
     }
 
@@ -49,8 +49,110 @@ impl WsAdminClient {
         &self,
         info: ConfigGenConnectionsRequest,
     ) -> FederationResult<()> {
-        self.request_auth("set_config_gen_connections", ApiRequestErased::new(info))
+        self.request("set_config_gen_connections", ApiRequestErased::new(info))
             .await
+    }
+
+    /// Sends a signal to consensus that we are ready to shutdown the federation
+    /// and upgrade
+    pub async fn signal_upgrade(&self) -> FederationResult<()> {
+        self.request("upgrade", ApiRequestErased::default()).await
+    }
+
+    /// Sends a signal to consensus that we want to force running an epoch
+    /// outcome
+    pub async fn force_process_epoch(&self, outcome: SerdeEpochHistory) -> FederationResult<()> {
+        self.request("process_outcome", ApiRequestErased::new(outcome))
+            .await
+    }
+
+    /// Delegates to `fetch_epoch_history`
+    /// FIXME: put this on both?
+    pub async fn fetch_last_epoch_history(
+        &self,
+        epoch_pk: PublicKey,
+        decoders: &ModuleDecoderRegistry,
+    ) -> FederationResult<SignedEpochOutcome> {
+        let epoch = self.inner.fetch_epoch_count().await? - 1;
+        self.inner
+            .fetch_epoch_history(epoch, epoch_pk, decoders)
+            .await
+    }
+
+    /// Gets the default config gen params which can be configured by the
+    /// leader, gives them a template to modify
+    pub async fn get_default_config_gen_params(&self) -> FederationResult<ConfigGenParamsRequest> {
+        self.request("get_default_config_gen_params", ApiRequestErased::default())
+            .await
+    }
+
+    /// Leader sets the consensus params, everyone sets the local params
+    ///
+    /// After calling this `ConfigGenParams` can be created for DKG
+    pub async fn set_config_gen_params(
+        &self,
+        requested: ConfigGenParamsRequest,
+    ) -> FederationResult<()> {
+        self.request("set_config_gen_params", ApiRequestErased::new(requested))
+            .await
+    }
+
+    /// Runs DKG, can only be called once after configs have been generated in
+    /// `get_consensus_config_gen_params`.  If DKG fails this returns a 500
+    /// error and config gen must be restarted.
+    pub async fn run_dkg(&self) -> FederationResult<()> {
+        self.request("run_dkg", ApiRequestErased::default()).await
+    }
+
+    /// After DKG, returns the hash of the consensus config tweaked with our id.
+    /// We need to share this with all other peers to complete verification.
+    pub async fn get_verify_config_hash(&self) -> FederationResult<BTreeMap<PeerId, sha256::Hash>> {
+        self.request("get_verify_config_hash", ApiRequestErased::default())
+            .await
+    }
+
+    /// Reads the configs from the disk, starts the consensus server, and shuts
+    /// down the config gen API to start the Fedimint API
+    ///
+    /// Clients may receive an error due to forced shutdown, should call the
+    /// `server_status` to see if consensus has started.
+    pub async fn start_consensus(&self) -> FederationResult<()> {
+        self.request("start_consensus", ApiRequestErased::default())
+            .await
+    }
+
+    async fn request<Ret>(&self, method: &str, params: ApiRequestErased) -> FederationResult<Ret>
+    where
+        Ret: serde::de::DeserializeOwned + Eq + Debug + Clone + MaybeSend,
+    {
+        self.inner
+            .request_current_consensus(method.to_owned(), params.with_auth(&self.auth))
+            .await
+    }
+}
+
+pub struct UnauthenticatedAdminClient {
+    inner: DynGlobalApi,
+}
+
+impl UnauthenticatedAdminClient {
+    pub fn new(url: Url, our_id: PeerId) -> Self {
+        Self {
+            inner: WsFederationApi::new(vec![(our_id, url)]).into(),
+        }
+    }
+
+    /// Returns the consensus config gen params, followers will delegate this
+    /// call to the leader.  Once this endpoint returns successfully we can run
+    /// DKG.
+    pub async fn get_consensus_config_gen_params(
+        &self,
+    ) -> FederationResult<ConfigGenParamsResponse> {
+        self.request(
+            "get_consensus_config_gen_params",
+            ApiRequestErased::default(),
+        )
+        .await
     }
 
     /// During config gen, used for an API-to-API call that adds a peer's server
@@ -74,105 +176,9 @@ impl WsAdminClient {
             .await
     }
 
-    /// Sends a signal to consensus that we are ready to shutdown the federation
-    /// and upgrade
-    pub async fn signal_upgrade(&self) -> FederationResult<()> {
-        self.request_auth("upgrade", ApiRequestErased::default())
-            .await
-    }
-
-    /// Sends a signal to consensus that we want to force running an epoch
-    /// outcome
-    pub async fn force_process_epoch(&self, outcome: SerdeEpochHistory) -> FederationResult<()> {
-        self.request_auth("process_outcome", ApiRequestErased::new(outcome))
-            .await
-    }
-
-    /// Delegates to `fetch_epoch_history`
-    pub async fn fetch_last_epoch_history(
-        &self,
-        epoch_pk: PublicKey,
-        decoders: &ModuleDecoderRegistry,
-    ) -> FederationResult<SignedEpochOutcome> {
-        let epoch = self.inner.fetch_epoch_count().await? - 1;
-        self.inner
-            .fetch_epoch_history(epoch, epoch_pk, decoders)
-            .await
-    }
-
-    /// Gets the default config gen params which can be configured by the
-    /// leader, gives them a template to modify
-    pub async fn get_default_config_gen_params(&self) -> FederationResult<ConfigGenParamsRequest> {
-        self.request_auth("get_default_config_gen_params", ApiRequestErased::default())
-            .await
-    }
-
-    /// Leader sets the consensus params, everyone sets the local params
-    ///
-    /// After calling this `ConfigGenParams` can be created for DKG
-    pub async fn set_config_gen_params(
-        &self,
-        requested: ConfigGenParamsRequest,
-    ) -> FederationResult<()> {
-        self.request_auth("set_config_gen_params", ApiRequestErased::new(requested))
-            .await
-    }
-
-    /// Returns the consensus config gen params, followers will delegate this
-    /// call to the leader.  Once this endpoint returns successfully we can run
-    /// DKG.
-    pub async fn get_consensus_config_gen_params(
-        &self,
-    ) -> FederationResult<ConfigGenParamsResponse> {
-        self.request(
-            "get_consensus_config_gen_params",
-            ApiRequestErased::default(),
-        )
-        .await
-    }
-
-    /// Runs DKG, can only be called once after configs have been generated in
-    /// `get_consensus_config_gen_params`.  If DKG fails this returns a 500
-    /// error and config gen must be restarted.
-    pub async fn run_dkg(&self) -> FederationResult<()> {
-        self.request_auth("run_dkg", ApiRequestErased::default())
-            .await
-    }
-
-    /// After DKG, returns the hash of the consensus config tweaked with our id.
-    /// We need to share this with all other peers to complete verification.
-    pub async fn get_verify_config_hash(&self) -> FederationResult<BTreeMap<PeerId, sha256::Hash>> {
-        self.request_auth("get_verify_config_hash", ApiRequestErased::default())
-            .await
-    }
-
-    /// Reads the configs from the disk, starts the consensus server, and shuts
-    /// down the config gen API to start the Fedimint API
-    ///
-    /// Clients may receive an error due to forced shutdown, should call the
-    /// `server_status` to see if consensus has started.
-    pub async fn start_consensus(&self) -> FederationResult<()> {
-        self.request_auth("start_consensus", ApiRequestErased::default())
-            .await
-    }
-
     /// Returns the status of the server
     pub async fn status(&self) -> FederationResult<StatusResponse> {
-        self.request_auth("status", ApiRequestErased::default())
-            .await
-    }
-
-    async fn request_auth<Ret>(
-        &self,
-        method: &str,
-        params: ApiRequestErased,
-    ) -> FederationResult<Ret>
-    where
-        Ret: serde::de::DeserializeOwned + Eq + Debug + Clone + MaybeSend,
-    {
-        self.inner
-            .request_current_consensus(method.to_owned(), params.with_auth(&self.auth))
-            .await
+        self.request("status", ApiRequestErased::default()).await
     }
 
     async fn request<Ret>(&self, method: &str, params: ApiRequestErased) -> FederationResult<Ret>
