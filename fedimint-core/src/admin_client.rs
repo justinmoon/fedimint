@@ -22,14 +22,21 @@ use crate::PeerId;
 // TODO: Maybe should have it's own CLI client so it doesn't need to be in core
 pub struct WsAdminClient {
     inner: DynGlobalApi,
-    auth: ApiAuth,
+    auth: Option<ApiAuth>,
 }
 
 impl WsAdminClient {
-    pub fn new(url: Url, our_id: PeerId, auth: ApiAuth) -> Self {
+    pub fn authenticated(url: Url, our_id: PeerId, auth: ApiAuth) -> Self {
         Self {
             inner: WsFederationApi::new(vec![(our_id, url)]).into(),
-            auth,
+            auth: Some(auth),
+        }
+    }
+
+    pub fn unauthenticated(url: Url, our_id: PeerId) -> Self {
+        Self {
+            inner: WsFederationApi::new(vec![(our_id, url)]).into(),
+            auth: None,
         }
     }
 
@@ -158,8 +165,7 @@ impl WsAdminClient {
 
     /// Returns the status of the server
     pub async fn status(&self) -> FederationResult<StatusResponse> {
-        self.request_auth("status", ApiRequestErased::default())
-            .await
+        self.request("status", ApiRequestErased::default()).await
     }
 
     async fn request_auth<Ret>(
@@ -171,7 +177,11 @@ impl WsAdminClient {
         Ret: serde::de::DeserializeOwned + Eq + Debug + Clone + MaybeSend,
     {
         self.inner
-            .request_current_consensus(method.to_owned(), params.with_auth(&self.auth))
+            .request_current_consensus(
+                method.to_owned(),
+                // FIXME: don't unwrap
+                params.with_auth(&self.auth.as_ref().unwrap()),
+            )
             .await
     }
 

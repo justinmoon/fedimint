@@ -107,7 +107,7 @@ impl ConfigGenApi {
         if let Some(url) = local.and_then(|local| local.leader_api_url) {
             // Note PeerIds don't really exist at this point, but id doesn't matter because
             // it's not used in the WS client for anything, perhaps it should be removed
-            let client = WsAdminClient::new(url, PeerId::from(0), state.auth()?);
+            let client = WsAdminClient::authenticated(url, PeerId::from(0), state.auth()?);
             client
                 .add_config_gen_peer(state.our_peer_info()?)
                 .await
@@ -163,7 +163,12 @@ impl ConfigGenApi {
 
         let consensus = match local.and_then(|local| local.leader_api_url) {
             Some(leader_url) => {
-                let client = WsAdminClient::new(leader_url.clone(), PeerId::from(0), state.auth()?);
+                let client = WsAdminClient::authenticated(
+                    leader_url.clone(),
+                    PeerId::from(0),
+                    // FIXME: are we sending out password to the leader here???
+                    state.auth()?,
+                );
                 let response = client.get_consensus_config_gen_params().await;
                 response
                     .map_err(|_| ApiError::not_found("Cannot get leader params".to_string()))?
@@ -737,7 +742,7 @@ mod tests {
 
             // our id doesn't really exist at this point
             let auth = ApiAuth(format!("password-{port}"));
-            let client = WsAdminClient::new(api_url, PeerId::from(0), auth);
+            let client = WsAdminClient::authenticated(api_url, PeerId::from(0), auth);
 
             (
                 TestConfigApi {

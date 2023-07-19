@@ -276,7 +276,7 @@ impl Opts {
             .expect("Endpoint exists")
             .url
             .clone();
-        Ok(WsAdminClient::new(url, *our_id, auth))
+        Ok(WsAdminClient::authenticated(url, *our_id, auth))
     }
 
     fn load_config(&self) -> CliResult<ClientConfig> {
