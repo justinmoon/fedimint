@@ -18,7 +18,6 @@ use fedimint_core::module::ApiAuth;
 use fedimint_ln_client::LightningClientGen;
 use fedimint_logging::LOG_DEVIMINT;
 use fedimint_wallet_client::WalletClientGen;
-use tokio::fs;
 use tracing::info;
 
 pub mod util;

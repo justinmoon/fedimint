@@ -2,25 +2,19 @@ use std::collections::{BTreeMap, HashSet};
 
 use anyhow::{anyhow, Context};
 use bitcoincore_rpc::bitcoin::Network;
-use fedimint_aead::random_salt;
 use fedimint_core::admin_client::{ConfigGenConnectionsRequest, ConfigGenParamsRequest};
 use fedimint_core::api::ServerStatus;
 use fedimint_core::bitcoinrpc::BitcoinRpcConfig;
-use fedimint_core::config::ServerModuleGenParamsRegistry;
 use fedimint_core::core::LEGACY_HARDCODED_INSTANCE_ID_WALLET;
 use fedimint_core::db::mem_impl::MemDatabase;
 use fedimint_core::module::ApiAuth;
-use fedimint_core::util::write_new;
 use fedimint_core::{Amount, PeerId};
-use fedimint_server::config::io::{write_server_config, PLAINTEXT_PASSWORD, SALT_FILE};
-use fedimint_server::config::{ConfigGenParams, ServerConfig};
-use fedimint_server::consensus::debug;
+use fedimint_server::config::ConfigGenParams;
 use fedimint_testing::federation::local_config_gen_params;
 use fedimint_wallet_client::config::WalletClientConfig;
 use fedimintd::attach_default_module_gen_params;
 use fedimintd::fedimintd::Fedimintd as FedimintBuilder;
 use futures::future::join_all;
-use tokio::fs;
 use url::Url;
 
 use super::*; // TODO: remove this
@@ -481,21 +475,19 @@ async fn set_config_gen_params(
     client: &WsAdminClient,
     auth: ApiAuth,
 ) -> anyhow::Result<()> {
-    let mut modules = ServerModuleGenParamsRegistry::default();
-    // FIXME: add which modules?
-    // modules.attach_config_gen_params(
-    //     0,
-    //     DummyGen::kind(),
-    //     DummyGenParams {
-    //         local: DummyGenParamsLocal(self.name.clone()),
-    //         consensus: DummyGenParamsConsensus {
-    //             tx_fee: self.amount,
-    //         },
-    //     },
-    // );
+    // let mut modules = ServerModuleGenParamsRegistry::default();
+    // TODO: Use proper builder
+    let mut fed = FedimintBuilder::new()?.with_default_modules();
+    attach_default_module_gen_params(
+        BitcoinRpcConfig::from_env_vars()?,
+        &mut fed.server_gen_params,
+        Amount::from_sats(100_000_000),
+        Network::Regtest,
+        10,
+    );
     let request = ConfigGenParamsRequest {
         meta: BTreeMap::from([("test".to_string(), name)]),
-        modules,
+        modules: fed.server_gen_params,
     };
     client.set_config_gen_params(request, auth.clone()).await?;
     Ok(())
