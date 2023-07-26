@@ -72,7 +72,7 @@ async fn mkdir(dir: PathBuf) -> anyhow::Result<PathBuf> {
     Ok(dir)
 }
 
-use fedimint_server::config::{ConfigGenParams, ServerConfig};
+use fedimint_server::config::ConfigGenParams;
 use format as f;
 
 pub fn utf8(path: &Path) -> &str {
