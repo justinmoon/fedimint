@@ -190,12 +190,12 @@ impl Global {
 // }
 
 declare_vars! {
-    Fedimintd = (globals: &Global, params: ConfigGenParams, bind_metrics_api: String) => {
+    Fedimintd = (globals: &Global, params: ConfigGenParams) => {
         FM_BIND_P2P: String = params.local.p2p_bind.to_string();
         FM_BIND_API: String = params.local.api_bind.to_string();
         FM_P2P_URL: String = params.consensus.peers[&params.local.our_id].p2p_url.to_string();
         FM_API_URL: String = params.consensus.peers[&params.local.our_id].api_url.to_string();
-        FM_BIND_METRICS_API: String = bind_metrics_api;
+        FM_BIND_METRICS_API: String = format!("127.0.0.1:{}", 3510 + params.local.our_id.to_usize());
         FM_DATA_DIR: PathBuf = mkdir(globals.FM_DATA_DIR.join(format!("server-{}", params.local.our_id.to_usize()))).await?;
     }
 }

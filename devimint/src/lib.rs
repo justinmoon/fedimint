@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use bitcoincore_rpc::RpcApi;
-use federation::{run_config_gen, Federation};
+use federation::Federation;
 use fedimint_client::module::gen::{ClientModuleGenRegistry, DynClientModuleGen};
 use fedimint_client_legacy::modules::mint::MintClientGen;
 use fedimint_client_legacy::{module_decode_stubs, UserClient, UserClientConfig};
@@ -207,9 +207,9 @@ pub async fn dev_fed(process_mgr: &ProcessManager) -> Result<DevFed> {
         Esplora::new(process_mgr, bitcoind.clone()),
         async {
             let fed_size = process_mgr.globals.FM_FED_SIZE;
-            let members = run_config_gen(process_mgr, fed_size, true).await?;
+            // let members = run_config_gen(process_mgr, fed_size, true).await?;
             info!(LOG_DEVIMINT, "config gen done");
-            Federation::new(process_mgr, bitcoind.clone(), members).await
+            Federation::new(process_mgr, bitcoind.clone(), fed_size).await
         },
     )?;
     info!(LOG_DEVIMINT, "federation and gateways started");

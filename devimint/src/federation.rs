@@ -9,7 +9,7 @@ use fedimint_core::db::mem_impl::MemDatabase;
 use fedimint_core::util::write_new;
 use fedimint_core::{Amount, PeerId};
 use fedimint_server::config::io::{write_server_config, PLAINTEXT_PASSWORD, SALT_FILE};
-use fedimint_server::config::ServerConfig;
+use fedimint_server::config::{ConfigGenParams, ServerConfig};
 use fedimint_testing::federation::local_config_gen_params;
 use fedimint_wallet_client::config::WalletClientConfig;
 use fedimintd::attach_default_module_gen_params;
@@ -30,14 +30,27 @@ impl Federation {
     pub async fn new(
         process_mgr: &ProcessManager,
         bitcoind: Bitcoind,
-        vars: BTreeMap<usize, vars::Fedimintd>,
+        servers: usize,
+        // vars: BTreeMap<usize, vars::Fedimintd>,
     ) -> Result<Self> {
         let mut members = BTreeMap::new();
-        for (peer, var) in &vars {
+        let mut vars = BTreeMap::new();
+
+        // FIXME: this is a hack to pass fed.server_gen_params in
+        // local_config_gen_params call below
+        let fed = FedimintBuilder::new()?.with_default_modules();
+        let peers: Vec<_> = (0..servers).map(|id| PeerId::from(id as u16)).collect();
+        let params: HashMap<PeerId, ConfigGenParams> =
+            local_config_gen_params(&peers, BASE_PORT, fed.server_gen_params.clone())?;
+
+        for (peer, peer_params) in params {
+            // FIXME: we should do this inside
+            let var = vars::Fedimintd::init(&process_mgr.globals, peer_params).await?;
             members.insert(
-                *peer,
-                Fedimintd::new(process_mgr, bitcoind.clone(), *peer, var).await?,
+                peer.to_usize(),
+                Fedimintd::new(process_mgr, bitcoind.clone(), peer.to_usize(), &var).await?,
             );
+            vars.insert(peer.to_usize(), var);
         }
 
         let workdir: PathBuf = env::var("FM_DATA_DIR")?.parse()?;
@@ -229,56 +242,58 @@ impl Fedimintd {
 /// Base port for devimint
 const BASE_PORT: u16 = 8173 + 10000;
 
-pub async fn run_config_gen(
-    process_mgr: &ProcessManager,
-    servers: usize,
-    write_password: bool,
-) -> Result<BTreeMap<usize, vars::Fedimintd>> {
-    // TODO: Use proper builder
-    let mut fed = FedimintBuilder::new()?.with_default_modules();
-    attach_default_module_gen_params(
-        BitcoinRpcConfig::from_env_vars()?,
-        &mut fed.server_gen_params,
-        Amount::from_sats(100_000_000),
-        Network::Regtest,
-        10,
-    );
+// pub async fn _run_config_gen(
+//     process_mgr: &ProcessManager,
+//     servers: usize,
+//     write_password: bool,
+// ) -> Result<BTreeMap<usize, vars::Fedimintd>> {
+//     // TODO: Use proper builder
+//     let mut fed = FedimintBuilder::new()?.with_default_modules();
+//     attach_default_module_gen_params(
+//         BitcoinRpcConfig::from_env_vars()?,
+//         &mut fed.server_gen_params,
+//         Amount::from_sats(100_000_000),
+//         Network::Regtest,
+//         10,
+//     );
 
-    let peers: Vec<_> = (0..servers).map(|id| PeerId::from(id as u16)).collect();
-    let params = local_config_gen_params(&peers, BASE_PORT, fed.server_gen_params.clone())?;
-    let configs = ServerConfig::trusted_dealer_gen(&params, fed.server_gens.clone());
-    let mut fedimintd_envs = BTreeMap::new();
-    for (peer, cfg) in configs {
-        let bind_metrics_api = format!("127.0.0.1:{}", 3510 + peer.to_usize());
-        let envs = vars::Fedimintd::init(&process_mgr.globals, &cfg, bind_metrics_api).await?;
-        let password = cfg.private.api_auth.0.clone();
-        let data_dir = envs.FM_DATA_DIR.clone();
-        fedimintd_envs.insert(peer.to_usize(), envs);
-        write_new(data_dir.join(SALT_FILE), random_salt())?;
-        write_server_config(&cfg, data_dir.clone(), &password, &fed.server_gens)?;
-        if write_password {
-            write_new(data_dir.join(PLAINTEXT_PASSWORD), &password)?;
-        }
-    }
+//     let peers: Vec<_> = (0..servers).map(|id| PeerId::from(id as
+// u16)).collect();     let params = local_config_gen_params(&peers, BASE_PORT,
+// fed.server_gen_params.clone())?;     let configs =
+// ServerConfig::trusted_dealer_gen(&params, fed.server_gens.clone());
+//     let mut fedimintd_envs = BTreeMap::new();
+//     for (peer, cfg) in configs {
+//         let bind_metrics_api = format!("127.0.0.1:{}", 3510 +
+// peer.to_usize());         let envs =
+// vars::Fedimintd::init(&process_mgr.globals, &cfg, bind_metrics_api).await?;
+//         let password = cfg.private.api_auth.0.clone();
+//         let data_dir = envs.FM_DATA_DIR.clone();
+//         fedimintd_envs.insert(peer.to_usize(), envs);
+//         write_new(data_dir.join(SALT_FILE), random_salt())?;
+//         write_server_config(&cfg, data_dir.clone(), &password,
+// &fed.server_gens)?;         if write_password {
+//             write_new(data_dir.join(PLAINTEXT_PASSWORD), &password)?;
+//         }
+//     }
 
-    let out_dir = &fedimintd_envs[&0].FM_DATA_DIR;
-    let cfg_dir = &process_mgr.globals.FM_DATA_DIR;
-    let out_dir = utf8(out_dir);
-    let cfg_dir = utf8(cfg_dir);
-    // copy configs to config directory
-    fs::rename(
-        format!("{out_dir}/client-connect"),
-        format!("{cfg_dir}/client-connect"),
-    )
-    .await?;
-    fs::rename(
-        format!("{out_dir}/client.json"),
-        format!("{cfg_dir}/client.json"),
-    )
-    .await?;
-    info!("copied client configs");
+//     let out_dir = &fedimintd_envs[&0].FM_DATA_DIR;
+//     let cfg_dir = &process_mgr.globals.FM_DATA_DIR;
+//     let out_dir = utf8(out_dir);
+//     let cfg_dir = utf8(cfg_dir);
+//     // copy configs to config directory
+//     fs::rename(
+//         format!("{out_dir}/client-connect"),
+//         format!("{cfg_dir}/client-connect"),
+//     )
+//     .await?;
+//     fs::rename(
+//         format!("{out_dir}/client.json"),
+//         format!("{cfg_dir}/client.json"),
+//     )
+//     .await?;
+//     info!("copied client configs");
 
-    info!("DKG complete");
+//     info!("DKG complete");
 
-    Ok(fedimintd_envs)
-}
+//     Ok(fedimintd_envs)
+// }
