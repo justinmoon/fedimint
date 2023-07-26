@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use anyhow::Context;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::routing::{get, post};
@@ -35,7 +36,11 @@ impl Faucet {
         let url = cmd.bitcoind_rpc.parse()?;
         let (host, auth) = fedimint_bitcoind::bitcoincore::from_url_to_url_auth(&url)?;
         let bitcoin = Arc::new(bitcoincore_rpc::Client::new(&host, auth)?);
-        let ln_rpc = Arc::new(Mutex::new(ClnRpc::new(&cmd.cln_socket).await?));
+        let ln_rpc = Arc::new(Mutex::new(
+            ClnRpc::new(&cmd.cln_socket)
+                .await
+                .with_context(|| format!("couldn't open CLN socket {}", &cmd.cln_socket))?,
+        ));
         Ok(Faucet { bitcoin, ln_rpc })
     }
 

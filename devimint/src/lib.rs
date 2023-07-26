@@ -170,8 +170,10 @@ pub struct Faucet {
 
 impl Faucet {
     pub async fn new(process_mgr: &ProcessManager) -> Result<Self> {
-        let connect_string =
-            fs::read_to_string(process_mgr.globals.FM_DATA_DIR.join("client-connect")).await?;
+        // let connect_string =
+        //     fs::read_to_string(process_mgr.globals.FM_DATA_DIR.join("client-connect"
+        // )).await?;
+        let connect_string = "FIXME";
 
         Ok(Self {
             _process: process_mgr
