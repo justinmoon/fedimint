@@ -56,7 +56,25 @@ impl Federation {
             admin_clients.insert(peer, admin_client);
             vars.insert(peer.to_usize(), var);
         }
+
         run_dkg(&admin_clients, api_auth).await?;
+
+        let out_dir = &vars[&0].FM_DATA_DIR;
+        let cfg_dir = &process_mgr.globals.FM_DATA_DIR;
+        let out_dir = utf8(out_dir);
+        let cfg_dir = utf8(cfg_dir);
+        // copy configs to config directory
+        tokio::fs::rename(
+            format!("{out_dir}/client-connect"),
+            format!("{cfg_dir}/client-connect"),
+        )
+        .await?;
+        tokio::fs::rename(
+            format!("{out_dir}/client.json"),
+            format!("{cfg_dir}/client.json"),
+        )
+        .await?;
+        info!("copied client configs");
 
         Ok(Self {
             members,
