@@ -20,7 +20,6 @@ use super::*; // TODO: remove this
 
 pub struct Federation {
     // client is only for internal use, use cli commands instead
-    client: Arc<UserClient>,
     members: BTreeMap<usize, Fedimintd>,
     vars: BTreeMap<usize, vars::Fedimintd>,
     bitcoind: Bitcoind,
@@ -53,6 +52,14 @@ impl Federation {
             vars.insert(peer.to_usize(), var);
         }
 
+        Ok(Self {
+            members,
+            vars,
+            bitcoind,
+        })
+    }
+
+    pub async fn client(&self) -> Result<UserClient> {
         let workdir: PathBuf = env::var("FM_DATA_DIR")?.parse()?;
         let cfg_path = workdir.join("client.json");
         let mut cfg: UserClientConfig = load_from_file(&cfg_path)?;
@@ -65,12 +72,7 @@ impl Federation {
             DynClientModuleGen::from(LightningClientGen),
         ]);
         let client = UserClient::new(cfg, decoders, module_gens, db, Default::default()).await;
-        Ok(Self {
-            members,
-            vars,
-            bitcoind,
-            client: Arc::new(client),
-        })
+        Ok(client)
     }
 
     pub async fn start_server(&mut self, process_mgr: &ProcessManager, peer: usize) -> Result<()> {
@@ -137,12 +139,18 @@ impl Federation {
     }
 
     pub async fn federation_id(&self) -> String {
-        self.client.config().0.federation_id.to_string()
+        self.client()
+            .await
+            .unwrap()
+            .config()
+            .0
+            .federation_id
+            .to_string()
     }
 
     pub async fn await_block_sync(&self) -> Result<()> {
-        let wallet_cfg: &WalletClientConfig = self
-            .client
+        let client = self.client().await?;
+        let wallet_cfg: &WalletClientConfig = client
             .config_ref()
             .0
             .get_module(LEGACY_HARDCODED_INSTANCE_ID_WALLET)?;
@@ -242,7 +250,7 @@ impl Fedimintd {
 /// Base port for devimint
 const BASE_PORT: u16 = 8173 + 10000;
 
-// pub async fn _run_config_gen(
+// pub async fn _run_config_gen
 //     process_mgr: &ProcessManager,
 //     servers: usize,
 //     write_password: bool,

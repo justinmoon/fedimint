@@ -1119,8 +1119,7 @@ async fn setup(arg: CommonArgs) -> Result<(ProcessManager, TaskGroup)> {
     Ok((process_mgr, task_group))
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+async fn handle_command() -> Result<()> {
     let args = Args::parse();
     match args.command {
         Cmd::ExternalDaemons => {
@@ -1173,6 +1172,18 @@ async fn main() -> Result<()> {
         Cmd::Rpc(rpc) => rpc_command(rpc, args.common).await?,
     }
     Ok(())
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    let ready_file = PathBuf::from(env::var("FM_TEST_DIR")?).join("ready");
+    match handle_command().await {
+        Ok(r) => Ok(r),
+        Err(e) => {
+            write_overwrite_async(ready_file, "ERROR").await?;
+            Err(e)
+        }
+    }
 }
 
 async fn rpc_command(rpc: RpcCmd, common: CommonArgs) -> Result<()> {
