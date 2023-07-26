@@ -1,19 +1,25 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use anyhow::{anyhow, Context};
 use bitcoincore_rpc::bitcoin::Network;
 use fedimint_aead::random_salt;
+use fedimint_core::admin_client::{ConfigGenConnectionsRequest, ConfigGenParamsRequest};
+use fedimint_core::api::ServerStatus;
 use fedimint_core::bitcoinrpc::BitcoinRpcConfig;
+use fedimint_core::config::ServerModuleGenParamsRegistry;
 use fedimint_core::core::LEGACY_HARDCODED_INSTANCE_ID_WALLET;
 use fedimint_core::db::mem_impl::MemDatabase;
+use fedimint_core::module::ApiAuth;
 use fedimint_core::util::write_new;
 use fedimint_core::{Amount, PeerId};
 use fedimint_server::config::io::{write_server_config, PLAINTEXT_PASSWORD, SALT_FILE};
 use fedimint_server::config::{ConfigGenParams, ServerConfig};
+use fedimint_server::consensus::debug;
 use fedimint_testing::federation::local_config_gen_params;
 use fedimint_wallet_client::config::WalletClientConfig;
 use fedimintd::attach_default_module_gen_params;
 use fedimintd::fedimintd::Fedimintd as FedimintBuilder;
+use futures::future::join_all;
 use tokio::fs;
 use url::Url;
 
@@ -31,6 +37,7 @@ impl Federation {
         process_mgr: &ProcessManager,
         bitcoind: Bitcoind,
         servers: usize,
+        api_auth: Option<ApiAuth>,
         // vars: BTreeMap<usize, vars::Fedimintd>,
     ) -> Result<Self> {
         let mut members = BTreeMap::new();
@@ -55,147 +62,8 @@ impl Federation {
             admin_clients.insert(peer, admin_client);
             vars.insert(peer.to_usize(), var);
         }
+        run_dkg(&admin_clients, api_auth).await?;
 
-        for (peer_id, client) in &admin_clients {
-            loop {
-                if client.status().await.is_ok() {
-                    info!("Connected to {peer_id}");
-                    break;
-                } else {
-                    info!("Waiting for {peer_id} to start...");
-                    fedimint_core::task::sleep(Duration::from_secs(1)).await;
-                }
-            }
-        }
-        for (peer_id, client) in &admin_clients {
-            assert_eq!(
-                client.status().await?.server,
-                fedimint_core::api::ServerStatus::AwaitingPassword,
-                "peer_id isn't waiting for password: {}",
-                peer_id
-            );
-        }
-        let (_, leader) = admin_clients.iter().next().unwrap();
-
-        //     // Cannot set the password twice
-        //     leader
-        //         .client
-        //         .set_password(leader.auth.clone())
-        //         .await
-        //         .unwrap();
-        //     assert!(leader
-        //         .client
-        //         .set_password(leader.auth.clone())
-        //         .await
-        //         .is_err());
-
-        //     // We can call this twice to change the leader name
-        //     leader.set_connections(&None).await.unwrap();
-        //     leader.name = "leader".to_string();
-        //     leader.set_connections(&None).await.unwrap();
-
-        //     // Leader sets the config
-        //     let _ = leader
-        //         .client
-        //         .get_default_config_gen_params(leader.auth.clone())
-        //         .await
-        //         .unwrap();
-        //     leader.set_config_gen_params().await;
-
-        //     // Setup followers and send connection info
-        //     for follower in &mut followers {
-        //         assert_eq!(
-        //             follower.status().await.server,
-        //             ServerStatus::AwaitingPassword
-        //         );
-        //         follower
-        //             .client
-        //             .set_password(follower.auth.clone())
-        //             .await
-        //             .unwrap();
-        //         let leader_url = Some(leader.settings.api_url.clone());
-        //         follower.set_connections(&leader_url).await.unwrap();
-        //         follower.name = format!("{}_", follower.name);
-        //         follower.set_connections(&leader_url).await.unwrap();
-        //         follower.set_config_gen_params().await;
-        //     }
-
-        //     // Confirm we can get peer servers if we are the leader
-        //     let peers = leader.client.get_config_gen_peers().await.unwrap();
-        //     let names: Vec<_> = peers.into_iter().map(|peer|
-        // peer.name).sorted().collect();     assert_eq!(names, vec!["leader",
-        // "peer1_", "peer2_"]);
-
-        //     leader
-        //         .wait_status(ServerStatus::SharingConfigGenParams)
-        //         .await;
-
-        //     // Followers can fetch configs
-        //     let mut configs = vec![];
-        //     for peer in &followers {
-        //         configs.push(peer.client.get_consensus_config_gen_params().await.
-        // unwrap());     }
-        //     // Confirm all consensus configs are the same
-        //     let mut consensus: Vec<_> = configs.iter().map(|p|
-        // p.consensus.clone()).collect();     consensus.dedup();
-        //     assert_eq!(consensus.len(), 1);
-        //     // Confirm all peer ids are unique
-        //     let ids: BTreeSet<_> = configs.iter().map(|p|
-        // p.our_current_id).collect();     assert_eq!(ids.len(),
-        // followers.len());
-
-        //     // all peers run DKG
-        //     let leader_amount = leader.amount;
-        //     let leader_name = leader.name.clone();
-        //     followers.push(leader);
-        //     let followers = Arc::new(followers);
-        //     let (results, _) = tokio::join!(
-        //         join_all(
-        //             followers
-        //                 .iter()
-        //                 .map(|peer| peer.client.run_dkg(peer.auth.clone()))
-        //         ),
-        //         followers[0].wait_status(ServerStatus::ReadyForConfigGen)
-        //     );
-        //     for result in results {
-        //         result.expect("DKG failed");
-        //     }
-
-        //     // verify config hashes equal for all peers
-        //     let mut hashes = HashSet::new();
-        //     for peer in followers.iter() {
-        //         peer.wait_status(ServerStatus::VerifyingConfigs).await;
-        //         hashes.insert(
-        //             peer.client
-        //                 .get_verify_config_hash(peer.auth.clone())
-        //                 .await
-        //                 .unwrap(),
-        //         );
-        //     }
-        //     assert_eq!(hashes.len(), 1);
-
-        //     // verify the local and consensus values for peers
-        //     for peer in followers.iter() {
-        //         let cfg = peer.read_config();
-        //         let dummy: DummyConfig = cfg.get_module_config_typed(0).unwrap();
-        //         assert_eq!(dummy.consensus.tx_fee, leader_amount);
-        //         assert_eq!(dummy.local.example, peer.name);
-        //         assert_eq!(cfg.consensus.meta["test"], leader_name);
-        //     }
-
-        //     // start consensus
-        //     for peer in followers.iter() {
-        //         peer.client.start_consensus(peer.auth.clone()).await.ok();
-        //         assert_eq!(peer.status().await.server,
-        // ServerStatus::ConsensusRunning);     }
-
-        //     // shutdown
-        //     for peer in followers.iter() {
-        //         peer.retry_signal_upgrade().await;
-        //     }
-
-        //     followers
-        // };
         Ok(Self {
             members,
             vars,
@@ -449,3 +317,202 @@ const BASE_PORT: u16 = 8173 + 10000;
 
 //     Ok(fedimintd_envs)
 // }
+
+pub async fn run_dkg(
+    admin_clients: &HashMap<PeerId, WsAdminClient>,
+    auth: Option<ApiAuth>,
+) -> anyhow::Result<()> {
+    for (peer_id, client) in admin_clients {
+        loop {
+            if client.status().await.is_ok() {
+                info!("Connected to {peer_id}");
+                break;
+            } else {
+                info!("Waiting for {peer_id} to start...");
+                fedimint_core::task::sleep(Duration::from_secs(1)).await;
+            }
+        }
+    }
+    for (peer_id, client) in admin_clients {
+        assert_eq!(
+            client.status().await?.server,
+            fedimint_core::api::ServerStatus::AwaitingPassword,
+            "peer_id isn't waiting for password: {}",
+            peer_id
+        );
+    }
+    let (leader_id, leader) = admin_clients.iter().next().unwrap();
+
+    let auth = if let Some(auth) = auth {
+        for (_peer_id, client) in admin_clients {
+            client.set_password(auth.clone()).await?;
+        }
+        auth
+    } else {
+        // FIXME: double check if this makes sense
+        ApiAuth("dummy".to_string())
+    };
+
+    let followers = admin_clients
+        .iter()
+        .filter(|(peer_id, _)| *peer_id != leader_id)
+        .collect::<Vec<_>>();
+    let leader_name = format!("peer-{}", leader_id);
+    leader
+        .set_config_gen_connections(
+            ConfigGenConnectionsRequest {
+                our_name: leader_name.clone(),
+                leader_api_url: None,
+            },
+            auth.clone(),
+        )
+        .await?;
+
+    let _ = leader.get_default_config_gen_params(auth.clone()).await?; // FIXME: just a sanity check?
+
+    set_config_gen_params(leader_name.clone(), leader, auth.clone()).await?;
+    let followers_names = followers
+        .iter()
+        .map(|(peer_id, _)| (*peer_id, format!("peer-{}", peer_id)))
+        .collect::<HashMap<_, _>>();
+    for (peer_id, client) in &followers {
+        let name = followers_names
+            .get(peer_id)
+            .context("missing follower name")?;
+        client
+            .set_config_gen_connections(
+                ConfigGenConnectionsRequest {
+                    our_name: name.clone(),
+                    leader_api_url: Some(leader.url.clone()),
+                },
+                auth.clone(),
+            )
+            .await?;
+        set_config_gen_params(name.clone(), client, auth.clone()).await?;
+    }
+    let found_names = leader
+        .get_config_gen_peers()
+        .await?
+        .into_iter()
+        .map(|peer| peer.name)
+        .collect::<HashSet<_>>();
+    let all_names = {
+        let mut names = followers_names
+            .values()
+            .into_iter()
+            .cloned()
+            .collect::<HashSet<_>>();
+        names.insert(leader_name);
+        names
+    };
+    assert_eq!(found_names, all_names);
+    wait_server_status(leader, ServerStatus::SharingConfigGenParams).await?;
+
+    // Followers can fetch configs
+    let mut configs = vec![];
+    for (_peer_id, client) in &followers {
+        configs.push(client.get_consensus_config_gen_params().await?);
+    }
+    // Confirm all consensus configs are the same
+    let mut consensus: Vec<_> = configs.iter().map(|p| p.consensus.clone()).collect();
+    consensus.dedup();
+    assert_eq!(consensus.len(), 1);
+    // Confirm all peer ids are unique
+    let ids = configs
+        .iter()
+        .map(|p| p.our_current_id)
+        .collect::<HashSet<_>>();
+    assert_eq!(ids.len(), followers.len());
+    let dkg_results = admin_clients
+        .values()
+        .map(|client| client.run_dkg(auth.clone()));
+    info!("Running DKG...");
+    let (dkg_results, leader_wait_result) = tokio::join!(
+        join_all(dkg_results),
+        wait_server_status(leader, ServerStatus::ReadyForConfigGen)
+    );
+    for result in dkg_results {
+        result?;
+    }
+    leader_wait_result?;
+
+    // verify config hashes equal for all peers
+    let mut hashes = HashSet::new();
+    for (_, client) in admin_clients {
+        wait_server_status(client, ServerStatus::VerifyingConfigs).await?;
+        hashes.insert(client.get_verify_config_hash(auth.clone()).await?);
+    }
+    assert_eq!(hashes.len(), 1);
+    // TODO: verify something else about config?
+    info!("DKG successfully complete. Starting consensus...");
+    for (_peer_id, client) in admin_clients {
+        if let Err(e) = client.start_consensus(auth.clone()).await {
+            tracing::warn!("Error calling start_consensus: {e:?}, trying to continue...")
+        }
+        const RETRIES: usize = 20;
+        for i in 0..RETRIES {
+            let status = client.status().await;
+            match status {
+                Ok(status) => {
+                    let server_status = status.server;
+                    if server_status == ServerStatus::ConsensusRunning {
+                        break;
+                    } else {
+                        tracing::info!(
+                            "Waiting for status {:?}, got {server_status:?} ({i}/{RETRIES})",
+                            ServerStatus::ConsensusRunning
+                        );
+                        fedimint_core::task::sleep(Duration::from_secs(1)).await;
+                    }
+                }
+                Err(e) => {
+                    tracing::info!("Error calling status: {e:?}, will retry... ({i}/{RETRIES})");
+                    fedimint_core::task::sleep(Duration::from_secs(1)).await;
+                }
+            }
+        }
+    }
+    info!("Consensus is running");
+    Ok(())
+}
+
+async fn set_config_gen_params(
+    name: String,
+    client: &WsAdminClient,
+    auth: ApiAuth,
+) -> anyhow::Result<()> {
+    let mut modules = ServerModuleGenParamsRegistry::default();
+    // FIXME: add which modules?
+    // modules.attach_config_gen_params(
+    //     0,
+    //     DummyGen::kind(),
+    //     DummyGenParams {
+    //         local: DummyGenParamsLocal(self.name.clone()),
+    //         consensus: DummyGenParamsConsensus {
+    //             tx_fee: self.amount,
+    //         },
+    //     },
+    // );
+    let request = ConfigGenParamsRequest {
+        meta: BTreeMap::from([("test".to_string(), name)]),
+        modules,
+    };
+    client.set_config_gen_params(request, auth.clone()).await?;
+    Ok(())
+}
+
+async fn wait_server_status(
+    client: &WsAdminClient,
+    expected_status: ServerStatus,
+) -> anyhow::Result<()> {
+    loop {
+        let server_status = client.status().await?.server;
+        if server_status == expected_status {
+            break;
+        } else {
+            tracing::debug!("Waiting for status {expected_status:?}, got {server_status:?}");
+            fedimint_core::task::sleep(Duration::from_secs(1)).await;
+        }
+    }
+    Ok(())
+}

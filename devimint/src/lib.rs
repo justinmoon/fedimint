@@ -14,6 +14,7 @@ use fedimint_client_legacy::{module_decode_stubs, UserClient, UserClientConfig};
 use fedimint_core::admin_client::WsAdminClient;
 use fedimint_core::config::load_from_file;
 use fedimint_core::db::Database;
+use fedimint_core::module::ApiAuth;
 use fedimint_ln_client::LightningClientGen;
 use fedimint_logging::LOG_DEVIMINT;
 use fedimint_wallet_client::WalletClientGen;
@@ -212,7 +213,8 @@ pub async fn dev_fed(process_mgr: &ProcessManager) -> Result<DevFed> {
             let fed_size = process_mgr.globals.FM_FED_SIZE;
             // let members = run_config_gen(process_mgr, fed_size, true).await?;
             info!(LOG_DEVIMINT, "config gen done");
-            Federation::new(process_mgr, bitcoind.clone(), fed_size).await
+            let api_auth = ApiAuth("TODO: change this".to_string());
+            Federation::new(process_mgr, bitcoind.clone(), fed_size, Some(api_auth)).await
         },
     )?;
     info!(LOG_DEVIMINT, "federation and gateways started");
