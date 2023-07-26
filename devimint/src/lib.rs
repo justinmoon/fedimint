@@ -11,6 +11,7 @@ use federation::Federation;
 use fedimint_client::module::gen::{ClientModuleGenRegistry, DynClientModuleGen};
 use fedimint_client_legacy::modules::mint::MintClientGen;
 use fedimint_client_legacy::{module_decode_stubs, UserClient, UserClientConfig};
+use fedimint_core::admin_client::WsAdminClient;
 use fedimint_core::config::load_from_file;
 use fedimint_core::db::Database;
 use fedimint_ln_client::LightningClientGen;
