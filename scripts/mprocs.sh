@@ -12,8 +12,12 @@ export FM_VERBOSE_OUTPUT=0
 
 source scripts/build.sh
 
-devimint dev-fed 2>/dev/null &
+devimint dev-fed &
 echo $! >> $FM_PID_FILE
 eval "$(devimint env)"
+
+# STATUS="$(devimint wait)"
+
+
 
 mprocs -c misc/mprocs.yaml

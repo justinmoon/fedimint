@@ -1138,6 +1138,9 @@ async fn main() -> Result<()> {
             dev_fed.fed.pegin_gateway(20_000, &dev_fed.gw_lnd).await?;
             let _daemons = write_ready_file(&process_mgr.globals, Ok(dev_fed)).await?;
             task_group.make_handle().make_shutdown_rx().await.await?;
+            drop(_daemons);
+            process_mgr.wait_shutdown().await?;
+            tracing::info!("Shutdown complete");
         }
         Cmd::RunUi => {
             let (process_mgr, task_group) = setup(args.common).await?;

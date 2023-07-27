@@ -1,8 +1,10 @@
 use std::ffi::OsStr;
+use std::sync::Mutex;
 
 use anyhow::{anyhow, bail};
-use fedimint_core::task;
+use fedimint_core::task::{self, sleep};
 use serde::de::DeserializeOwned;
+use sysinfo::{Pid, System, SystemExt};
 use tokio::fs::OpenOptions;
 use tokio::process::Child;
 use tracing::{debug, warn};
@@ -54,11 +56,15 @@ impl Drop for ProcessHandleInner {
 
 pub struct ProcessManager {
     pub globals: vars::Global,
+    pub pids: Arc<Mutex<Vec<u32>>>,
 }
 
 impl ProcessManager {
     pub fn new(globals: vars::Global) -> Self {
-        Self { globals }
+        Self {
+            globals,
+            pids: Arc::new(Mutex::new(vec![])),
+        }
     }
 
     /// Logs to $FM_LOGS_DIR/{name}.{out,err}
@@ -79,10 +85,31 @@ impl ProcessManager {
             .cmd
             .spawn()
             .with_context(|| format!("Could not spawn: {name}"))?;
+        let mut pids_guard = self.pids.lock().unwrap();
+        pids_guard.push(child.id().unwrap());
         Ok(ProcessHandle(Arc::new(ProcessHandleInner {
             name: name.to_owned(),
             child: Some(child),
         })))
+    }
+    pub async fn wait_shutdown(&self) -> Result<()> {
+        let pids_guard = self.pids.lock().unwrap();
+        loop {
+            let s = System::new_all();
+            let mut alive = vec![];
+            for pid in pids_guard.iter() {
+                if s.process(Pid::from(usize::try_from(*pid).unwrap()))
+                    .is_some()
+                {
+                    alive.push(pid);
+                }
+            }
+            info!("{} processes still running", alive.len());
+            sleep(std::time::Duration::from_millis(100)).await;
+            if alive.len() == 0 {
+                return Ok(());
+            }
+        }
     }
 }
 
