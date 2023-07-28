@@ -1,8 +1,8 @@
 use bitcoin::Network;
 use fedimint_core::bitcoinrpc::BitcoinRpcConfig;
-use fedimint_core::config::ServerModuleGenParamsRegistry;
+use fedimint_core::config::{ConfigGenModuleParams, ServerModuleGenParamsRegistry};
 use fedimint_core::core::{
-    LEGACY_HARDCODED_INSTANCE_ID_LN, LEGACY_HARDCODED_INSTANCE_ID_MINT,
+    ModuleKind, LEGACY_HARDCODED_INSTANCE_ID_LN, LEGACY_HARDCODED_INSTANCE_ID_MINT,
     LEGACY_HARDCODED_INSTANCE_ID_WALLET,
 };
 use fedimint_core::module::ServerModuleGen;
@@ -67,6 +67,11 @@ pub fn attach_default_module_gen_params(
                 local: LightningGenParamsLocal { bitcoin_rpc },
                 consensus: LightningGenParamsConsensus { network },
             },
+        )
+        .register_module(
+            3,
+            ModuleKind::from_static_str("fedi-social"),
+            ConfigGenModuleParams::new(Some(serde_json::json!({})), Some(serde_json::json!({}))),
         );
 }
 

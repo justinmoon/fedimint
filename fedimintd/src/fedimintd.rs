@@ -158,6 +158,9 @@ impl Fedimintd {
         let _guard = local_task_set.enter();
 
         let task_group = root_task_group.clone();
+        info!("run");
+        info!("server_gens {:?}", self.server_gens.kinds().len());
+        info!("server_gen_params {:?}", self.server_gen_params);
         root_task_group
             .spawn_local("main", move |_task_handle| async move {
                 match run(

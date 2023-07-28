@@ -458,6 +458,10 @@ impl ServerConfig {
         delay_calculator: DelayCalculator,
         task_group: &mut TaskGroup,
     ) -> DkgResult<Self> {
+        info!("distributed_gen");
+        // social recovery missing from here
+        info!("params {:?}", params.consensus.modules);
+        info!("registry {:?}", registry.kinds().len());
         let _timing /* logs on drop */ = timing::TimeReporter::new("distributed-gen").info();
         let server_conn = connect(
             params.p2p_network(),

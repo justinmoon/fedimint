@@ -138,6 +138,7 @@ impl ConfigGenApi {
     ///
     /// The leader passes consensus params, everyone passes local params
     pub async fn set_config_gen_params(&self, request: ConfigGenParamsRequest) -> ApiResult<()> {
+        tracing::info!("set_config_gen_params {:?}", request);
         self.get_consensus_config_gen_params(&request).await?;
         let mut state = self.require_status(ServerStatus::SharingConfigGenParams)?;
         state.requested_params = Some(request);

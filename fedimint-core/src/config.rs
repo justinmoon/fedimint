@@ -322,6 +322,7 @@ impl ConfigGenModuleParams {
         json: Option<serde_json::Value>,
     ) -> anyhow::Result<P> {
         let json = json.ok_or(format_err!("{name} config gen params missing"))?;
+        tracing::info!("json {} {:?}", name, json);
         serde_json::from_value(json).context("Invalid module params")
     }
 
