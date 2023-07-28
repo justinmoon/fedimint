@@ -67,11 +67,6 @@ pub fn attach_default_module_gen_params(
                 local: LightningGenParamsLocal { bitcoin_rpc },
                 consensus: LightningGenParamsConsensus { network },
             },
-        )
-        .register_module(
-            3,
-            ModuleKind::from_static_str("fedi-social"),
-            ConfigGenModuleParams::new(Some(serde_json::json!({})), Some(serde_json::json!({}))),
         );
 }
 
