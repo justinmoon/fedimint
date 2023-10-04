@@ -97,7 +97,7 @@ pub trait WalletClientExt {
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub enum DepositState {
     WaitingForTransaction,
-    WaitingForConfirmation,
+    WaitingForConfirmation(bitcoin::Transaction, u32),
     Confirmed,
     // TODO: add amount
     Claimed,
@@ -213,8 +213,8 @@ impl WalletClientExt for Client {
                     }
 
                     match next_deposit_state(&mut operation_stream).await {
-                        Some(DepositStates::WaitingForConfirmations(_)) => {
-                            yield DepositState::WaitingForConfirmation;
+                        Some(DepositStates::WaitingForConfirmations(inner)) => {
+                            yield DepositState::WaitingForConfirmation(inner.btc_transaction, inner.out_idx);
                         },
                         Some(DepositStates::TimedOut(_)) => {
                             yield DepositState::Failed("Deposit timed out".to_string());
