@@ -94,10 +94,19 @@ pub trait WalletClientExt {
     ) -> anyhow::Result<UpdateStreamOrOutcome<WithdrawState>>;
 }
 
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct WaitingForConfirmationDepositState {
+    /// The bitcoin transaction is saved as soon as we see it so the transaction
+    /// can be re-transmitted if it's evicted from the mempool.
+    pub btc_transaction: bitcoin::Transaction,
+    /// Index of the deposit output
+    pub out_idx: u32,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub enum DepositState {
     WaitingForTransaction,
-    WaitingForConfirmation(bitcoin::Transaction, u32),
+    WaitingForConfirmation(WaitingForConfirmationDepositState),
     Confirmed,
     // TODO: add amount
     Claimed,
@@ -214,7 +223,7 @@ impl WalletClientExt for Client {
 
                     match next_deposit_state(&mut operation_stream).await {
                         Some(DepositStates::WaitingForConfirmations(inner)) => {
-                            yield DepositState::WaitingForConfirmation(inner.btc_transaction, inner.out_idx);
+                            yield DepositState::WaitingForConfirmation(WaitingForConfirmationDepositState{ btc_transaction: inner.btc_transaction, out_idx: inner.out_idx });
                         },
                         Some(DepositStates::TimedOut(_)) => {
                             yield DepositState::Failed("Deposit timed out".to_string());

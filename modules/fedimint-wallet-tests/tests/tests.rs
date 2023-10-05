@@ -1,6 +1,7 @@
 use std::time::{Duration, SystemTime};
 
 use anyhow::bail;
+use assert_matches::assert_matches;
 use fedimint_client::Client;
 use fedimint_core::task::sleep;
 use fedimint_core::util::{BoxStream, NextOrPending};
@@ -52,7 +53,7 @@ async fn peg_in<'a>(
     let sub = client.subscribe_deposit_updates(op).await?;
     let mut sub = sub.into_stream();
     assert_eq!(sub.ok().await?, DepositState::WaitingForTransaction);
-    assert_eq!(sub.ok().await?, DepositState::WaitingForConfirmation);
+    assert_matches!(sub.ok().await?, DepositState::WaitingForConfirmation { .. });
 
     // Need to mine blocks until deposit is confirmed, but send_and_mine_block
     // already mined one, so we can mine one less here.
