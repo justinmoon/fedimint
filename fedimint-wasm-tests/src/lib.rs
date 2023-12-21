@@ -143,59 +143,61 @@ mod tests {
 
     #[wasm_bindgen_test]
     async fn receive_and_pay() -> Result<()> {
-        let client = client(&faucet::invite_code().await?.parse()?).await?;
-        client.start_executor().await;
-        set_gateway(&client).await?;
-        let lightning_module = client.get_first_module::<LightningClientModule>();
-        let (opid, invoice) = lightning_module
-            .create_bolt11_invoice(Amount::from_sats(21), "test".to_string(), None, ())
-            .await?;
-        faucet::pay_invoice(&invoice.to_string()).await?;
+        for _ in 0..20 {
+            let client = client(&faucet::invite_code().await?.parse()?).await?;
+            client.start_executor().await;
+            set_gateway(&client).await?;
+            let lightning_module = client.get_first_module::<LightningClientModule>();
+            let (opid, invoice) = lightning_module
+                .create_bolt11_invoice(Amount::from_sats(21), "test".to_string(), None, ())
+                .await?;
+            faucet::pay_invoice(&invoice.to_string()).await?;
 
-        let mut updates = lightning_module
-            .subscribe_ln_receive(opid)
-            .await?
-            .into_stream();
+            let mut updates = lightning_module
+                .subscribe_ln_receive(opid)
+                .await?
+                .into_stream();
 
-        loop {
-            match updates.next().await {
-                Some(LnReceiveState::Claimed) => break,
-                Some(LnReceiveState::Canceled { reason }) => {
-                    return Err(reason.into());
+            loop {
+                match updates.next().await {
+                    Some(LnReceiveState::Claimed) => break,
+                    Some(LnReceiveState::Canceled { reason }) => {
+                        return Err(reason.into());
+                    }
+                    None => return Err(anyhow::anyhow!("Lightning receive failed")),
+                    _ => {}
                 }
-                None => return Err(anyhow::anyhow!("Lightning receive failed")),
-                _ => {}
             }
-        }
 
-        let bolt11 = faucet::generate_invoice(11).await?;
-        let OutgoingLightningPayment {
-            payment_type,
-            contract_id: _,
-            fee: _,
-        } = lightning_module
-            .pay_bolt11_invoice(bolt11.parse()?, ())
-            .await?;
-        let PayType::Lightning(operation_id) = payment_type else {
-            unreachable!("paying invoice over lightning");
-        };
+            let bolt11 = faucet::generate_invoice(11).await?;
+            let OutgoingLightningPayment {
+                payment_type,
+                contract_id: _,
+                fee: _,
+            } = lightning_module
+                .pay_bolt11_invoice(bolt11.parse()?, ())
+                .await?;
+            let PayType::Lightning(operation_id) = payment_type else {
+                unreachable!("paying invoice over lightning");
+            };
 
-        let lightning_module = client.get_first_module::<LightningClientModule>();
-        let mut updates = lightning_module
-            .subscribe_ln_pay(operation_id)
-            .await?
-            .into_stream();
+            let lightning_module = client.get_first_module::<LightningClientModule>();
+            let mut updates = lightning_module
+                .subscribe_ln_pay(operation_id)
+                .await?
+                .into_stream();
 
-        loop {
-            match updates.next().await {
-                Some(LnPayState::Success { preimage: _ }) => {
-                    break;
+            loop {
+                match updates.next().await {
+                    Some(LnPayState::Success { preimage: _ }) => {
+                        break;
+                    }
+                    Some(LnPayState::Refunded { gateway_error }) => {
+                        return Err(anyhow::anyhow!("refunded {gateway_error}"));
+                    }
+                    None => return Err(anyhow::anyhow!("Lightning send failed")),
+                    _ => {}
                 }
-                Some(LnPayState::Refunded { gateway_error }) => {
-                    return Err(anyhow::anyhow!("refunded {gateway_error}"));
-                }
-                None => return Err(anyhow::anyhow!("Lightning send failed")),
-                _ => {}
             }
         }
 

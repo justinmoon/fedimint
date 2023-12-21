@@ -176,6 +176,7 @@ impl<'a> IDatabaseTransactionOps for MemTransaction<'a> {
 #[apply(async_trait_maybe_send!)]
 impl<'a> IRawDatabaseTransaction for MemTransaction<'a> {
     async fn commit_tx(self) -> Result<()> {
+        fedimint_core::task::sleep(std::time::Duration::from_millis(1000)).await;
         for op in self.operations {
             match op {
                 DatabaseOperation::Insert(insert_op) => {
