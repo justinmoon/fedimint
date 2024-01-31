@@ -32,6 +32,7 @@ use super::vars::utf8;
 use crate::util::poll;
 use crate::{poll_eq, vars};
 
+#[derive(Clone)]
 pub struct Federation {
     // client is only for internal use, use cli commands instead
     members: BTreeMap<usize, Fedimintd>,

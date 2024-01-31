@@ -1621,15 +1621,26 @@ async fn handle_command() -> Result<()> {
         Cmd::DevFed { exec } => {
             let (process_mgr, task_group) = setup(args.common).await?;
             let main = {
-                let task_group = task_group.clone();
+                let mut task_group = task_group.clone();
                 async move {
                     let dev_fed = dev_fed(&process_mgr).await?;
+                    let mut dev_fed_clone = dev_fed.clone();
+                    // dev_fed.fed.terminate_server(3).await?;
                     tokio::try_join!(
                         dev_fed.fed.pegin(10_000),
                         dev_fed.fed.pegin_gateway(20_000, &dev_fed.gw_cln),
                         dev_fed.fed.pegin_gateway(20_000, &dev_fed.gw_lnd),
                     )?;
                     let daemons = write_ready_file(&process_mgr.globals, Ok(dev_fed)).await?;
+
+                    task_group
+                        .spawn("kill", |_| async move {
+                            fedimint_core::task::sleep(Duration::from_secs(300)).await;
+                            // info!("killing a guardian");
+                            dev_fed_clone.fed.terminate_server(3).await.unwrap();
+                            // info!("Killed a guardian");
+                        })
+                        .await;
 
                     if let Some(exec) = exec {
                         exec_user_command(exec).await?;

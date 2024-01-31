@@ -19,6 +19,7 @@ pub use external::{
 
 pub mod federation;
 
+#[derive(Clone)]
 pub struct DevFed {
     pub bitcoind: Bitcoind,
     pub cln: Lightningd,
