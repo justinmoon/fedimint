@@ -21,6 +21,8 @@ pub trait State:
     /// Additional resources made available in this module's state transitions
     type ModuleContext: Context;
 
+    // TODO: Add a gateway URL, or some way to talk to the gateway.
+
     /// Additional resources made available for all state transitions
     type GlobalContext: GlobalContext;
 

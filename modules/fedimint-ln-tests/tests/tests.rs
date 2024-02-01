@@ -627,6 +627,7 @@ mod fedimint_migration_tests {
                 },
                 gateway_id: pk,
                 supports_private_payments: false,
+                gateway_must_create_invoices: false,
             },
             valid_until: fedimint_core::time::now(),
             vetted: false,
