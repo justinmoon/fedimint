@@ -1,6 +1,13 @@
 {
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-23.11";
+    nixpkgs = {
+      url = "github:nixos/nixpkgs/nixos-23.11";
+      # We use nixpkgs as input of `flakebox`, as it locks things like
+      # toolchains, in versions that are actually tested in flakebox's CI to
+      # cross-compile things well. This also saves us download and Nix
+      # evaluation time.
+      follows = "flakebox/nixpkgs";
+    };
     nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixos-unstable";
     nixpkgs-kitman.url = "github:jkitman/nixpkgs/add-esplora-pkg";
     flake-utils.url = "github:numtide/flake-utils";
