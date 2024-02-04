@@ -86,16 +86,18 @@ pub trait ILnRpcClient: Debug + Send + Sync {
         false
     }
 
-    // Consumes the current lightning client because `route_htlcs` should only be
-    // called once per client. A stream of intercepted HTLCs and a `Arc<dyn
-    // ILnRpcClient> are returned to the caller. The caller can use this new
-    // client to interact with the lightning node, but since it is an `Arc` is
-    // cannot call `route_htlcs` again.
+    /// Consumes the current lightning client because `route_htlcs` should only
+    /// be called once per client. A stream of intercepted HTLCs and a `Arc<dyn
+    /// ILnRpcClient> are returned to the caller. The caller can use this new
+    /// client to interact with the lightning node, but since it is an `Arc` is
+    /// cannot call `route_htlcs` again.
     async fn route_htlcs<'a>(
         self: Box<Self>,
         task_group: &mut TaskGroup,
     ) -> Result<(RouteHtlcStream<'a>, Arc<dyn ILnRpcClient>), LightningRpcError>;
 
+    /// Must be called for every HTLC produced by the stream returned from
+    /// [`ILnRpcClient::route_htlcs`], otherwise the HTLC will hang.
     async fn complete_htlc(
         &self,
         htlc: InterceptHtlcResponse,
@@ -108,6 +110,20 @@ pub trait ILnRpcClient: Debug + Send + Sync {
         expiry_secs: u64,
         payment_hash: sha256::Hash,
     ) -> Result<Bolt11Invoice, LightningRpcError>;
+
+    /// Returns true if the lightning gateway supports HTLC interception.
+    ///
+    /// If this returns true, then:
+    /// * Invoices must be created by Federation clients.
+    /// * [`ILnRpcClient::route_htlcs`] must stream intercepted HTLCs.
+    /// * [`ILnRpcClient::create_invoice_for_hash`] will not be called.
+    ///
+    /// If this returns false, then:
+    /// * Invoices must be created by calling
+    ///   [`ILnRpcClient::create_invoice_for_hash`].
+    /// * [`ILnRpcClient::route_htlcs`] must stream all incoming payments from
+    ///   invoices created by [`ILnRpcClient::create_invoice_for_hash`].
+    fn supports_htlc_interception(&self) -> bool;
 }
 
 #[derive(Debug, Clone, Subcommand, Serialize, Deserialize)]
