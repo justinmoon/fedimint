@@ -30,7 +30,6 @@ use fedimint_core::config::{ClientConfig, FederationId};
 use fedimint_core::core::OperationId;
 use fedimint_core::db::{Database, DatabaseValue};
 use fedimint_core::module::{ApiAuth, ApiRequestErased};
-use fedimint_core::query::ThresholdConsensus;
 use fedimint_core::util::SafeUrl;
 use fedimint_core::{task, PeerId, TieredMulti};
 use fedimint_ln_client::LightningClientInit;
@@ -324,7 +323,7 @@ async fn load_or_generate_mnemonic(db: &Database) -> Result<Mnemonic, CliError> 
 #[derive(Subcommand, Clone)]
 #[allow(clippy::large_enum_variant)]
 enum Command {
-    /// Print the latest git commit hash this bin. was build with
+    /// Print the latest Git commit hash this bin. was built with.
     VersionHash,
 
     #[clap(flatten)]
@@ -696,8 +695,17 @@ impl FedimintCli {
                 peer_id,
                 password: auth,
             }) => {
-                let params: Value = serde_json::from_str(&params)
-                    .map_err_cli_msg(CliErrorKind::InvalidValue, "Invalid JSON-RPC parameters")?;
+                //Parse params to JSON.
+                //If fails, convert to JSON string.
+                let params = serde_json::from_str::<Value>(&params).unwrap_or_else(|err| {
+                    debug!(
+                        "Failed to serialize params:{}. Converting it to JSON string",
+                        err
+                    );
+
+                    serde_json::Value::String(params)
+                });
+
                 let mut params = ApiRequestErased::new(params);
                 if let Some(auth) = auth {
                     params = params.with_auth(ApiAuth(auth))
@@ -711,11 +719,7 @@ impl FedimintCli {
                         .await
                         .map_err_cli_general()?,
                     None => ws_api
-                        .request_with_strategy(
-                            ThresholdConsensus::full_participation(ws_api.peers().len()),
-                            method,
-                            params,
-                        )
+                        .request_current_consensus(method, params)
                         .await
                         .map_err_cli_general()?,
                 };

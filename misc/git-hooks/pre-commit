@@ -147,10 +147,7 @@ function check_trailing_whitespace() {
       >&2 echo "Warning: no commits yet, checking against --root"
       rev="--root"
     fi
-    # Exclude db migration files
-    if git diff --check $rev | \
-        grep -v -E '^diff --git a/.*b/db/' |
-        grep -E '^-.*db/' ; then
+    if ! git diff --check $rev ; then
       >&2 echo "Trailing whitespace detected. Please remove them before committing."
       return 1
     fi

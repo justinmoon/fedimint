@@ -1,4 +1,4 @@
-mod db;
+pub mod db;
 pub mod incoming;
 pub mod pay;
 pub mod receive;
@@ -29,7 +29,7 @@ use fedimint_core::config::{
     ClientConfig, FederationId, META_OVERRIDE_URL_KEY, META_VETTED_GATEWAYS_KEY,
 };
 use fedimint_core::core::{IntoDynInstance, ModuleInstanceId, OperationId};
-use fedimint_core::db::{DatabaseTransaction, IDatabaseTransactionOpsCoreTyped};
+use fedimint_core::db::{DatabaseTransaction, DatabaseVersion, IDatabaseTransactionOpsCoreTyped};
 use fedimint_core::encoding::{Decodable, Encodable};
 use fedimint_core::module::{
     ApiVersion, CommonModuleInit, ModuleCommon, ModuleInit, MultiApiVersion, TransactionItemAmount,
@@ -309,6 +309,7 @@ pub enum LightningChildKeys {
 #[apply(async_trait_maybe_send!)]
 impl ClientModuleInit for LightningClientInit {
     type Module = LightningClientModule;
+    const DATABASE_VERSION: DatabaseVersion = DatabaseVersion(0);
 
     fn supported_api_versions(&self) -> MultiApiVersion {
         MultiApiVersion::try_from_iter([ApiVersion { major: 0, minor: 0 }])
@@ -1007,7 +1008,7 @@ impl LightningClientModule {
 
         dbtx.insert_entry(&LightningGatewayKey, &gateway.anchor())
             .await;
-        dbtx.commit_tx().await;
+        dbtx.commit_tx_result().await?;
         Ok(())
     }
 

@@ -142,6 +142,8 @@ async fn unbalanced_transactions_get_rejected() -> anyhow::Result<()> {
 
 mod fedimint_migration_tests {
     use anyhow::{ensure, Context};
+    use fedimint_client::module::init::DynClientModuleInit;
+    use fedimint_client::module::ClientModule;
     use fedimint_core::core::ModuleInstanceId;
     use fedimint_core::db::{
         apply_migrations, DatabaseTransaction, DatabaseVersion, DatabaseVersionKey,
@@ -150,13 +152,15 @@ mod fedimint_migration_tests {
     use fedimint_core::module::registry::ModuleDecoderRegistry;
     use fedimint_core::module::{CommonModuleInit, DynServerModuleInit};
     use fedimint_core::{Amount, BitcoinHash, OutPoint, ServerModule, TransactionId};
+    use fedimint_dummy_client::db::{DummyClientFundsKeyV0, DummyClientFundsKeyV1};
+    use fedimint_dummy_client::{DummyClientInit, DummyClientModule};
     use fedimint_dummy_common::{DummyCommonInit, DummyOutputOutcome};
     use fedimint_dummy_server::db::{
         DbKeyPrefix, DummyFundsKeyV0, DummyFundsPrefixV1, DummyOutcomeKey, DummyOutcomePrefix,
     };
     use fedimint_dummy_server::{Dummy, DummyInit};
     use fedimint_logging::TracingSetup;
-    use fedimint_testing::db::{prepare_db_migration_snapshot, validate_migrations, BYTE_32};
+    use fedimint_testing::db::{snapshot_db_migrations, validate_migrations, BYTE_32};
     use futures::StreamExt;
     use rand::rngs::OsRng;
     use strum::IntoEnumIterator;
@@ -187,9 +191,17 @@ mod fedimint_migration_tests {
         .await;
     }
 
+    async fn create_client_db_with_v0_data(mut dbtx: DatabaseTransaction<'_>) {
+        dbtx.insert_new_entry(&DatabaseVersionKey, &DatabaseVersion(0))
+            .await;
+
+        // Write example v0 `ClientFunds`
+        dbtx.insert_new_entry(&DummyClientFundsKeyV0, &()).await;
+    }
+
     #[tokio::test(flavor = "multi_thread")]
-    async fn prepare_server_db_migration_snapshots() -> anyhow::Result<()> {
-        prepare_db_migration_snapshot(
+    async fn snapshot_server_db_migrations() -> anyhow::Result<()> {
+        snapshot_db_migrations(
             "dummy-server-v0",
             |dbtx| {
                 Box::pin(async move {
@@ -206,8 +218,8 @@ mod fedimint_migration_tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_migrations() -> anyhow::Result<()> {
-        TracingSetup::default().init()?;
+    async fn test_server_db_migrations() -> anyhow::Result<()> {
+        let _ = TracingSetup::default().init();
 
         validate_migrations(
             "dummy-server",
@@ -260,6 +272,63 @@ mod fedimint_migration_tests {
                 DUMMY_INSTANCE_ID,
                 DummyCommonInit::KIND,
                 <Dummy as ServerModule>::decoder(),
+            )]),
+        )
+        .await
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn snapshot_client_db_migrations() -> anyhow::Result<()> {
+        snapshot_db_migrations(
+            "dummy-client-v0",
+            |dbtx| Box::pin(async move { create_client_db_with_v0_data(dbtx).await }),
+            ModuleDecoderRegistry::from_iter([(
+                DUMMY_INSTANCE_ID,
+                DummyCommonInit::KIND,
+                <DummyClientModule as ClientModule>::decoder(),
+            )]),
+        )
+        .await
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_client_db_migrations() -> anyhow::Result<()> {
+        TracingSetup::default().init()?;
+
+        validate_migrations(
+            "dummy-client",
+            |db| async move {
+                let module = DynClientModuleInit::from(DummyClientInit);
+                apply_migrations(
+                    &db,
+                    DummyCommonInit::KIND.to_string(),
+                    module.database_version(),
+                    module.get_database_migrations(),
+                )
+                .await
+                .context("Error applying migrations to client database")?;
+
+                let mut dbtx = db.begin_transaction().await;
+
+                for prefix in fedimint_dummy_client::db::DbKeyPrefix::iter() {
+                    match prefix {
+                        fedimint_dummy_client::db::DbKeyPrefix::ClientFunds => {
+                            let funds = dbtx.get_value(&DummyClientFundsKeyV1).await;
+                            ensure!(
+                                funds.is_some(),
+                                "validate_migrations was not able to read any client funds"
+                            );
+                            info!("Validated client funds");
+                        }
+                    }
+                }
+
+                Ok(())
+            },
+            ModuleDecoderRegistry::from_iter([(
+                DUMMY_INSTANCE_ID,
+                DummyCommonInit::KIND,
+                <DummyClientModule as ClientModule>::decoder(),
             )]),
         )
         .await
