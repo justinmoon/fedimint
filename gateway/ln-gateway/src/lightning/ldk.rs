@@ -141,9 +141,24 @@ impl GatewayLdkClient {
         self.node.start().map_err(|e| {
             error!("Failed to start LDK Node: {e:?}");
             LightningRpcError::FailedToConnect
-        })
+        })?;
+        self.open_channel_if_in_devimint().await;
     }
 
+    pub fn open_channel_in_devimint(&self) -> Result<(), LightningRpcError> {
+        if (not_in_devimint) {
+            return Ok(());
+        }
+        if (channel_already_open) {
+            return Ok(());
+        }
+        // both of these env vars probably aren't defined yet
+        let node_pubkey = std::env::var("DEVIMINT_LND_NODE_PUBKEY").unwrap();
+        let listen_address = std::env::var("DEVIMINT_LND_LISTEN_ADDRESS").unwrap();
+        // Then do roughly what LdkLightningTest::open_channel does
+        // Skip if it's already been setup
+        Ok(())
+    }
     pub fn stop(&self) -> Result<(), LightningRpcError> {
         self.node.stop().map_err(|e| {
             error!("Failed to stop LDK Node: {e:?}");

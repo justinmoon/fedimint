@@ -337,6 +337,7 @@ impl Lnd {
     pub async fn start(process_mgr: &ProcessManager) -> Result<(ProcessHandle, LndClient)> {
         let conf = format!(
             include_str!("cfg/lnd.conf"),
+            // You could construct `DEVIMINT_LND_LISTEN_ADDRESS` from these
             listen_port = process_mgr.globals.FM_PORT_LND_LISTEN,
             rpc_port = process_mgr.globals.FM_PORT_LND_RPC,
             rest_port = process_mgr.globals.FM_PORT_LND_REST,
@@ -579,7 +580,8 @@ pub async fn open_channel(
 pub enum LightningNode {
     Cln(Lightningd),
     Lnd(Lnd),
-    // No need to store LDK since it runs entirely inside of gatewayd and doesn't have its own daemon.
+    // No need to store LDK since it runs entirely inside of gatewayd and doesn't have its own
+    // daemon.
     Ldk,
 }
 

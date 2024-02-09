@@ -389,6 +389,22 @@ pub async fn cli_tests(dev_fed: DevFed) -> Result<()> {
         })
         .await?
         .bolt11;
+
+    // Make a new test which does the following:
+
+    // To test incoming payment:
+    // use_ldk_gateway
+    // let invoice = fedimint-cli ln-invoice ... (or use the
+    // `lnd.lightning_cilent_lock()` like below ... probably easier) have lnd pay it
+    // like below
+
+    // To test outgoing payment:
+    // use_ldk_gateway
+    // let invoice = lncli addinvoice ...
+    // fedimint-cli ln-pay invoice
+
+    // If we have a chanell with LDK, you can do the exact same thing here
+    // to tests the LDK gateway's ability to facilitate an incoming payment
     lnd.lightning_client_lock()
         .await?
         .send_payment_sync(tonic_lnd::lnrpc::SendRequest {
@@ -1611,6 +1627,10 @@ pub async fn reconnect_test(dev_fed: DevFed, process_mgr: &ProcessManager) -> Re
     Ok(())
 }
 
+pub async fn ldk_gateway_tests(dev_fed: DevFed) -> Result<()> {
+    todo!()
+}
+
 pub async fn recoverytool_test(dev_fed: DevFed) -> Result<()> {
     log_binary_versions().await?;
     #[allow(unused_variables)]
@@ -1801,6 +1821,8 @@ pub enum TestCmd {
     GatewayRebootTest,
     /// `devfed` then tests if the recovery tool is able to do a basic recovery
     RecoverytoolTests,
+    /// `devfed` then tests LDK-based lightning gateway
+    LdkGatewayTests,
     /// `devfed` then spawns faucet for wasm tests
     WasmTestSetup {
         #[arg(long, trailing_var_arg = true, allow_hyphen_values = true, num_args=1..)]
@@ -1851,6 +1873,11 @@ pub async fn handle_command(cmd: TestCmd, common_args: CommonArgs) -> Result<()>
             let (process_mgr, _) = setup(common_args).await?;
             let dev_fed = dev_fed(&process_mgr).await?;
             latency_tests(dev_fed).await?;
+        }
+        TestCmd::LdkGatewayTests => {
+            let (process_mgr, _) = setup(common_args).await?;
+            let dev_fed = dev_fed(&process_mgr).await?;
+            ldk_gateway_tests(dev_fed).await?;
         }
         TestCmd::ReconnectTest => {
             let (process_mgr, _) = setup(common_args).await?;

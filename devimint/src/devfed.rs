@@ -29,6 +29,9 @@ pub async fn dev_fed(process_mgr: &ProcessManager) -> Result<DevFed> {
                 Lightningd::new(process_mgr, bitcoind.clone()),
                 Lnd::new(process_mgr, bitcoind.clone())
             )?;
+            std::env::set_var("DEVIMINT_LND_NODE_PUBKEY", lnd.pub_key().await?);
+            let lnd_listen_address = format!("0.0.0.0:{}", process_mgr.globals.FM_PORT_LND_LISTEN);
+            std::env::set_var("DEVIMINT_LND_LISTEN_ADDRESS", lnd_listen_address);
             info!(target: LOG_DEVIMINT, "lightning started");
             let (gw_cln, gw_lnd, gw_ldk, _) = tokio::try_join!(
                 Gatewayd::new(process_mgr, LightningNode::Cln(cln.clone())),
